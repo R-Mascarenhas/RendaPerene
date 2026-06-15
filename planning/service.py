@@ -110,6 +110,17 @@ class SimulationService:
         else:
             required_monthly_contribution = 0.0
             
+        # Updated Monthly Contribution (Course-corrected starting today, using current equity as PV)
+        # Formula: =PMT(monthly_interest_rate, remaining_time_months, -initial_equity_input, target_equity, 1)
+        if remaining_time_months > 0 and monthly_interest_rate > 0:
+            interest_factor_rem = (1 + monthly_interest_rate) ** remaining_time_months
+            numerator_rem = target_equity - config['initial_equity_input'] * interest_factor_rem
+            denominator_rem = ((interest_factor_rem - 1) / monthly_interest_rate) * (1 + monthly_interest_rate)
+            updated_monthly_contribution = numerator_rem / denominator_rem if denominator_rem > 0 else 0.0
+            updated_monthly_contribution = max(0.0, updated_monthly_contribution)
+        else:
+            updated_monthly_contribution = 0.0
+            
         return {
             "current_age": current_age,
             "start_age_years": start_age_years,
@@ -119,12 +130,19 @@ class SimulationService:
             "monthly_interest_rate": monthly_interest_rate,
             "target_equity": target_equity,
             "required_monthly_contribution": required_monthly_contribution,
+            "updated_monthly_contribution": updated_monthly_contribution,
             "mw_value": config['mw_value'],
             "initial_equity_input": config['initial_equity_input'],
             "retirement_age": config['retirement_age'],
             "desired_income_mw": config['desired_income_mw'],
             "annual_interest_rate": config['annual_interest_rate']
         }
+
+    @staticmethod
+    def get_current_required_contribution():
+        """Returns the updated monthly contribution dynamically for the dashboard's planning metrics."""
+        sim = SimulationService.get_current_simulation()
+        return sim["updated_monthly_contribution"] if sim else 0.0
 
     @staticmethod
     def build_projection_dataframe(current_age, simulation_months, initial_equity, required_monthly_contribution, monthly_interest_rate, target_equity):

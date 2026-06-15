@@ -23,7 +23,7 @@ from planning.view import PlanningView
 tab_dashboard, tab_lancamentos, tab_planning = st.tabs([
     "📊 Dashboard (Resumo)", 
     "📝 Lançamentos & B3", 
-    "🎯 Simulador de Aposentadoria"
+    "🎯 Planejamento"
 ])
 
 # Clean MVC Routing

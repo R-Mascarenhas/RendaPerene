@@ -88,10 +88,11 @@ class PlanningView:
 
     def _render_simulation_results(self, sim):
         st.subheader("🎯 Resultados da Simulação")
-        res_col1, res_col2, res_col3 = st.columns(3)
+        res_col1, res_col2, res_col3, res_col4 = st.columns(4)
         res_col1.metric("Renda Mensal Alvo", Formatter.format_currency(sim["target_monthly_income"]))
         res_col2.metric("Meta de Patrimônio (Viver de Juros)", Formatter.format_currency(sim["target_equity"]))
         res_col3.metric("Aporte Mensal Necessário", Formatter.format_currency(sim["required_monthly_contribution"]))
+        res_col4.metric("Aporte Mensal Atualizado", Formatter.format_currency(sim["updated_monthly_contribution"]))
 
     def _render_projection_chart(self, sim):
         df_projection = SimulationService.build_projection_dataframe(

@@ -149,3 +149,21 @@ class DashboardService:
         ytd_contribution = res_ytd[0] if res_ytd and res_ytd[0] is not None else 0.0
         conn.close()
         return ytd_contribution
+
+    @staticmethod
+    def get_monthly_contributions_by_year() -> pd.DataFrame:
+        """Returns monthly contributions grouped by year for the bar chart."""
+        conn = db.get_personal_connection()
+        df_t = pd.read_sql_query("SELECT date, quantity, unit_price, fees FROM transactions WHERE transaction_type = 'Compra'", conn)
+        conn.close()
+        
+        if df_t.empty:
+            return pd.DataFrame()
+            
+        df_t['amount'] = df_t['quantity'] * df_t['unit_price'] + df_t['fees']
+        df_t['year'] = df_t['date'].str[:4]
+        df_t['month'] = df_t['date'].str[5:7]
+        
+        # Group by year and month
+        grouped = df_t.groupby(['year', 'month'])['amount'].sum().reset_index()
+        return grouped

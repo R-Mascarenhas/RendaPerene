@@ -176,3 +176,26 @@ def test_b3_split_logic():
     assert len(df_pos) == 1
     assert df_pos.loc[0, "quantity"] == 200
     assert df_pos.loc[0, "average_price"] == 10.00 
+
+def test_b3_resgate_logic():
+    """Ensures 'Resgate' events are imported as Sells, bringing quantity to zero."""
+    TransactionService.add_transaction("NUBR33", "2021-12-10", "Compra", 239, 8.36)
+    
+    data_example = {
+        "Entrada/Saída": ["Debito", "Credito"],
+        "Movimentação": ["Transferência - Liquidação", "Resgate"],
+        "Data": ["14/12/2021", "15/09/2023"],
+        "Produto": ["NUBR33 - NU HOLDINGS LTD.", "NUBR33 - NU HOLDINGS LTD."],
+        "Quantidade": [1, 238],
+        "Preço unitário": [10.50, 5.981],
+        "Valor da Operação": [10.50, 1423.42]
+    }
+    df_excel = pd.DataFrame(data_example)
+    
+    trans, prov = TransactionService.process_b3_import(df_excel)
+    assert trans == 2
+    assert prov == 0
+    
+    # Position should be 0 and therefore not returned by calculate_positions
+    df_pos = DashboardService.calculate_positions()
+    assert len(df_pos) == 0

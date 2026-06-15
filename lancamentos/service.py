@@ -122,6 +122,8 @@ class TransactionService:
                 elif "Desdobro" in movement:
                     if "credito" in entry_exit or "crédito" in entry_exit:
                         transaction_type = "Desdobro_Credito"
+                elif "Resgate" in movement:
+                    transaction_type = "Venda"
                 
                 if transaction_type == "Compra":
                     success = TransactionService.add_transaction(ticker, date, "Compra", quantity, price)

@@ -6,6 +6,7 @@ import pandas as pd
 from core.database import db, DatabaseManager
 from lancamentos.service import TransactionService
 from dashboard.service import DashboardService
+from planning.service import SimulationService
 
 TEST_PERSONAL_DB = "test_carteira.db"
 TEST_ASSETS_DB = "test_assets.db"
@@ -199,3 +200,87 @@ def test_b3_resgate_logic():
     # Position should be 0 and therefore not returned by calculate_positions
     df_pos = DashboardService.calculate_positions()
     assert len(df_pos) == 0
+
+def test_get_quantity_on_date():
+    """Verifies retro-calculating the owned quantity of an asset at specific historical cut dates."""
+    # 1. Buy 100 on 2025-01-01
+    TransactionService.add_transaction("BBAS3", "2025-01-01", "Compra", 100, 20.00)
+    # 2. Buy 100 on 2025-03-01
+    TransactionService.add_transaction("BBAS3", "2025-03-01", "Compra", 100, 22.00)
+    # 3. Sell 50 on 2025-05-01
+    TransactionService.add_transaction("BBAS3", "2025-05-01", "Venda", 50, 25.00)
+    
+    # Check quantities at specific points in time
+    qty_before = TransactionService.get_quantity_on_date("BBAS3", "2024-12-31")
+    qty_jan = TransactionService.get_quantity_on_date("BBAS3", "2025-01-15")
+    qty_feb = TransactionService.get_quantity_on_date("BBAS3", "2025-02-15")
+    qty_mar = TransactionService.get_quantity_on_date("BBAS3", "2025-03-15")
+    qty_jun = TransactionService.get_quantity_on_date("BBAS3", "2025-06-01")
+    
+    assert qty_before == 0
+    assert qty_jan == 100
+    assert qty_feb == 100
+    assert qty_mar == 200
+    assert qty_jun == 150
+
+def test_asset_annual_dividends_pivot():
+    """Verifies that the pivot queries group and sum dividend categories correctly for specific assets and years."""
+    # Seed B3 assets metadata table first in assets.db
+    conn_assets = db.get_assets_connection()
+    cursor_assets = conn_assets.cursor()
+    cursor_assets.execute("INSERT OR REPLACE INTO assets (ticker, name, asset_type, sector) VALUES ('BBAS3', 'Banco do Brasil', 'Ação', 'Bancos')")
+    cursor_assets.execute("INSERT OR REPLACE INTO assets (ticker, name, asset_type, sector) VALUES ('CXSE3', 'Caixa Seguridade', 'Ação', 'Seguros')")
+    conn_assets.commit()
+    conn_assets.close()
+
+    # 1. Add BBAS3 dividends in 2025
+    TransactionService.add_dividend("BBAS3", "2025-05-15", "Dividendo", 50.00)
+    TransactionService.add_dividend("BBAS3", "2025-08-15", "JCP", 30.00)
+    
+    # 2. Add CXSE3 dividends in 2025 (should NOT leak into BBAS3 sums)
+    TransactionService.add_dividend("CXSE3", "2025-05-15", "Dividendo", 100.00)
+    
+    # 3. Add BBAS3 dividends in 2024 (should NOT leak into 2025 sums)
+    TransactionService.add_dividend("BBAS3", "2024-05-15", "Dividendo", 15.00)
+    
+    df_pivot_bb = TransactionService.get_asset_annual_dividends_pivot("BBAS3", "2025")
+    
+    val_div = df_pivot_bb.loc[df_pivot_bb['Categoria'] == 'Total de Dividendos', 'Valor (R$)'].values[0]
+    val_jcp = df_pivot_bb.loc[df_pivot_bb['Categoria'] == 'Total de JCP', 'Valor (R$)'].values[0]
+    val_rend = df_pivot_bb.loc[df_pivot_bb['Categoria'] == 'Total de Rendimentos', 'Valor (R$)'].values[0]
+    val_total = df_pivot_bb.loc[df_pivot_bb['Categoria'] == 'Total de Proventos (Soma de todos)', 'Valor (R$)'].values[0]
+    
+    assert val_div == 50.00
+    assert val_jcp == 30.00
+    assert val_rend == 0.00
+    assert val_total == 80.00
+
+def test_get_current_simulation_math():
+    """Verifies that the core retirement simulation correctly loads DB config and runs the correct PMT Annuity Due math."""
+    # Seed planning_configuration table
+    SimulationService.save_configuration(
+        birth_date="1992-12-15",
+        retirement_age=60,
+        desired_income_mw=5.0,
+        annual_interest_rate=6.0,
+        mw_value=1412.0,
+        initial_equity_input=0.0
+    )
+    
+    # Add a mock transaction to establish starting_age for total_time calculation
+    TransactionService.add_transaction("BBAS3", "2021-12-15", "Compra", 10, 10.00)
+    
+    sim = SimulationService.get_current_simulation()
+    
+    assert sim is not None
+    assert sim["retirement_age"] == 60
+    assert sim["desired_income_mw"] == 5.0
+    assert sim["mw_value"] == 1412.0
+    
+    # Target monthly income = 5 * 1412 = 7060
+    assert sim["target_monthly_income"] == 7060.0
+    
+    # Verify that the calculation returns a valid, positive monthly contribution target
+    assert sim["required_monthly_contribution"] > 0.0
+    assert sim["total_time_months"] > 0
+

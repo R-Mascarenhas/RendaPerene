@@ -106,6 +106,11 @@ class TransactionService:
                 raw_price = row.get('Preço', row.get('Preço unitário', 0.0))
                 price = 0.0 if raw_price == '-' else float(raw_price)
                 
+                # Dynamic safeguard: CXSE3 IPO price on April 30, 2021 was 9.67 per share,
+                # but B3 exports it as '-' (blank) because it occurred out-of-broker.
+                if ticker == "CXSE3" and date == "2021-04-30" and price == 0.0:
+                    price = 9.67
+                
                 raw_value = row.get('Valor', row.get('Valor da Operação', 0.0))
                 total_value = 0.0 if raw_value == '-' else float(raw_value)
                 

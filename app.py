@@ -20,18 +20,18 @@ from lancamentos.view import LancamentosView
 from planning.view import PlanningView
 
 # Create 3 main tabs
-tab_dashboard, tab_lancamentos, tab_planning = st.tabs([
-    "📊 Dashboard (Resumo)", 
-    "📝 Lançamentos & B3", 
-    "🎯 Planejamento"
+tab_dashboard, tab_planning, tab_lancamentos = st.tabs([
+    "📊 Dashboard (Resumo)",
+    "🎯 Planejamento",
+    "📝 Lançamentos & B3"
 ])
 
 # Clean MVC Routing
 with tab_dashboard:
     DashboardView().render()
 
-with tab_lancamentos:
-    LancamentosView().render()
-
 with tab_planning:
     PlanningView().render()
+
+with tab_lancamentos:
+    LancamentosView().render()

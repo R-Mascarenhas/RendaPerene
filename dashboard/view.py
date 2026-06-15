@@ -18,9 +18,9 @@ class DashboardView:
         ytd_contributions = DashboardService.get_ytd_contributions(current_year)
         ytd_dividends = df_positions['ytd_dividends'].sum() if not df_positions.empty else 0.0
 
-        # Pull planned contribution dynamically from Simulation Service (clean DRY pattern)
+        # Pull planned contribution dynamically from Simulation Service (clean DRY pattern, safe from NoneType)
         from planning.service import SimulationService
-        required_monthly_contribution = SimulationService.get_current_simulation()["required_monthly_contribution"]
+        required_monthly_contribution = SimulationService.get_current_required_contribution()
 
         annual_salary_goal = required_monthly_contribution * 12
         total_annual_goal = annual_salary_goal + ytd_dividends
@@ -81,11 +81,17 @@ class DashboardView:
         overall_yoc = (total_dividends / total_invested * 100) if total_invested > 0 else 0.0
         overall_l12m_yoc = (l12m_dividends / total_invested * 100) if total_invested > 0 else 0.0
 
-        m1, m2, m3, m4 = st.columns(4)
+        # Pull the invested capital parameter used in PMT calculations from the planning service
+        from planning.service import SimulationService
+        sim = SimulationService.get_current_simulation()
+        total_invested = sim["total_invested"] if sim else 0.0
+
+        m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Patrimônio Atual", Formatter.format_currency(total_equity), f"Retorno: {overall_return:+.2f}%")
-        m2.metric("Proventos Totais", Formatter.format_currency(total_dividends), f"YoC Total: {overall_yoc:.2f}%")
-        m3.metric("Proventos 12 Meses (L12M)", Formatter.format_currency(l12m_dividends), f"YoC L12M: {overall_l12m_yoc:.2f}%")
-        m4.metric("Proventos Ano Corrente (YTD)", Formatter.format_currency(ytd_dividends))
+        m2.metric("Capital Investido", Formatter.format_currency(total_invested), "Parâmetro do Planejamento")
+        m3.metric("Proventos Totais", Formatter.format_currency(total_dividends), f"YoC Total: {overall_yoc:.2f}%")
+        m4.metric("Proventos 12 Meses (L12M)", Formatter.format_currency(l12m_dividends), f"YoC L12M: {overall_l12m_yoc:.2f}%")
+        m5.metric("Proventos Ano Corrente (YTD)", Formatter.format_currency(ytd_dividends))
 
         st.markdown("---")
         self._render_monthly_contributions_chart()

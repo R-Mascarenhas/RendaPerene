@@ -88,9 +88,9 @@ class SimulationService:
 
         start_date = datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
         
-        # Calculate start age in complete years
-        start_age = start_date.year - birth_date.year - ((start_date.month, start_date.day) < (birth_date.month, birth_date.day))
-        return start_age
+        # Calculate start age in exact months
+        start_months_age = (start_date.year - birth_date.year) * 12 + start_date.month - birth_date.month - (start_date.day < birth_date.day)
+        return start_months_age
 
     @staticmethod
     def build_projection_dataframe(current_age, simulation_months, initial_equity, required_monthly_contribution, monthly_interest_rate, target_equity):

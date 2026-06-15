@@ -18,8 +18,24 @@ class DashboardView:
         ytd_contributions = DashboardService.get_ytd_contributions(current_year)
         ytd_dividends = df_positions['ytd_dividends'].sum() if not df_positions.empty else 0.0
 
-        # Pull planned contribution from Session State (Calculated in Planning Tab)
-        required_monthly_contribution = st.session_state.get('required_monthly_contribution_cache', 0.0)
+        # Pull planned contribution directly from DB configuration instead of volatile session state cache
+        from planning.service import SimulationService
+        config = SimulationService.get_configuration()
+        if config:
+            # We must calculate exact age in months to do the math
+            birth_date = datetime.datetime.strptime(config['birth_date'], "%Y-%m-%d").date() if isinstance(config['birth_date'], str) else config['birth_date']
+            months_age = (today.year - birth_date.year) * 12 + today.month - birth_date.month - (today.day < birth_date.day)
+            
+            _, _, _, _, required_monthly_contribution = SimulationService.calculate_simulation_params(
+                months_age,
+                config['retirement_age'],
+                config['desired_income_mw'],
+                config['annual_interest_rate'],
+                config['mw_value'],
+                config['initial_equity_input']
+            )
+        else:
+            required_monthly_contribution = 0.0
 
         annual_salary_goal = required_monthly_contribution * 12
         total_annual_goal = annual_salary_goal + ytd_dividends

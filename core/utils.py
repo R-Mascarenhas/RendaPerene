@@ -11,7 +11,7 @@ class SessionManager:
         """Initializes shared parameters in the Session State on the first page load."""
 
         # We need to import the service here to avoid circular imports during startup
-        from planejamento.service import SimulationService
+        from planning.service import SimulationService
 
         # Load from Database on first run
         if 'db_loaded' not in st.session_state:

@@ -17,10 +17,10 @@ st.title("💼 Carteira de Investimentos")
 # Import Views from Domains
 from dashboard.view import DashboardView
 from lancamentos.view import LancamentosView
-from planejamento.view import PlanejamentoView
+from planning.view import PlanningView
 
 # Create 3 main tabs
-tab_dashboard, tab_lancamentos, tab_planejamento = st.tabs([
+tab_dashboard, tab_lancamentos, tab_planning = st.tabs([
     "📊 Dashboard (Resumo)", 
     "📝 Lançamentos & B3", 
     "🎯 Simulador de Aposentadoria"
@@ -33,5 +33,5 @@ with tab_dashboard:
 with tab_lancamentos:
     LancamentosView().render()
 
-with tab_planejamento:
-    PlanejamentoView().render()
+with tab_planning:
+    PlanningView().render()

@@ -20,7 +20,7 @@ class DashboardView:
 
         # Pull planned contribution dynamically from Simulation Service (clean DRY pattern)
         from planning.service import SimulationService
-        required_monthly_contribution = SimulationService.get_current_required_contribution()
+        required_monthly_contribution = SimulationService.get_current_simulation()["required_monthly_contribution"]
 
         annual_salary_goal = required_monthly_contribution * 12
         total_annual_goal = annual_salary_goal + ytd_dividends

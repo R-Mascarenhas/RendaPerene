@@ -53,32 +53,8 @@ class SimulationService:
             conn.close()
 
     @staticmethod
-    def calculate_simulation_params(months_age, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input):
-        """
-        Calculates simulation parameters using PMT Annuity Due (Type = 1) matching Excel's `=PMT(rate, nper, pv, -fv, 1)`.
-        Uses internal months_age to find the exact target simulation period.
-        """
-        simulation_months = max(0, retirement_age * 12 - months_age)
-        target_monthly_income = desired_income_mw * mw_value
-        monthly_interest_rate = (1 + annual_interest_rate / 100) ** (1 / 12) - 1
-        target_equity = target_monthly_income / monthly_interest_rate if monthly_interest_rate > 0 else 0.0
-
-        if simulation_months > 0 and monthly_interest_rate > 0:
-            interest_factor = (1 + monthly_interest_rate) ** simulation_months
-            
-            # PMT Annuity Due formula: payments at start of month (Excel type = 1)
-            # Math: PMT = [FV - PV * (1+r)^n] * r / [((1+r)^n - 1) * (1+r)]
-            numerator = target_equity - initial_equity_input * interest_factor
-            denominator = ((interest_factor - 1) / monthly_interest_rate) * (1 + monthly_interest_rate)
-            required_monthly_contribution = numerator / denominator if denominator > 0 else 0.0
-            required_monthly_contribution = max(0.0, required_monthly_contribution)
-        else:
-            required_monthly_contribution = 0.0
-
-        return simulation_months, target_monthly_income, monthly_interest_rate, target_equity, required_monthly_contribution
-
-    @staticmethod
     def get_initial_investment_age(birth_date):
+        """Returns the exact age in months when the first investment was made."""
         conn = db.get_personal_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT MIN(date) FROM transactions")
@@ -88,12 +64,74 @@ class SimulationService:
 
         start_date = datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
         
-        # Calculate start age in exact months
+        # Calculate exact age in months when investment started
         start_months_age = (start_date.year - birth_date.year) * 12 + start_date.month - birth_date.month - (start_date.day < birth_date.day)
         return start_months_age
 
     @staticmethod
+    def get_current_simulation():
+        """
+        Runs the entire retirement simulation using DB parameters (Single Source of Truth).
+        Calculates lifetime monthly contribution using total_time_months and PV=0.
+        Returns a dictionary containing all computed parameters (DRY-compliant).
+        """
+        config = SimulationService.get_configuration()
+        if not config:
+            return None
+            
+        today = datetime.date.today()
+        birth_date = datetime.datetime.strptime(config['birth_date'], "%Y-%m-%d").date() if isinstance(config['birth_date'], str) else config['birth_date']
+        
+        # Exact current age in months and years (for UI display)
+        months_age = (today.year - birth_date.year) * 12 + today.month - birth_date.month - (today.day < birth_date.day)
+        current_age = months_age / 12
+        
+        # Exact age in months when the investment journey started (first transaction)
+        start_months_age = SimulationService.get_initial_investment_age(birth_date)
+        start_age_years = start_months_age / 12
+        
+        # Total Time: months from first investment to retirement age (Lifetime Timeline)
+        total_time_months = max(0, config['retirement_age'] * 12 - start_months_age)
+        
+        # Remaining Time: months from today to retirement age (Current Timeline)
+        remaining_time_months = max(0, config['retirement_age'] * 12 - months_age)
+        
+        target_monthly_income = config['desired_income_mw'] * config['mw_value']
+        monthly_interest_rate = (1 + config['annual_interest_rate'] / 100) ** (1 / 12) - 1
+        target_equity = target_monthly_income / monthly_interest_rate if monthly_interest_rate > 0 else 0.0
+        
+        # Lifetime Required Contribution (Excel PMT Annuity Due, type=1, pv=0)
+        # Formula: =PMT(monthly_interest_rate, total_time_months, 0, -target_equity, 1)
+        if total_time_months > 0 and monthly_interest_rate > 0:
+            interest_factor = (1 + monthly_interest_rate) ** total_time_months
+            denominator = ((interest_factor - 1) / monthly_interest_rate) * (1 + monthly_interest_rate)
+            required_monthly_contribution = target_equity / denominator if denominator > 0 else 0.0
+            required_monthly_contribution = max(0.0, required_monthly_contribution)
+        else:
+            required_monthly_contribution = 0.0
+            
+        return {
+            "current_age": current_age,
+            "start_age_years": start_age_years,
+            "total_time_months": total_time_months,
+            "remaining_time_months": remaining_time_months,
+            "target_monthly_income": target_monthly_income,
+            "monthly_interest_rate": monthly_interest_rate,
+            "target_equity": target_equity,
+            "required_monthly_contribution": required_monthly_contribution,
+            "mw_value": config['mw_value'],
+            "initial_equity_input": config['initial_equity_input'],
+            "retirement_age": config['retirement_age'],
+            "desired_income_mw": config['desired_income_mw'],
+            "annual_interest_rate": config['annual_interest_rate']
+        }
+
+    @staticmethod
     def build_projection_dataframe(current_age, simulation_months, initial_equity, required_monthly_contribution, monthly_interest_rate, target_equity):
+        """
+        Projects current actual equity + future contributions growing over the remaining months.
+        Starts from today (current_age) until retirement.
+        """
         if simulation_months <= 0:
             return pd.DataFrame()
             
@@ -117,27 +155,3 @@ class SimulationService:
             "Juros Acumulado (Rendimento)": cumulative_interest,
             "Meta": target_equity
         })
-
-    @staticmethod
-    def get_current_required_contribution():
-        """
-        Calculates and returns the required monthly contribution dynamically from the saved database config.
-        Decoupled from Session State, handles temporal month aging on-the-fly.
-        """
-        config = SimulationService.get_configuration()
-        if not config:
-            return 0.0
-            
-        today = datetime.date.today()
-        birth_date = datetime.datetime.strptime(config['birth_date'], "%Y-%m-%d").date() if isinstance(config['birth_date'], str) else config['birth_date']
-        months_age = (today.year - birth_date.year) * 12 + today.month - birth_date.month - (today.day < birth_date.day)
-        
-        _, _, _, _, required_monthly_contribution = SimulationService.calculate_simulation_params(
-            months_age,
-            config['retirement_age'],
-            config['desired_income_mw'],
-            config['annual_interest_rate'],
-            config['mw_value'],
-            config['initial_equity_input']
-        )
-        return required_monthly_contribution

@@ -18,7 +18,7 @@ class PlanningView:
         with col5:
             st.number_input("Valor Atual do Salário Mínimo (R$)", min_value=1000.0, max_value=5000.0, key="mw_value", step=10.0, on_change=self._save_params)
         with col6:
-            st.number_input("Patrimônio Atual Inicial (R$)", min_value=0.0, key="initial_equity_input", step=1000.0, on_change=self._save_params)
+            st.number_input("Patrimônio Inicial (R$)", min_value=0.0, key="initial_equity_input", step=1000.0, on_change=self._save_params)
 
         # Unified Service call (Single source of truth)
         sim = SimulationService.get_current_simulation()
@@ -52,10 +52,10 @@ class PlanningView:
         with col1:
             birth_date = st.date_input("Data de Nascimento", key="birth_date", format="DD/MM/YYYY", on_change=self._save_params)
             today = datetime.date.today()
-            
+
             # Calculate exact age in months
             months_age = (today.year - birth_date.year) * 12 + today.month - birth_date.month - (today.day < birth_date.day)
-            
+
             # Age in complete years for user display
             current_age = months_age // 12
 
@@ -75,11 +75,11 @@ class PlanningView:
         total_time_months = sim["total_time_months"]
         total_time_years = total_time_months // 12
         total_time_months_leftover = total_time_months % 12
-        
+
         remaining_time_months = sim["remaining_time_months"]
         remaining_time_years = remaining_time_months // 12
         remaining_months_leftover = remaining_time_months % 12
-        
+
         start_age_years = int(sim["start_age_years"])
         current_age_years = int(sim["current_age"])
 
@@ -92,15 +92,16 @@ class PlanningView:
         res_col1.metric("Renda Mensal Alvo", Formatter.format_currency(sim["target_monthly_income"]))
         res_col2.metric("Meta de Patrimônio (Viver de Juros)", Formatter.format_currency(sim["target_equity"]))
         res_col3.metric("Aporte Mensal Necessário", Formatter.format_currency(sim["required_monthly_contribution"]))
-        res_col4.metric("Aporte Mensal Atualizado", Formatter.format_currency(sim["updated_monthly_contribution"]))
+        res_col4.metric("Aporte Mensal Atualizado", Formatter.format_currency(sim["updated_monthly_contribution"]),
+                        help="Aporte mensal atualizado com base no capital investido e o tempo restante")
 
     def _render_projection_chart(self, sim):
         df_projection = SimulationService.build_projection_dataframe(
-            sim["current_age"], 
-            sim["remaining_time_months"], 
-            sim["initial_equity_input"], 
-            sim["required_monthly_contribution"], 
-            sim["monthly_interest_rate"], 
+            sim["current_age"],
+            sim["remaining_time_months"],
+            sim["initial_equity_input"],
+            sim["required_monthly_contribution"],
+            sim["monthly_interest_rate"],
             sim["target_equity"]
         )
 

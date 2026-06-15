@@ -89,6 +89,30 @@ class MarketData:
         return quotes
 
     @staticmethod
+    @st.cache_data(ttl=3600) # Cache for 1 hour
+    def get_ticker_details(ticker: str) -> dict:
+        """Fetches advanced real-time metrics and historical data for a ticker from Yahoo Finance."""
+        ticker_sa = f"{ticker.strip().upper()}.SA"
+        try:
+            t = yf.Ticker(ticker_sa)
+            info = t.info
+            
+            # Fetch 1 year of historical close prices for the behavior chart
+            history = t.history(period="1y")
+            
+            return {
+                "current_price": info.get("currentPrice", info.get("lastPrice", info.get("regularMarketPrice", 0.0))),
+                "dy": info.get("dividendYield", 0.0) * 100 if info.get("dividendYield") is not None else 0.0,
+                "pe": info.get("trailingPE", 0.0) if info.get("trailingPE") is not None else 0.0,
+                "pb": info.get("priceToBook", 0.0) if info.get("priceToBook") is not None else 0.0,
+                "high_52w": info.get("fiftyTwoWeekHigh", 0.0) if info.get("fiftyTwoWeekHigh") is not None else 0.0,
+                "low_52w": info.get("fiftyTwoWeekLow", 0.0) if info.get("fiftyTwoWeekLow") is not None else 0.0,
+                "history": history
+            }
+        except Exception:
+            return {}
+
+    @staticmethod
     @st.cache_data(ttl=2592000) # Cache for 30 days
     def get_current_minimum_wage() -> float:
         """Dynamically fetches the current Brazilian minimum wage from the Banco Central (BCB) API."""

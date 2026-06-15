@@ -10,19 +10,17 @@ class PlanejamentoView:
     def render(self):
         st.header("Simulador de Independência Financeira")
 
-        current_age = self._render_life_parameters()
-
-        suggested_equity = st.session_state.get('calculated_equity_cache', 0.0)
+        current_age, months_age = self._render_life_parameters()
 
         st.markdown("---")
         col5, col6 = st.columns(2)
         with col5:
             st.number_input("Valor Atual do Salário Mínimo (R$)", min_value=1000.0, max_value=5000.0, key="mw_value", step=10.0, on_change=self._save_params)
         with col6:
-            initial_equity_input = st.number_input("Patrimônio Atual Inicial (R$)", min_value=0.0, value=suggested_equity, step=1000.0, on_change=self._save_params)
+            initial_equity_input = st.number_input("Patrimônio Atual Inicial (R$)", min_value=0.0, key="initial_equity_input", step=1000.0, on_change=self._save_params)
 
         simulation_months, target_monthly_income, monthly_interest_rate, target_equity, required_monthly_contribution = SimulationService.calculate_simulation_params(
-            current_age,
+            months_age,
             st.session_state.retirement_age,
             st.session_state.desired_income_mw,
             st.session_state.annual_interest_rate,
@@ -33,7 +31,7 @@ class PlanejamentoView:
         # Cache in state for Dashboard integration
         st.session_state.required_monthly_contribution_cache = required_monthly_contribution
 
-        self._render_time_metrics(current_age)
+        self._render_time_metrics(current_age, months_age)
         self._render_simulation_results(target_monthly_income, target_equity, required_monthly_contribution)
         self._render_projection_chart(current_age, simulation_months, initial_equity_input, required_monthly_contribution, monthly_interest_rate, target_equity)
 
@@ -56,7 +54,12 @@ class PlanejamentoView:
         with col1:
             birth_date = st.date_input("Data de Nascimento", key="birth_date", format="DD/MM/YYYY", on_change=self._save_params)
             today = datetime.date.today()
-            current_age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+            
+            # Calculate exact age in months
+            months_age = (today.year - birth_date.year) * 12 + today.month - birth_date.month - (today.day < birth_date.day)
+            
+            # Age in complete years for user display
+            current_age = months_age // 12
 
         with col2:
             st.number_input("Idade Alvo de Aposentadoria", min_value=current_age+1, max_value=100, key="retirement_age", step=1, on_change=self._save_params)
@@ -65,19 +68,22 @@ class PlanejamentoView:
         with col4:
             st.number_input("Taxa de Juros Real (% a.a.)", min_value=1.0, max_value=15.0, key="annual_interest_rate", step=0.5, on_change=self._save_params)
 
-        return current_age
+        return current_age, months_age
 
-    def _render_time_metrics(self, current_age):
+    def _render_time_metrics(self, current_age, months_age):
         st.subheader("⏳ Prazos de Investimentos")
         col_t1, col_t2 = st.columns(2)
 
         start_age = SimulationService.get_initial_investment_age(st.session_state.birth_date)
         total_time_years = st.session_state.retirement_age - start_age
-        remaining_time_years = st.session_state.retirement_age - current_age
-        remaining_time_months = remaining_time_years * 12
+        
+        # Calculate exact remaining months and years
+        remaining_time_months = max(0, st.session_state.retirement_age * 12 - months_age)
+        remaining_time_years = remaining_time_months // 12
+        remaining_months_leftover = remaining_time_months % 12
 
         col_t1.metric("Tempo Total de Investimento", f"{total_time_years} Anos", f"Planejamento iniciado aos {start_age} anos")
-        col_t2.metric("Tempo Restante de Aporte", f"{remaining_time_years} Anos ({remaining_time_months} meses)", f"Sua idade atual hoje: {current_age} anos")
+        col_t2.metric("Tempo Restante de Aporte", f"{remaining_time_years} Anos e {remaining_months_leftover} meses ({remaining_time_months} meses)", f"Sua idade atual hoje: {current_age} anos")
 
     def _render_simulation_results(self, target_monthly_income, target_equity, required_monthly_contribution):
         st.subheader("🎯 Resultados da Simulação")

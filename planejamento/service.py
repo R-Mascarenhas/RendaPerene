@@ -53,15 +53,24 @@ class SimulationService:
             conn.close()
 
     @staticmethod
-    def calculate_simulation_params(current_age, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input):
-        simulation_months = (retirement_age - current_age) * 12
+    def calculate_simulation_params(months_age, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input):
+        """
+        Calculates simulation parameters using PMT Annuity Due (Type = 1) matching Excel's `=PMT(rate, nper, pv, -fv, 1)`.
+        Uses internal months_age to find the exact target simulation period.
+        """
+        simulation_months = max(0, retirement_age * 12 - months_age)
         target_monthly_income = desired_income_mw * mw_value
         monthly_interest_rate = (1 + annual_interest_rate / 100) ** (1 / 12) - 1
         target_equity = target_monthly_income / monthly_interest_rate if monthly_interest_rate > 0 else 0.0
 
         if simulation_months > 0 and monthly_interest_rate > 0:
             interest_factor = (1 + monthly_interest_rate) ** simulation_months
-            required_monthly_contribution = (target_equity - initial_equity_input * interest_factor) * monthly_interest_rate / (interest_factor - 1)
+            
+            # PMT Annuity Due formula: payments at start of month (Excel type = 1)
+            # Math: PMT = [FV - PV * (1+r)^n] * r / [((1+r)^n - 1) * (1+r)]
+            numerator = target_equity - initial_equity_input * interest_factor
+            denominator = ((interest_factor - 1) / monthly_interest_rate) * (1 + monthly_interest_rate)
+            required_monthly_contribution = numerator / denominator if denominator > 0 else 0.0
             required_monthly_contribution = max(0.0, required_monthly_contribution)
         else:
             required_monthly_contribution = 0.0
@@ -78,6 +87,8 @@ class SimulationService:
         conn.close()
 
         start_date = datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
+        
+        # Calculate start age in complete years
         start_age = start_date.year - birth_date.year - ((start_date.month, start_date.day) < (birth_date.month, birth_date.day))
         return start_age
 
@@ -90,8 +101,13 @@ class SimulationService:
         ages_array = current_age + (months_array / 12)
         
         cumulative_invested = initial_equity + months_array * required_monthly_contribution
-        projected_equity = initial_equity * (1 + monthly_interest_rate)**months_array + \
-                           required_monthly_contribution * (((1 + monthly_interest_rate)**months_array - 1) / monthly_interest_rate)
+        
+        # Balance projection using Annuity Due compound interest (payment at start of month)
+        # Math: FV_n = PV * (1+r)^n + PMT * (1+r) * [((1+r)^n - 1) / r]
+        interest_factors = (1 + monthly_interest_rate)**months_array
+        projected_equity = initial_equity * interest_factors + \
+                           required_monthly_contribution * (1 + monthly_interest_rate) * ((interest_factors - 1) / monthly_interest_rate)
+                           
         cumulative_interest = projected_equity - cumulative_invested
         
         return pd.DataFrame({

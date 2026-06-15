@@ -1,0 +1,28 @@
+# Virtual Environment
+venv/
+env/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Databases (Sensitive / Local)
+*.db
+carteira.db
+assets.db
+test_carteira.db
+test_assets.db
+
+# Spreadsheets (Sensitive)
+*.ods
+*.xlsx
+*.csv
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+out/
+.gemini/

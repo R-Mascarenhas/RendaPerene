@@ -4,9 +4,9 @@ import os
 import datetime
 import pandas as pd
 from core.database import db, DatabaseManager
-from lancamentos.service import TransactionService
-from dashboard.service import DashboardService
-from planning.service import SimulationService
+from lancamentos.transactions_service import TransactionService
+from dashboard.dashboard_service import DashboardService
+from planning.planning_service import SimulationService
 
 TEST_PERSONAL_DB = "test_carteira.db"
 TEST_ASSETS_DB = "test_assets.db"
@@ -283,4 +283,77 @@ def test_get_current_simulation_math():
     # Verify that the calculation returns a valid, positive monthly contribution target
     assert sim["required_monthly_contribution"] > 0.0
     assert sim["total_time_months"] > 0
+
+def test_views_and_services_sanity():
+    """
+    Automated SCM Sanity and View Import/Attribute Verification Test.
+    Ensures all split Views, Component Widgets, and Services are correctly imported
+    and that no attributes, methods, or dynamic files are broken or missing.
+    """
+    # 1. Verify Domain Services imports and critical attributes
+    from dashboard.dashboard_service import DashboardService
+    assert hasattr(DashboardService, "calculate_positions")
+    assert hasattr(DashboardService, "calculate_historical_evolution")
+    assert hasattr(DashboardService, "get_ytd_contributions")
+    assert hasattr(DashboardService, "get_monthly_contributions_by_year")
+
+    from planning.planning_service import SimulationService
+    assert hasattr(SimulationService, "get_configuration")
+    assert hasattr(SimulationService, "save_configuration")
+    assert hasattr(SimulationService, "get_initial_investment_age")
+    assert hasattr(SimulationService, "get_current_simulation")
+    assert hasattr(SimulationService, "build_projection_dataframe")
+    assert hasattr(SimulationService, "get_current_required_contribution")
+
+    from lancamentos.transactions_service import TransactionService
+    assert hasattr(TransactionService, "add_transaction")
+    assert hasattr(TransactionService, "add_dividend")
+    assert hasattr(TransactionService, "process_b3_import")
+    assert hasattr(TransactionService, "get_quantity_on_date")
+    assert hasattr(TransactionService, "get_asset_transactions")
+    assert hasattr(TransactionService, "get_asset_dividends")
+    assert hasattr(TransactionService, "get_asset_metadata")
+    assert hasattr(TransactionService, "get_years_with_dividends")
+    assert hasattr(TransactionService, "get_asset_years_with_dividends")
+    assert hasattr(TransactionService, "get_annual_dividends_pivot")
+    assert hasattr(TransactionService, "get_asset_annual_dividends_pivot")
+
+    # 2. Verify Domain Views and Coordinator Tabs
+    from dashboard.dashboard_view import DashboardView
+    assert hasattr(DashboardView, "render")
+
+    from planning.planning_view import PlanningView
+    assert hasattr(PlanningView, "render")
+
+    from lancamentos.transactions_view import LancamentosView
+    assert hasattr(LancamentosView, "render")
+
+    # 3. Verify Sub-tab Views
+    from lancamentos.operations.operations_view import OperationsView
+    assert hasattr(OperationsView, "render")
+
+    from lancamentos.assets.assets_view import AssetsView
+    assert hasattr(AssetsView, "render")
+
+    # 4. Verify SRP Component Widgets
+    from dashboard.components.annual_planning import AnnualPlanningWidget
+    assert hasattr(AnnualPlanningWidget, "render")
+
+    from dashboard.components.patrimony_summary import PatrimonySummaryWidget
+    assert hasattr(PatrimonySummaryWidget, "render")
+
+    from dashboard.components.detailed_holdings import DetailedHoldingsWidget
+    assert hasattr(DetailedHoldingsWidget, "render")
+
+    from dashboard.components.charts import DashboardCharts
+    assert hasattr(DashboardCharts, "render")
+
+    from planning.components.time_metrics import TimeMetricsWidget
+    assert hasattr(TimeMetricsWidget, "render")
+
+    from planning.components.simulation_results import SimulationResultsWidget
+    assert hasattr(SimulationResultsWidget, "render")
+
+    from planning.components.projection_chart import ProjectionChartWidget
+    assert hasattr(ProjectionChartWidget, "render")
 

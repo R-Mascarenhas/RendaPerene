@@ -28,7 +28,7 @@ class PlanningView:
             # Dynamically calculated from B3 database transactions
             st.metric(
                 "Capital Investido Atual",
-                f"R$ {sim['capital_investido']:,.2f}",
+                f"R$ {sim['total_invested']:,.2f}",
                 help="Calculado de forma automatizada a partir do seu histórico de compras na B3"
             )
 

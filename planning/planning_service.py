@@ -142,7 +142,7 @@ class SimulationService:
             "required_monthly_contribution": required_monthly_contribution,
             "updated_monthly_contribution": updated_monthly_contribution,
             "mw_value": config['mw_value'],
-            "capital_investido": total_invested, # Dynamically calculated from B3 transactions
+            "total_invested": total_invested,
             "retirement_age": config['retirement_age'],
             "desired_income_mw": config['desired_income_mw'],
             "annual_interest_rate": config['annual_interest_rate']

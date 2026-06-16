@@ -93,7 +93,7 @@ class DashboardCharts:
 
             for idx, row in df_evolution.iterrows():
                 period_interest = last_equity * monthly_interest_rate
-                next_equity = last_equity * (1 + monthly_interest_rate) + monthly_contribution
+                next_equity = last_equity + monthly_contribution
                 next_dividends = last_dividends + period_interest
 
                 planned_cumulative.append(next_equity)

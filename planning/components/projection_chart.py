@@ -7,11 +7,11 @@ class ProjectionChartWidget:
 
     def render(self, sim):
         df_projection = SimulationService.build_projection_dataframe(
-            sim["current_age"], 
-            sim["remaining_time_months"], 
-            sim["capital_investido"], 
+            sim["start_age_years"],
+            sim["remaining_time_months"],
+            sim["total_invested"],
             sim["updated_monthly_contribution"],
-            sim["monthly_interest_rate"], 
+            sim["monthly_interest_rate"],
             sim["target_equity"]
         )
 

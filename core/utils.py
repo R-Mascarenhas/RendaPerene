@@ -11,7 +11,7 @@ class SessionManager:
         """Initializes shared parameters in the Session State on the first page load."""
 
         # We need to import the service here to avoid circular imports during startup
-        from planning.service import SimulationService
+        from planning.planning_service import SimulationService
 
         # Load from Database on first run
         if 'db_loaded' not in st.session_state:
@@ -62,8 +62,8 @@ class Formatter:
         return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     @staticmethod
-    def format_month_pt(month_str: str) -> str:
-        """Formats a YYYY-MM date to the Brazilian Month/Year format (e.g., Jan/2021)."""
+    def format_month_year(month_str: str) -> str:
+        """Formats a YYYY-MM date to the Month/Year format (e.g., Jan/2021)."""
         try:
             year, month = month_str.split('-')
             return f"{MONTHS_PT[month]}/{year}"
@@ -96,10 +96,10 @@ class MarketData:
         try:
             t = yf.Ticker(ticker_sa)
             info = t.info
-            
+
             # Fetch 1 year of historical close prices for the behavior chart
             history = t.history(period="1y")
-            
+
             return {
                 "current_price": info.get("currentPrice", info.get("lastPrice", info.get("regularMarketPrice", 0.0))),
                 "dy": info.get("dividendYield", 0.0) * 100 if info.get("dividendYield") is not None else 0.0,

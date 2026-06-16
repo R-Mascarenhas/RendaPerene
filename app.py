@@ -1,4 +1,5 @@
 import streamlit as st
+import importlib
 from core.database import db
 from core.utils import SessionManager
 
@@ -15,13 +16,13 @@ SessionManager.initialize()
 st.title("💼 Carteira de Investimentos")
 
 # Import Views from Domains
-from dashboard.view import DashboardView
-from lancamentos.view import LancamentosView
-from planning.view import PlanningView
+from dashboard.dashboard_view import DashboardView
+from lancamentos.transactions_view import LancamentosView
+from planning.planning_view import PlanningView
 
 # Create 3 main tabs
 tab_dashboard, tab_planning, tab_lancamentos = st.tabs([
-    "📊 Dashboard (Resumo)",
+    "📊 Dashboard (Resumo)", 
     "🎯 Planejamento",
     "📝 Lançamentos & B3"
 ])

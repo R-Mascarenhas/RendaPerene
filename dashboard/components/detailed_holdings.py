@@ -32,4 +32,4 @@ class DetailedHoldingsWidget:
         df_table['YoC Total (%)'] = df_table['YoC Total (%)'].map(lambda x: f"{x:.2f}%")
         df_table['YoC 12M (%)'] = df_table['YoC 12M (%)'].map(lambda x: f"{x:.2f}%")
 
-        st.dataframe(df_table, use_container_width=True, hide_index=True)
+        st.dataframe(df_table, width="stretch", hide_index=True)

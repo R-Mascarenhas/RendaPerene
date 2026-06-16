@@ -1,6 +1,8 @@
 import streamlit as st
 import yfinance as yf
 import datetime
+import os
+import pandas as pd
 from core.constants import MONTHS_PT
 
 class SessionManager:
@@ -63,12 +65,13 @@ class Formatter:
 
     @staticmethod
     def format_month_year(month_str: str) -> str:
-        """Formats a YYYY-MM date to the Month/Year format (e.g., Jan/2021)."""
-        try:
-            year, month = month_str.split('-')
-            return f"{MONTHS_PT[month]}/{year}"
-        except Exception:
+        """Conbertes YYYY-MM into PT-BR display month (ex: Jan/2021)."""
+        if len(month_str) < 7:
             return month_str
+        yr = month_str[:4]
+        m_num = month_str[5:7]
+        m_pt = MONTHS_PT.get(m_num, m_num)
+        return f"{m_pt}/{yr}"
 
 class MarketData:
     """Class responsible for integrations with market APIs."""
@@ -96,8 +99,6 @@ class MarketData:
         try:
             t = yf.Ticker(ticker_sa)
             info = t.info
-
-            # Fetch 1 year of historical close prices for the behavior chart
             history = t.history(period="1y")
 
             return {
@@ -117,7 +118,6 @@ class MarketData:
     def get_current_minimum_wage() -> float:
         """Dynamically fetches the current Brazilian minimum wage from the Banco Central (BCB) API."""
         import requests
-        # BCB SGS Serie 1619 - Salário Mínimo
         url = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.1619/dados/ultimos/1?formato=json'
         try:
             response = requests.get(url, timeout=5)
@@ -126,4 +126,12 @@ class MarketData:
                 return float(data[0]['valor'])
         except Exception:
             pass
-        return 1621.0 # Hardcoded fallback if API fails
+        return 1621.0
+
+    @staticmethod
+    @st.cache_data
+    def load_assets_catalog():
+        """Loads the B3 assets static catalog from assets.csv into memory RAM (Vastly faster!)."""
+        if os.path.exists("assets.csv"):
+            return pd.read_csv("assets.csv", dtype=str, encoding="utf-8-sig").set_index("CÓDIGO")
+        return pd.DataFrame()

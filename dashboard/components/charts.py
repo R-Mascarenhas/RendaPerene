@@ -26,16 +26,16 @@ class DashboardCharts:
                 hole=0.4
             )
             fig_sectors.update_traces(textposition='inside', textinfo='percent+label', hovertemplate="<b>%{label}</b><br>Valor: R$ %{value:,.2f} (%{percent})<extra></extra>")
-            st.plotly_chart(fig_sectors, use_container_width=True)
+            st.plotly_chart(fig_sectors, width="stretch")
 
         with chart_col2:
             df_chart_evol = df_positions[['ticker', 'invested_amount', 'current_value']].copy()
             df_chart_evol = df_chart_evol.rename(columns={'invested_amount': 'Investido', 'current_value': 'Atual'})
             df_chart_evol = df_chart_evol.sort_values(by="Investido", ascending=False)
-            
+
             fig_evol = px.bar(
-                df_chart_evol, 
-                x="ticker", 
+                df_chart_evol,
+                x="ticker",
                 y=["Investido", "Atual"],
                 barmode="group",
                 title="Evolução por ativo",
@@ -44,7 +44,7 @@ class DashboardCharts:
             )
             fig_evol.update_traces(hovertemplate="<b>%{x}</b><br>Valor: R$ %{y:,.2f}<extra></extra>")
             fig_evol.update_layout(yaxis_tickformat="R$ ,.2f")
-            st.plotly_chart(fig_evol, use_container_width=True)
+            st.plotly_chart(fig_evol, width="stretch")
 
         with chart_col3:
             df_chart_prov = df_positions[df_positions["total_dividends"] > 0].sort_values(by="total_dividends", ascending=True)
@@ -61,25 +61,21 @@ class DashboardCharts:
                 )
                 fig_proventos.update_traces(hovertemplate="<b>%{y}</b><br>Proventos: R$ %{x:,.2f}<extra></extra>")
                 fig_proventos.update_layout(xaxis_tickformat="R$ ,.2f")
-                st.plotly_chart(fig_proventos, use_container_width=True)
+                st.plotly_chart(fig_proventos, width="stretch")
 
     def _render_evolution_chart(self):
         st.markdown("---")
         df_evolution = DashboardService.calculate_historical_evolution()
-        
+
         if not df_evolution.empty:
             st.subheader("📈 Evolução Patrimonial Histórica & Planejamento")
-            
+
             df_evolution = df_evolution.sort_values(by="month_str").reset_index(drop=True)
             df_evolution['month_display'] = df_evolution['month_str'].apply(Formatter.format_month_year)
-            
+
             planned_cumulative = []
             planned_dividends_cumulative = []
-            
-            # Start from the actual first month's cumulative invested
-            prev_planned_equity = df_evolution.loc[0, 'cumulative_invested']
-            prev_planned_dividends = 0.0
-            
+
             # Dynamic interest rate and contribution from the configuration database
             from planning.planning_service import SimulationService
             config = SimulationService.get_configuration()
@@ -88,30 +84,30 @@ class DashboardCharts:
                 monthly_interest_rate = (1 + annual_interest_rate / 100) ** (1 / 12) - 1
             else:
                 monthly_interest_rate = (1 + 6.0 / 100) ** (1 / 12) - 1
-                
-            monthly_contribution = SimulationService.get_current_required_contribution()
-            
+
+            monthly_contribution = SimulationService.get_required_contribution()
+
+            # Start compounding from exactly 0.0 at month 0, growing linearly and compounding interest
+            last_equity = 0.0
+            last_dividends = 0.0
+
             for idx, row in df_evolution.iterrows():
-                if idx == 0:
-                    planned_cumulative.append(prev_planned_equity)
-                    planned_dividends_cumulative.append(prev_planned_dividends)
-                else:
-                    last_equity = planned_cumulative[-1]
-                    last_dividends = planned_dividends_cumulative[-1]
-                    
-                    period_interest = last_equity * monthly_interest_rate
-                    next_equity = last_equity * (1 + monthly_interest_rate) + monthly_contribution
-                    next_dividends = last_dividends + period_interest
-                    
-                    planned_cumulative.append(next_equity)
-                    planned_dividends_cumulative.append(next_dividends)
-                    
+                period_interest = last_equity * monthly_interest_rate
+                next_equity = last_equity * (1 + monthly_interest_rate) + monthly_contribution
+                next_dividends = last_dividends + period_interest
+
+                planned_cumulative.append(next_equity)
+                planned_dividends_cumulative.append(next_dividends)
+
+                last_equity = next_equity
+                last_dividends = next_dividends
+
             df_evolution['planned_equity'] = planned_cumulative
             df_evolution['planned_dividends'] = planned_dividends_cumulative
-            
+
             # Dual-timeline multi-axis figure
             fig_multi = make_subplots(specs=[[{"secondary_y": True}]])
-            
+
             # 1. Real Invested Capital (Solid Blue)
             fig_multi.add_trace(
                 go.Scatter(
@@ -125,7 +121,7 @@ class DashboardCharts:
                 ),
                 secondary_y=False
             )
-            
+
             # 2. Planned Capital / Target (Dashed Blue)
             fig_multi.add_trace(
                 go.Scatter(
@@ -138,7 +134,7 @@ class DashboardCharts:
                 ),
                 secondary_y=False
             )
-            
+
             # 3. Real Total Dividends Received (Solid Green)
             fig_multi.add_trace(
                 go.Scatter(
@@ -152,7 +148,7 @@ class DashboardCharts:
                 ),
                 secondary_y=False
             )
-            
+
             # 4. Planned Dividends (Dashed Green)
             fig_multi.add_trace(
                 go.Scatter(
@@ -165,10 +161,10 @@ class DashboardCharts:
                 ),
                 secondary_y=False
             )
-            
+
             # Labels for the columns
             bar_labels = [f"R$ {val:,.0f}".replace(",", ".") if val > 0 else "" for val in df_evolution['monthly_dividend']]
-            
+
             # 5. Monthly Dividends received (Translucent Yellow Bar)
             fig_multi.add_trace(
                 go.Bar(
@@ -178,35 +174,38 @@ class DashboardCharts:
                     marker_color="rgba(242, 196, 26, 0.6)",
                     text=bar_labels,
                     textposition="outside",
+                    # High-contrast dark grey color and 16px size!
+                    textfont=dict(size=12, color="#f2c41a", family="sans-serif"),
                     hovertemplate="Proventos (Mês): R$ %{y:,.2f}<extra></extra>"
                 ),
                 secondary_y=True
             )
-            
+
             fig_multi.update_layout(
                 title_text="Histórico de Evolução Patrimonial: Real vs. Planejado",
                 hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0.01)
+                legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0.01),
+                uniformtext=dict(minsize=12, mode="show")
             )
-            
+
             fig_multi.update_yaxes(title_text="Valores Acumulados (R$)", tickformat="R$ ,.2f", secondary_y=False)
             fig_multi.update_yaxes(title_text="Proventos Mensais Recebidos (R$)", tickformat="R$ ,.2f", secondary_y=True)
             fig_multi.update_xaxes(title_text="Linha do Tempo (Mês/Ano)", type="category", tickangle=-45, tickmode="linear")
-            
-            st.plotly_chart(fig_multi, use_container_width=True)
+
+            st.plotly_chart(fig_multi, width="stretch")
 
     def _render_monthly_contributions_chart(self):
         st.markdown("---")
         df_contribs = DashboardService.get_monthly_contributions_by_year()
         if not df_contribs.empty:
             st.subheader("📊 Histórico de Aportes por Ano e Mês")
-            
+
             df_contribs['Mês'] = df_contribs['month'].map(MONTHS_PT)
             df_contribs = df_contribs.sort_values(by=['month'])
-            
+
             meses_completos = list(MONTHS_PT.values())
             anos_ordenados = sorted(df_contribs['year'].unique().tolist())
-            
+
             fig_contribs = px.bar(
                 df_contribs,
                 x="Mês",
@@ -217,9 +216,9 @@ class DashboardCharts:
                 labels={"amount": "Valor Aportado (R$)", "Mês": "Mês", "year": "Ano"},
                 category_orders={"year": anos_ordenados}
             )
-            
+
             fig_contribs.update_traces(hovertemplate="Ano: %{data.name}<br>Mês: %{x}<br>Aporte: R$ %{y:,.2f}<extra></extra>")
             fig_contribs.update_xaxes(categoryorder='array', categoryarray=meses_completos)
             fig_contribs.update_layout(yaxis_tickformat="R$ ,.2f")
-            
-            st.plotly_chart(fig_contribs, use_container_width=True)
+
+            st.plotly_chart(fig_contribs, width="stretch")

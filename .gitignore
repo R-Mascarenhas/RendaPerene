@@ -17,7 +17,6 @@ test_assets.db
 # Spreadsheets (Sensitive)
 *.ods
 *.xlsx
-*.csv
 
 # OS generated files
 .DS_Store

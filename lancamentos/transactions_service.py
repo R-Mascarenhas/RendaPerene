@@ -1,8 +1,34 @@
 import pandas as pd
 from core.database import db
+from core.utils import MarketData
 
 class TransactionService:
     """Domain Service for managing transactions, dividends, and B3 integrations."""
+
+    @staticmethod
+    def register_fallback_asset(ticker: str):
+        """Appends a fallback asset to assets.csv if not found in the catalog."""
+        import os
+        import streamlit as st
+        
+        if os.path.exists("assets.csv"):
+            df = pd.read_csv("assets.csv", dtype=str, encoding="utf-8-sig")
+            df.columns = df.columns.str.strip()
+            if ticker not in df['CÓDIGO'].values:
+                new_row = pd.DataFrame([{
+                    "CÓDIGO": ticker,
+                    "NOME": f"Asset {ticker}",
+                    "IMAGEM": "",
+                    "CNPJ": "",
+                    "SETOR ECONÔMICO": "Outros",
+                    "SUBSETOR": "",
+                    "SEGMENTO / ADM / PAÍS": "",
+                    "TIPO": "Ação",
+                    "SEGMENTO": ""
+                }])
+                df = pd.concat([df, new_row], ignore_index=True)
+                df.to_csv("assets.csv", index=False, encoding="utf-8-sig")
+                st.cache_data.clear()
 
     @staticmethod
     def add_transaction(ticker: str, date: str, transaction_type: str, quantity: int, unit_price: float, fees: float = 0.0) -> bool:
@@ -19,17 +45,10 @@ class TransactionService:
             conn_pers.close()
             return False # Skipped duplicate
             
-        # Ensure the asset exists in the assets database
-        conn_assets = db.get_assets_connection()
-        cursor_assets = conn_assets.cursor()
-        cursor_assets.execute("SELECT ticker FROM assets WHERE ticker = ?", (ticker,))
-        if not cursor_assets.fetchone():
-            cursor_assets.execute(
-                "INSERT INTO assets (ticker, name, image, cnpj, sector, sub_sector, segment, asset_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (ticker, f"Asset {ticker}", "", "", "Outros", "", "", "Ação")
-            )
-            conn_assets.commit()
-        conn_assets.close()
+        # Ensure the asset exists in the assets CSV catalog
+        catalog = MarketData.load_assets_catalog()
+        if catalog.empty or ticker not in catalog.index:
+            TransactionService.register_fallback_asset(ticker)
             
         cursor_pers.execute('''
             INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees)
@@ -55,17 +74,10 @@ class TransactionService:
             conn_pers.close()
             return False
             
-        # Ensure the asset exists in the assets database
-        conn_assets = db.get_assets_connection()
-        cursor_assets = conn_assets.cursor()
-        cursor_assets.execute("SELECT ticker FROM assets WHERE ticker = ?", (ticker,))
-        if not cursor_assets.fetchone():
-            cursor_assets.execute(
-                "INSERT INTO assets (ticker, name, image, cnpj, sector, sub_sector, segment, asset_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (ticker, f"Asset {ticker}", "", "", "Outros", "", "", "Ação")
-            )
-            conn_assets.commit()
-        conn_assets.close()
+        # Ensure the asset exists in the assets CSV catalog
+        catalog = MarketData.load_assets_catalog()
+        if catalog.empty or ticker not in catalog.index:
+            TransactionService.register_fallback_asset(ticker)
             
         cursor_pers.execute('''
             INSERT INTO dividends (date, ticker, dividend_type, total_value)
@@ -193,25 +205,30 @@ class TransactionService:
 
     @staticmethod
     def get_asset_metadata(ticker: str) -> dict:
-        """Returns all static metadata for a specific ticker from assets.db."""
-        conn = db.get_assets_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT name, image, cnpj, sector, sub_sector, segment, asset_type FROM assets WHERE ticker = ?", (ticker,))
-            res = cursor.fetchone()
-            if res:
-                return {
-                    "name": res[0],
-                    "image": res[1],
-                    "cnpj": res[2],
-                    "sector": res[3],
-                    "sub_sector": res[4],
-                    "segment": res[5],
-                    "asset_type": res[6]
-                }
-            return {}
-        finally:
-            conn.close()
+        """Returns static metadata for a specific ticker from the local assets.csv catalog."""
+        catalog = MarketData.load_assets_catalog()
+        if not catalog.empty and ticker in catalog.index:
+            row = catalog.loc[ticker]
+            if isinstance(row, pd.DataFrame):
+                row = row.iloc[0]
+            return {
+                "name": str(row.get('NOME', 'Nome não disponível')),
+                "image": str(row.get('IMAGEM', '')) if pd.notna(row.get('IMAGEM')) else '',
+                "cnpj": str(row.get('CNPJ', 'N/D')) if pd.notna(row.get('CNPJ')) else 'N/D',
+                "sector": str(row.get('SETOR ECONÔMICO', 'Outros')) if pd.notna(row.get('SETOR ECONÔMICO')) else 'Outros',
+                "sub_sector": str(row.get('SUBSETOR ', '')) if pd.notna(row.get('SUBSETOR ')) else '',
+                "segment": str(row.get('SEGMENTO / ADM / PAÍS', '')) if pd.notna(row.get('SEGMENTO / ADM / PAÍS')) else '',
+                "asset_type": str(row.get('TIPO', 'Ação')) if pd.notna(row.get('TIPO')) else 'Ação'
+            }
+        return {
+            "name": f"Asset {ticker}",
+            "image": "",
+            "cnpj": "N/D",
+            "sector": "Outros",
+            "sub_sector": "",
+            "segment": "",
+            "asset_type": "Ação"
+        }
 
     @staticmethod
     def get_years_with_dividends() -> list:

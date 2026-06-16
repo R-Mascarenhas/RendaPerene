@@ -1,39 +1,16 @@
 import sqlite3
 
 class DatabaseManager:
-    """Manages SQLite database connections and initialization for separated domains."""
+    """Manages SQLite connection and initialization for the personal transactions domain."""
 
-    def __init__(self, personal_db="database/carteira.db", assets_db="database/assets.db"):
+    def __init__(self, personal_db="database/carteira.db"):
         self.personal_db = personal_db
-        self.assets_db = assets_db
-
-    def init_assets_db(self):
-        """Creates the reference tables in the static assets database."""
-        conn = self.get_assets_connection()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS assets (
-                ticker TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                image TEXT,
-                cnpj TEXT,
-                sector TEXT NOT NULL,
-                sub_sector TEXT,
-                segment TEXT,
-                asset_type TEXT NOT NULL
-            )
-        ''')
-
-        conn.commit()
-        conn.close()
 
     def init_personal_db(self):
         """Creates the user data tables in the personal SQLite database."""
         conn = self.get_personal_connection()
         cursor = conn.cursor()
 
-        # No FOREIGN KEY constraints to assets to allow DB physical separation
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,10 +51,6 @@ class DatabaseManager:
     def get_personal_connection(self):
         """Returns a new connection to the personal transactional database."""
         return sqlite3.connect(self.personal_db)
-
-    def get_assets_connection(self):
-        """Returns a new connection to the static assets metadata database."""
-        return sqlite3.connect(self.assets_db)
 
 # Global Singleton instance for the app
 db = DatabaseManager()

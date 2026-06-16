@@ -8,9 +8,9 @@ class AnnualPlanningWidget:
 
     def render(self, current_year, ytd_dividends):
         ytd_contributions = DashboardService.get_ytd_contributions(current_year)
-        
+
         # Pull planned contribution dynamically from Simulation Service (clean DRY pattern)
-        required_monthly_contribution = SimulationService.get_current_required_contribution()
+        required_monthly_contribution = SimulationService.get_updated_required_contribution()
         annual_salary_goal = required_monthly_contribution * 12
         total_annual_goal = annual_salary_goal + ytd_dividends
 

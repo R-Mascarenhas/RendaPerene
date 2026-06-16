@@ -128,7 +128,7 @@ class AssetsView:
                 }])], ignore_index=True)
 
                 df_pivot_display['Valor (R$)'] = df_pivot_display['Valor (R$)'].map(Formatter.format_currency)
-                st.dataframe(df_pivot_display, use_container_width=True, hide_index=True)
+                st.dataframe(df_pivot_display, width="stretch", hide_index=True)
         else:
             st.info(f"Nenhum provento recebido registrado para o ativo {ticker} no banco de dados.")
 
@@ -165,7 +165,7 @@ class AssetsView:
             )
             fig.update_traces(line_color="#2ca02c", hovertemplate="Data: %{x}<br>Fechamento: R$ %{y:,.2f}<extra></extra>")
             fig.update_layout(yaxis_tickformat="R$ ,.2f")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.info("Dados gráficos de cotações não disponíveis para este ativo no Yahoo Finance.")
 
@@ -182,7 +182,7 @@ class AssetsView:
                 df_tx_display = df_tx.copy()
                 df_tx_display['Valor Unitário'] = df_tx_display['Valor Unitário'].map(Formatter.format_currency)
                 df_tx_display['Valor Total'] = df_tx_display['Valor Total'].map(Formatter.format_currency)
-                st.dataframe(df_tx_display, use_container_width=True, hide_index=True)
+                st.dataframe(df_tx_display, width="stretch", hide_index=True)
             else:
                 st.write("Nenhuma transação registrada.")
 
@@ -206,6 +206,6 @@ class AssetsView:
                 # Format currencies
                 df_div_display['Unitário'] = df_div_display['Unitário'].map(Formatter.format_currency)
                 df_div_display['Total'] = df_div_display['Total'].map(Formatter.format_currency)
-                st.dataframe(df_div_display, use_container_width=True, hide_index=True)
+                st.dataframe(df_div_display, width="stretch", hide_index=True)
             else:
                 st.write("Nenhum provento registrado.")

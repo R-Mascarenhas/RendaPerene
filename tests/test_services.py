@@ -7,47 +7,82 @@ from core.database import db, DatabaseManager
 from lancamentos.transactions_service import TransactionService
 from dashboard.dashboard_service import DashboardService
 from planning.planning_service import SimulationService
+from core.utils import MarketData
 
 TEST_PERSONAL_DB = "test_carteira.db"
-TEST_ASSETS_DB = "test_assets.db"
 
-# Fixture to safely create and remove the test databases
+# Fixture to safely create and remove the test databases and write mock CSV catalog
 @pytest.fixture(autouse=True)
 def mock_db(monkeypatch):
-    for test_db_file in [TEST_PERSONAL_DB, TEST_ASSETS_DB]:
-        if os.path.exists(test_db_file):
-            try:
-                os.remove(test_db_file)
-            except PermissionError:
-                pass
+    if os.path.exists(TEST_PERSONAL_DB):
+        try:
+            os.remove(TEST_PERSONAL_DB)
+        except PermissionError:
+            pass
+            
+    if os.path.exists("test_assets.csv"):
+        os.remove("test_assets.csv")
         
-    test_db = DatabaseManager(TEST_PERSONAL_DB, TEST_ASSETS_DB)
-    test_db.init_assets_db()
+    # Backup real assets.csv if it exists
+    real_csv_exists = os.path.exists("assets.csv")
+    if real_csv_exists:
+        import shutil
+        shutil.copy("assets.csv", "assets.csv.backup")
+        
+    test_db = DatabaseManager(TEST_PERSONAL_DB)
     test_db.init_personal_db()
 
-    # Redirect global db instance to use the test databases
+    # Write a clean mock assets.csv for the tests
+    test_csv_content = (
+        "CÓDIGO,NOME,IMAGEM,CNPJ,SETOR ECONÔMICO,SUBSETOR ,SEGMENTO / ADM / PAÍS,TIPO,SEGMENTO\n"
+        "BBAS3,Banco do Brasil,https://...,00.000.000/0001-91,Financeiro,Intermediários,Bancos,Ação,Bancos\n"
+        "CXSE3,Caixa Seguridade,https://...,00.000.000/0001-92,Seguridade,Seguros,Seguridade,Ação,Seguros\n"
+    )
+    with open("test_assets.csv", "w", encoding="utf-8-sig") as f:
+        f.write(test_csv_content)
+
+    def mock_load_catalog():
+        return pd.read_csv("test_assets.csv", dtype=str, encoding="utf-8-sig").set_index("CÓDIGO")
+
+    # Redirect global db instance to use the test database
     monkeypatch.setattr(db, "get_personal_connection", test_db.get_personal_connection)
-    monkeypatch.setattr(db, "get_assets_connection", test_db.get_assets_connection)
+    monkeypatch.setattr(MarketData, "load_assets_catalog", mock_load_catalog)
     
     yield
     
-    for test_db_file in [TEST_PERSONAL_DB, TEST_ASSETS_DB]:
-        if os.path.exists(test_db_file):
-            try:
-                os.remove(test_db_file)
-            except PermissionError:
-                pass
+    if os.path.exists(TEST_PERSONAL_DB):
+        try:
+            os.remove(TEST_PERSONAL_DB)
+        except PermissionError:
+            pass
+            
+    if os.path.exists("test_assets.csv"):
+        os.remove("test_assets.csv")
+        
+    # Restore real assets.csv from backup
+    if os.path.exists("assets.csv.backup"):
+        import shutil
+        shutil.copy("assets.csv.backup", "assets.csv")
+        os.remove("assets.csv.backup")
+    elif os.path.exists("assets.csv"):
+        os.remove("assets.csv")
 
 def test_add_transaction_and_assets_creation():
-    """Ensures that the transaction creates the asset using the fallback metadata in the assets db."""
-    TransactionService.add_transaction("BBAS3", "2021-04-30", "Compra", 100, 20.00, 5.0)
+    """Ensures that the transaction creates the asset using the fallback metadata in the assets csv."""
+    if os.path.exists("assets_temp.csv"):
+        os.remove("assets_temp.csv")
+    shutil_copy = "cp test_assets.csv assets.csv"
+    import shutil
+    shutil.copy("test_assets.csv", "assets.csv")
     
-    conn = db.get_assets_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT ticker, name, sector FROM assets")
-    asset = cursor.fetchone()
-    assert asset == ("BBAS3", "Asset BBAS3", "Outros")
-    conn.close()
+    TransactionService.add_transaction("MOCK4", "2021-04-30", "Compra", 100, 20.00, 5.0)
+    
+    df = pd.read_csv("assets.csv", dtype=str, encoding="utf-8-sig").set_index("CÓDIGO")
+    assert "MOCK4" in df.index
+    assert df.loc["MOCK4", "NOME"] == "Asset MOCK4"
+    
+    if os.path.exists("assets.csv"):
+        os.remove("assets.csv")
 
 def test_average_price_calculation():
     """Ensures chronologically weighted average price math works perfectly."""
@@ -145,7 +180,8 @@ def test_historical_evolution_calculation():
     
     df_ev = DashboardService.calculate_historical_evolution()
     
-    assert len(df_ev) == 2 
+    # Timeline is continuous up to current month, so length is >= 2
+    assert len(df_ev) >= 2 
     assert df_ev.loc[0, "month_str"] == "2025-01"
     assert df_ev.loc[0, "cumulative_invested"] == 200.00
     assert df_ev.loc[0, "cumulative_dividends"] == 0.00
@@ -225,14 +261,6 @@ def test_get_quantity_on_date():
 
 def test_asset_annual_dividends_pivot():
     """Verifies that the pivot queries group and sum dividend categories correctly for specific assets and years."""
-    # Seed B3 assets metadata table first in assets.db
-    conn_assets = db.get_assets_connection()
-    cursor_assets = conn_assets.cursor()
-    cursor_assets.execute("INSERT OR REPLACE INTO assets (ticker, name, asset_type, sector) VALUES ('BBAS3', 'Banco do Brasil', 'Ação', 'Bancos')")
-    cursor_assets.execute("INSERT OR REPLACE INTO assets (ticker, name, asset_type, sector) VALUES ('CXSE3', 'Caixa Seguridade', 'Ação', 'Seguros')")
-    conn_assets.commit()
-    conn_assets.close()
-
     # 1. Add BBAS3 dividends in 2025
     TransactionService.add_dividend("BBAS3", "2025-05-15", "Dividendo", 50.00)
     TransactionService.add_dividend("BBAS3", "2025-08-15", "JCP", 30.00)
@@ -303,7 +331,8 @@ def test_views_and_services_sanity():
     assert hasattr(SimulationService, "get_initial_investment_age")
     assert hasattr(SimulationService, "get_current_simulation")
     assert hasattr(SimulationService, "build_projection_dataframe")
-    assert hasattr(SimulationService, "get_current_required_contribution")
+    assert hasattr(SimulationService, "get_updated_required_contribution")
+    assert hasattr(SimulationService, "get_required_contribution")
 
     from lancamentos.transactions_service import TransactionService
     assert hasattr(TransactionService, "add_transaction")
@@ -356,4 +385,17 @@ def test_views_and_services_sanity():
 
     from planning.components.projection_chart import ProjectionChartWidget
     assert hasattr(ProjectionChartWidget, "render")
+
+def test_app_py_static_syntax_sanity():
+    """
+    Statically analyzes app.py as plaintext to ensure no obsolete calls
+    or deleted assets database initialization functions are referenced,
+    fully protecting the startup flow before Streamlit boot.
+    """
+    assert os.path.exists("app.py")
+    with open("app.py", "r", encoding="utf-8") as f:
+        content = f.read()
+        
+    assert "init_assets_db" not in content, "FALHA: O arquivo app.py ainda referencia o método obsoleto 'init_assets_db'!"
+    assert "get_assets_connection" not in content, "FALHA: O arquivo app.py ainda referencia a conexão obsoleta 'get_assets_connection'!"
 

@@ -25,4 +25,4 @@ class ProjectionChartWidget:
             )
             fig.update_traces(hovertemplate="Idade: %{x:.2f} anos<br>Valor: R$ %{y:,.2f}<extra></extra>")
             fig.update_layout(yaxis_tickformat="R$ ,.2f")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")

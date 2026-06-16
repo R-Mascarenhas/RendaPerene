@@ -4,7 +4,6 @@ from core.database import db
 from core.utils import SessionManager
 
 # Initialize both local databases at root level
-db.init_assets_db()
 db.init_personal_db()
 
 # Base Page Configuration
@@ -22,7 +21,7 @@ from planning.planning_view import PlanningView
 
 # Create 3 main tabs
 tab_dashboard, tab_planning, tab_lancamentos = st.tabs([
-    "📊 Dashboard (Resumo)", 
+    "📊 Dashboard (Resumo)",
     "🎯 Planejamento",
     "📝 Lançamentos & B3"
 ])

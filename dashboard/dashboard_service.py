@@ -1,6 +1,7 @@
 import pandas as pd
 import datetime
 from core.database import db
+from core.utils import MarketData
 
 class DashboardService:
     """Domain Service for aggregating dashboard data and metrics."""
@@ -12,7 +13,7 @@ class DashboardService:
         calculating the accumulated Quantity, Average Price, Total Dividends, YTD, and L12M.
         """
         conn_pers = db.get_personal_connection()
-        conn_assets = db.get_assets_connection()
+        catalog = MarketData.load_assets_catalog()
         
         if today_date is None:
             today_date = datetime.date.today()
@@ -52,14 +53,16 @@ class DashboardService:
         active_assets = []
         for ticker, info in portfolio_state.items():
             if info['quantity'] > 0:
-                cursor_assets = conn_assets.cursor()
-                cursor_assets.execute("SELECT name, asset_type, sector, segment FROM assets WHERE ticker = ?", (ticker,))
-                res = cursor_assets.fetchone()
-                
-                if res:
-                    name, asset_type, sector, segment = res
-                    asset_type_clean = asset_type.strip().lower() if asset_type else ""
+                if not catalog.empty and ticker in catalog.index:
+                    row = catalog.loc[ticker]
+                    if isinstance(row, pd.DataFrame):
+                        row = row.iloc[0]
+                    name = str(row.get('NOME', f"Asset {ticker}"))
+                    asset_type = str(row.get('TIPO', 'Ação'))
+                    sector = str(row.get('SETOR ECONÔMICO', 'Outros'))
+                    segment = str(row.get('SEGMENTO / ADM / PAÍS', ''))
                     
+                    asset_type_clean = asset_type.strip().lower()
                     if asset_type_clean in ['ação', 'acao']:
                         display_sector = segment if segment else sector
                     elif asset_type_clean == 'etf':
@@ -96,13 +99,13 @@ class DashboardService:
                 })
                 
         conn_pers.close()
-        conn_assets.close()
         return pd.DataFrame(active_assets)
 
     @staticmethod
     def calculate_historical_evolution() -> pd.DataFrame:
         """
         Returns the accumulated monthly history of net contributions and dividends for the evolution chart.
+        Ensures a continuous, chronological monthly sequence with no gaps since the first investment to today.
         """
         conn = db.get_personal_connection()
         df_t = pd.read_sql_query("SELECT date, transaction_type, quantity, unit_price, fees FROM transactions", conn)
@@ -124,7 +127,26 @@ class DashboardService:
         monthly_t = df_t.groupby('month_str')['net_cashflow'].sum().reset_index()
         monthly_d = df_d.groupby('month_str')['total_value'].sum().reset_index().rename(columns={'total_value': 'monthly_dividend'})
         
-        all_months = sorted(list(set(monthly_t['month_str'].tolist() + monthly_d['month_str'].tolist())))
+        # Resolve min starting date string across both tables
+        min_date_t = df_t['date'].min() if not df_t.empty else None
+        min_date_d = df_d['date'].min() if not df_d.empty else None
+        
+        dates = [d for d in [min_date_t, min_date_d] if d is not None]
+        if not dates:
+            return pd.DataFrame()
+            
+        start_date_str = min(dates)
+        start_date = pd.to_datetime(start_date_str).replace(day=1)
+        today = datetime.date.today()
+        
+        # Generate complete, uninterrupted monthly date range from first investment to current date
+        date_range = pd.date_range(start=start_date, end=today, freq='MS')
+        all_months = date_range.strftime('%Y-%m').tolist()
+        
+        # Ensure we always have at least one month represented
+        if not all_months:
+            all_months = [start_date.strftime('%Y-%m')]
+            
         timeline = pd.DataFrame({'month_str': all_months})
         
         timeline = timeline.merge(monthly_t, on='month_str', how='left').fillna(0.0)

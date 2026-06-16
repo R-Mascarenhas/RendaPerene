@@ -63,7 +63,7 @@ class SimulationService:
         conn.close()
 
         start_date = datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
-        
+
         # Calculate exact age in months when investment started
         start_months_age = (start_date.year - birth_date.year) * 12 + start_date.month - birth_date.month - (start_date.day < birth_date.day)
         return start_months_age
@@ -79,28 +79,28 @@ class SimulationService:
         config = SimulationService.get_configuration()
         if not config:
             return None
-            
+
         today = datetime.date.today()
         birth_date = datetime.datetime.strptime(config['birth_date'], "%Y-%m-%d").date() if isinstance(config['birth_date'], str) else config['birth_date']
-        
+
         # Exact current age in months and years (for UI display)
         months_age = (today.year - birth_date.year) * 12 + today.month - birth_date.month - (today.day < birth_date.day)
         current_age = months_age / 12
-        
+
         # Exact age in months when the investment journey started (first transaction)
         start_months_age = SimulationService.get_initial_investment_age(birth_date)
         start_age_years = start_months_age / 12
-        
+
         # Total Time: months from first investment to retirement age (Lifetime Timeline)
         total_time_months = max(0, config['retirement_age'] * 12 - start_months_age)
-        
+
         # Remaining Time: months from today to retirement age (Current Timeline)
         remaining_time_months = max(0, config['retirement_age'] * 12 - months_age)
-        
+
         target_monthly_income = config['desired_income_mw'] * config['mw_value']
         monthly_interest_rate = (1 + config['annual_interest_rate'] / 100) ** (1 / 12) - 1
         target_equity = target_monthly_income / monthly_interest_rate if monthly_interest_rate > 0 else 0.0
-        
+
         # DYNAMICALLY calculate actual total out-of-pocket invested capital from the database
         from dashboard.dashboard_service import DashboardService
         df_pos = DashboardService.calculate_positions()
@@ -117,20 +117,20 @@ class SimulationService:
 
         # Lifetime Required Contribution (Ideal starting from zero, total horizon)
         required_monthly_contribution = pmt_annuity_due(
-            monthly_interest_rate, 
-            total_time_months, 
-            0.0, 
+            monthly_interest_rate,
+            total_time_months,
+            0.0,
             target_equity
         )
 
         # Updated Monthly Contribution (Course-corrected starting today, using ACTUAL total_invested from DB as PV)
         updated_monthly_contribution = pmt_annuity_due(
-            monthly_interest_rate, 
-            remaining_time_months, 
-            total_invested, 
+            monthly_interest_rate,
+            remaining_time_months,
+            total_invested,
             target_equity
         )
-            
+
         return {
             "current_age": current_age,
             "start_age_years": start_age_years,
@@ -149,10 +149,16 @@ class SimulationService:
         }
 
     @staticmethod
-    def get_current_required_contribution():
+    def get_updated_required_contribution():
         """Returns the updated monthly contribution dynamically for the dashboard's planning metrics."""
         sim = SimulationService.get_current_simulation()
         return sim["updated_monthly_contribution"] if sim else 0.0
+
+    @staticmethod
+    def get_required_contribution():
+        """Returns the monthly contribution dynamically for the dashboard's planning metrics."""
+        sim = SimulationService.get_current_simulation()
+        return sim["required_monthly_contribution"] if sim else 0.0
 
     @staticmethod
     def build_projection_dataframe(current_age, simulation_months, initial_equity, required_monthly_contribution, monthly_interest_rate, target_equity):
@@ -162,19 +168,19 @@ class SimulationService:
         """
         if simulation_months <= 0:
             return pd.DataFrame()
-            
+
         months_array = np.arange(1, simulation_months + 1)
         ages_array = current_age + (months_array / 12)
-        
+
         cumulative_invested = initial_equity + months_array * required_monthly_contribution
-        
+
         # Balance projection using Annuity Due compound interest (payment at start of month)
         # Math: FV_n = PV * (1+r)^n + PMT * (1+r) * [((1+r)^n - 1) / r]
         interest_factors = (1 + monthly_interest_rate)**months_array
         projected_equity = initial_equity * interest_factors +                            required_monthly_contribution * (1 + monthly_interest_rate) * ((interest_factors - 1) / monthly_interest_rate)
-                           
+
         cumulative_interest = projected_equity - cumulative_invested
-        
+
         return pd.DataFrame({
             "Idade": ages_array,
             "Patrimônio Projetado": projected_equity,

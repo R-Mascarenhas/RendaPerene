@@ -26,3 +26,7 @@ Thumbs.db
 # Temporary files
 out/
 .gemini/
+
+# Local Agent Context (Do not commit)
+GEMINI.md
+git_commit_features.py

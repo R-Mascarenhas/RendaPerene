@@ -4,8 +4,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from core.constants import MONTHS_PT
-from core.utils import Formatter
+from core.utils.formatter import Formatter
 from dashboard.dashboard_service import DashboardService
+from planning.planning_service import SimulationService
 
 class DashboardCharts:
     """Displays all interactive Plotly figures on the Dashboard."""
@@ -73,11 +74,7 @@ class DashboardCharts:
             df_evolution = df_evolution.sort_values(by="month_str").reset_index(drop=True)
             df_evolution['month_display'] = df_evolution['month_str'].apply(Formatter.format_month_year)
 
-            planned_cumulative = []
-            planned_dividends_cumulative = []
-
-            # Dynamic interest rate and contribution from the configuration database
-            from planning.planning_service import SimulationService
+            # Pull dynamic values
             config = SimulationService.get_configuration()
             if config:
                 annual_interest_rate = float(config['annual_interest_rate'])
@@ -87,23 +84,8 @@ class DashboardCharts:
 
             monthly_contribution = SimulationService.get_required_contribution()
 
-            # Start compounding from exactly 0.0 at month 0, growing linearly and compounding interest
-            last_equity = 0.0
-            last_dividends = 0.0
-
-            for idx, row in df_evolution.iterrows():
-                period_interest = last_equity * monthly_interest_rate
-                next_equity = last_equity + monthly_contribution
-                next_dividends = last_dividends + period_interest
-
-                planned_cumulative.append(next_equity)
-                planned_dividends_cumulative.append(next_dividends)
-
-                last_equity = next_equity
-                last_dividends = next_dividends
-
-            df_evolution['planned_equity'] = planned_cumulative
-            df_evolution['planned_dividends'] = planned_dividends_cumulative
+            # Call centralized, DRY-compliant mathematical projection service method!
+            df_evolution = SimulationService.calculate_planned_historical_evolution(df_evolution, monthly_contribution, monthly_interest_rate)
 
             # Dual-timeline multi-axis figure
             fig_multi = make_subplots(specs=[[{"secondary_y": True}]])
@@ -126,7 +108,7 @@ class DashboardCharts:
             fig_multi.add_trace(
                 go.Scatter(
                     x=df_evolution['month_display'],
-                    y=df_evolution['planned_equity'],
+                    y=df_evolution['planned_invested'],
                     name="Planejado (Meta)",
                     mode="lines",
                     line=dict(color="#1f77b4", width=2, dash="dash"),
@@ -162,7 +144,6 @@ class DashboardCharts:
                 secondary_y=False
             )
 
-            # Labels for the columns
             bar_labels = [f"R$ {val:,.0f}".replace(",", ".") if val > 0 else "" for val in df_evolution['monthly_dividend']]
 
             # 5. Monthly Dividends received (Translucent Yellow Bar)
@@ -174,7 +155,6 @@ class DashboardCharts:
                     marker_color="rgba(242, 196, 26, 0.6)",
                     text=bar_labels,
                     textposition="outside",
-                    # High-contrast custom yellow color and size!
                     textfont=dict(size=12, color="#f2c41a", family="sans-serif"),
                     hovertemplate="Proventos (Mês): R$ %{y:,.2f}<extra></extra>"
                 ),

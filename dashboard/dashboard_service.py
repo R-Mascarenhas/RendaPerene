@@ -1,7 +1,7 @@
 import pandas as pd
 import datetime
 from core.database import db
-from core.utils import MarketData
+from core.utils.market_data import MarketData
 
 class DashboardService:
     """Domain Service for aggregating dashboard data and metrics."""
@@ -9,8 +9,8 @@ class DashboardService:
     @staticmethod
     def calculate_positions(today_date=None) -> pd.DataFrame:
         """
-        Returns a DataFrame consolidating the current position of each asset in the portfolio,
-        calculating the accumulated Quantity, Average Price, Total Dividends, YTD, and L12M.
+        Consolidates active portfolio holdings, calculating average price (PM),
+        invested totals, and received dividends.
         """
         conn_pers = db.get_personal_connection()
         catalog = MarketData.load_assets_catalog()
@@ -42,11 +42,11 @@ class DashboardService:
             old_qty = current_state['quantity']
             old_avg_price = current_state['average_price']
 
-            if txn_type == 'Compra':
+            if txn_type == 'BUY':
                 new_qty = old_qty + qty
                 new_avg_price = (old_qty * old_avg_price + qty * price + fees) / new_qty if new_qty > 0 else 0.0
                 portfolio_state[ticker] = {'quantity': new_qty, 'average_price': new_avg_price}
-            elif txn_type == 'Venda':
+            elif txn_type == 'SELL':
                 new_qty = max(0, old_qty - qty)
                 portfolio_state[ticker] = {'quantity': new_qty, 'average_price': old_avg_price if new_qty > 0 else 0.0}
 
@@ -104,12 +104,12 @@ class DashboardService:
     @staticmethod
     def calculate_historical_evolution() -> pd.DataFrame:
         """
-        Returns the accumulated monthly history of net contributions and dividends for the evolution chart.
-        Ensures a continuous, chronological monthly sequence with no gaps since the first investment to today.
+        Consolidates a month-by-month chronological sequence of your portfolio evolution.
+        Ensures a seamless monthly series without gaps since the first transaction.
         """
         conn = db.get_personal_connection()
         df_transactions = pd.read_sql_query("SELECT date, transaction_type, quantity, unit_price, fees FROM transactions", conn)
-        df_dividends = pd.read_sql_query("SELECT date, total_value FROM dividends", conn)
+        df_dividends = pd.read_sql_query("SELECT date, dividend_type, total_value FROM dividends", conn)
         conn.close()
 
         if df_transactions.empty and df_dividends.empty:
@@ -119,15 +119,14 @@ class DashboardService:
         df_dividends['month_str'] = df_dividends['date'].str[:7]
 
         df_transactions['net_cashflow'] = df_transactions.apply(
-            lambda r: (r['quantity'] * r['unit_price'] + r['fees']) if r['transaction_type'] == 'Compra'
+            lambda r: (r['quantity'] * r['unit_price'] + r['fees']) if r['transaction_type'] == 'BUY'
             else -(r['quantity'] * r['unit_price'] - r['fees']),
             axis=1
         )
 
-        monthly_transactions = df_transactions.groupby('month_str')['net_cashflow'].sum().reset_index()
-        monthly_dividends = df_dividends.groupby('month_str')['total_value'].sum().reset_index().rename(columns={'total_value': 'monthly_dividend'})
+        monthly_t = df_transactions.groupby('month_str')['net_cashflow'].sum().reset_index()
+        monthly_d = df_dividends.groupby('month_str')['total_value'].sum().reset_index().rename(columns={'total_value': 'monthly_dividend'})
 
-        # Resolve min starting date string across both tables
         min_date_transactions = df_transactions['date'].min() if not df_transactions.empty else None
         min_date_dividends = df_dividends['date'].min() if not df_dividends.empty else None
 
@@ -139,18 +138,15 @@ class DashboardService:
         start_date = pd.to_datetime(start_date_str).replace(day=1)
         today = datetime.date.today()
 
-        # Generate complete, uninterrupted monthly date range from first investment to current date
         date_range = pd.date_range(start=start_date, end=today, freq='MS')
         all_months = date_range.strftime('%Y-%m').tolist()
 
-        # Ensure we always have at least one month represented
         if not all_months:
             all_months = [start_date.strftime('%Y-%m')]
 
         timeline = pd.DataFrame({'month_str': all_months})
-
-        timeline = timeline.merge(monthly_transactions, on='month_str', how='left').fillna(0.0)
-        timeline = timeline.merge(monthly_dividends, on='month_str', how='left').fillna(0.0)
+        timeline = timeline.merge(monthly_t, on='month_str', how='left').fillna(0.0)
+        timeline = timeline.merge(monthly_d, on='month_str', how='left').fillna(0.0)
 
         timeline['cumulative_invested'] = timeline['net_cashflow'].cumsum()
         timeline['cumulative_dividends'] = timeline['monthly_dividend'].cumsum()
@@ -163,7 +159,7 @@ class DashboardService:
         conn = db.get_personal_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT SUM(quantity * unit_price + fees) FROM transactions WHERE transaction_type = 'Compra' AND date >= ?",
+            "SELECT SUM(quantity * unit_price + fees) FROM transactions WHERE transaction_type = 'BUY' AND date >= ?",
             (f"{current_year}-01-01",)
         )
         res_ytd = cursor.fetchone()
@@ -175,16 +171,15 @@ class DashboardService:
     def get_monthly_contributions_by_year() -> pd.DataFrame:
         """Returns monthly contributions grouped by year for the bar chart."""
         conn = db.get_personal_connection()
-        df_t = pd.read_sql_query("SELECT date, quantity, unit_price, fees FROM transactions WHERE transaction_type = 'Compra'", conn)
+        df_transactions = pd.read_sql_query("SELECT date, quantity, unit_price, fees FROM transactions WHERE transaction_type = 'BUY'", conn)
         conn.close()
 
-        if df_t.empty:
+        if df_transactions.empty:
             return pd.DataFrame()
 
-        df_t['amount'] = df_t['quantity'] * df_t['unit_price'] + df_t['fees']
-        df_t['year'] = df_t['date'].str[:4]
-        df_t['month'] = df_t['date'].str[5:7]
+        df_transactions['amount'] = df_transactions['quantity'] * df_transactions['unit_price'] + df_transactions['fees']
+        df_transactions['year'] = df_transactions['date'].str[:4]
+        df_transactions['month'] = df_transactions['date'].str[5:7]
 
-        # Group by year and month
-        grouped = df_t.groupby(['year', 'month'])['amount'].sum().reset_index()
+        grouped = df_transactions.groupby(['year', 'month'])['amount'].sum().reset_index()
         return grouped

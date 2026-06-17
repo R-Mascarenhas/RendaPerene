@@ -64,7 +64,6 @@ class SimulationService:
 
         start_date = datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
 
-        # Calculate exact age in months when investment started
         start_months_age = (start_date.year - birth_date.year) * 12 + start_date.month - birth_date.month - (start_date.day < birth_date.day)
         return start_months_age
 
@@ -83,25 +82,19 @@ class SimulationService:
         today = datetime.date.today()
         birth_date = datetime.datetime.strptime(config['birth_date'], "%Y-%m-%d").date() if isinstance(config['birth_date'], str) else config['birth_date']
 
-        # Exact current age in months and years (for UI display)
         months_age = (today.year - birth_date.year) * 12 + today.month - birth_date.month - (today.day < birth_date.day)
         current_age = months_age / 12
 
-        # Exact age in months when the investment journey started (first transaction)
         start_months_age = SimulationService.get_initial_investment_age(birth_date)
         start_age_years = start_months_age / 12
 
-        # Total Time: months from first investment to retirement age (Lifetime Timeline)
         total_time_months = max(0, config['retirement_age'] * 12 - start_months_age)
-
-        # Remaining Time: months from today to retirement age (Current Timeline)
         remaining_time_months = max(0, config['retirement_age'] * 12 - months_age)
 
         target_monthly_income = config['desired_income_mw'] * config['mw_value']
         monthly_interest_rate = (1 + config['annual_interest_rate'] / 100) ** (1 / 12) - 1
         target_equity = target_monthly_income / monthly_interest_rate if monthly_interest_rate > 0 else 0.0
 
-        # DYNAMICALLY calculate actual total out-of-pocket invested capital from the database
         from dashboard.dashboard_service import DashboardService
         df_pos = DashboardService.calculate_positions()
         total_invested = float(df_pos['invested_amount'].sum()) if not df_pos.empty else 0.0
@@ -115,7 +108,6 @@ class SimulationService:
             val = (fv - pv * interest_factor) / denominator if denominator > 0 else 0.0
             return max(0.0, val)
 
-        # Lifetime Required Contribution (Ideal starting from zero, total horizon)
         required_monthly_contribution = pmt_annuity_due(
             monthly_interest_rate,
             total_time_months,
@@ -123,7 +115,6 @@ class SimulationService:
             target_equity
         )
 
-        # Updated Monthly Contribution (Course-corrected starting today, using ACTUAL total_invested from DB as PV)
         updated_monthly_contribution = pmt_annuity_due(
             monthly_interest_rate,
             remaining_time_months,
@@ -156,7 +147,7 @@ class SimulationService:
 
     @staticmethod
     def get_required_contribution():
-        """Returns the monthly contribution dynamically for the dashboard's planning metrics."""
+        """Returns the lifetime required monthly contribution dynamically."""
         sim = SimulationService.get_current_simulation()
         return sim["required_monthly_contribution"] if sim else 0.0
 
@@ -174,8 +165,6 @@ class SimulationService:
 
         cumulative_invested = initial_equity + months_array * required_monthly_contribution
 
-        # Balance projection using Annuity Due compound interest (payment at start of month)
-        # Math: FV_n = PV * (1+r)^n + PMT * (1+r) * [((1+r)^n - 1) / r]
         interest_factors = (1 + monthly_interest_rate)**months_array
         projected_equity = initial_equity * interest_factors +                            required_monthly_contribution * (1 + monthly_interest_rate) * ((interest_factors - 1) / monthly_interest_rate)
 
@@ -211,7 +200,6 @@ class SimulationService:
             contributions.append(required_monthly_contribution)
             interests.append(period_interest)
 
-            # Compound for next period (Annuity Due: payment at start of month)
             last_equity = (last_equity + required_monthly_contribution) * (1 + monthly_interest_rate)
 
         return pd.DataFrame({
@@ -219,3 +207,30 @@ class SimulationService:
             "Aporte Mensal": contributions,
             "Juros Mensal": interests
         })
+
+    @staticmethod
+    def calculate_planned_historical_evolution(df_evolution: pd.DataFrame, monthly_contribution: float, monthly_interest_rate: float) -> pd.DataFrame:
+        """
+        Centralized, DRY-compliant mathematical projection for historical planned curves.
+        Generates linear accumulation of planned investments and compound interest.
+        """
+        planned_invested = []
+        planned_dividends = []
+
+        last_equity = 0.0
+        last_dividends = 0.0
+
+        for idx, row in df_evolution.iterrows():
+            period_interest = last_equity * monthly_interest_rate
+            next_equity = last_equity + monthly_contribution
+            next_dividends = last_dividends + period_interest
+
+            planned_invested.append(next_equity)
+            planned_dividends.append(next_dividends)
+
+            last_equity = next_equity
+            last_dividends = next_dividends
+
+        df_evolution['planned_invested'] = planned_invested
+        df_evolution['planned_dividends'] = planned_dividends
+        return df_evolution

@@ -3,7 +3,7 @@ import sqlite3
 class DatabaseManager:
     """Manages SQLite connection and initialization for the personal transactions domain."""
 
-    def __init__(self, personal_db="database/carteira.db"):
+    def __init__(self, personal_db="database/portfolio.db"):
         self.personal_db = personal_db
 
     def init_personal_db(self):

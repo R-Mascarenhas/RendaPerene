@@ -12,7 +12,7 @@ The goal of this project is to build a modern, local-first web application to en
 
 ## 3. Deployment & Data Privacy
 *   **Strictly Local:** The application runs entirely on the user's local machine via `streamlit run app.py`.
-*   **Data Sovereignty:** The SQLite database (`carteira.db`) lives locally. There is no cloud database and no mandatory Google Drive synchronization (the user explicitly opted for independent local instances).
+*   **Data Sovereignty:** The SQLite database (`portfolio.db`) lives locally. There is no cloud database and no mandatory Google Drive synchronization (the user explicitly opted for independent local instances).
 *   **No Web Scraping:** The app will *not* attempt to automatically scrape the B3 portal due to 2FA and anti-bot measures.
 
 ## 4. Data Ingestion Strategy

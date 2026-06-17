@@ -21,9 +21,9 @@ from planning.planning_view import PlanningView
 
 # Create 3 main tabs
 tab_dashboard, tab_planning, tab_lancamentos = st.tabs([
-    "📊 Dashboard (Resumo)",
+    "📊 Dashboard",
     "🎯 Planejamento",
-    "📝 Lançamentos & B3"
+    "📝 Ativos"
 ])
 
 # Clean MVC Routing

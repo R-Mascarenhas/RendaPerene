@@ -7,9 +7,10 @@ class LancamentosView:
 
     def render(self):
         # Create top-level tabs inside Lançamentos & B3
-        tab_ops, tab_assets = st.tabs([
+        tab_ops, tab_assets, tab_market = st.tabs([
             "📥 Importar & Lançar",
-            "📁 Meus Ativos (Sub-abas)"
+            "📁 Meus Ativos",
+            "📈 Mercado"
         ])
 
         with tab_ops:

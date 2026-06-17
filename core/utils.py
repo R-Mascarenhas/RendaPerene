@@ -135,3 +135,60 @@ class MarketData:
         if os.path.exists("assets.csv"):
             return pd.read_csv("assets.csv", dtype=str, encoding="utf-8-sig").set_index("CÓDIGO")
         return pd.DataFrame()
+
+class TrendlineCalculator:
+    """Utility class for computing statistical trendlines (Linear, Polynomial, and Moving Average)."""
+
+    @staticmethod
+    def get_poly_trendline(df: pd.DataFrame, y_col: str, deg: int = 2, extrapolate_periods: int = 0) -> list:
+        """Fits a polynomial curve to the non-null series, and optionally extrapolates into the future."""
+        import numpy as np
+        df_clean = df.dropna(subset=[y_col])
+        if df_clean.empty or len(df_clean) < deg + 1:
+            total_len = len(df_clean) + extrapolate_periods
+            return [0.0] * total_len if total_len > 0 else []
+
+        x_idx = np.arange(len(df_clean))
+        y_vals = df_clean[y_col].values
+        coefs = np.polyfit(x_idx, y_vals, deg=deg)
+
+        total_len = len(df_clean) + extrapolate_periods
+        x_total = np.arange(total_len)
+        trend = np.polyval(coefs, x_total)
+        return [max(0.0, float(v)) for v in trend]
+
+    @staticmethod
+    def get_linear_trendline(df: pd.DataFrame, y_col: str, extrapolate_periods: int = 0) -> list:
+        """Fits a 1st degree linear regression line (y = mx + b), and optionally extrapolates into the future."""
+        import numpy as np
+        df_clean = df.dropna(subset=[y_col])
+        if df_clean.empty or len(df_clean) < 2:
+            total_len = len(df_clean) + extrapolate_periods
+            return [0.0] * total_len if total_len > 0 else []
+
+        x_idx = np.arange(len(df_clean))
+        y_vals = df_clean[y_col].values
+        coefs = np.polyfit(x_idx, y_vals, deg=1)
+
+        total_len = len(df_clean) + extrapolate_periods
+        x_total = np.arange(total_len)
+        trend = np.polyval(coefs, x_total)
+        return [max(0.0, float(v)) for v in trend]
+
+    @staticmethod
+    def get_moving_average_trendline(df: pd.DataFrame, y_col: str, window: int = 3, extrapolate_periods: int = 0) -> list:
+        """Calculates a rolling moving average with a customizable window size, and optionally extrapolates (forward-fills) into the future."""
+        df_clean = df.dropna(subset=[y_col])
+        if df_clean.empty:
+            total_len = extrapolate_periods
+            return [0.0] * total_len if total_len > 0 else []
+
+        series = df_clean[y_col].rolling(window=window, min_periods=1).mean()
+        result = [max(0.0, float(v)) for v in series.fillna(0.0).tolist()]
+
+        # Extrapolate by forward-filling the last calculated moving average value
+        if extrapolate_periods > 0 and len(result) > 0:
+            last_val = result[-1]
+            result.extend([last_val] * extrapolate_periods)
+
+        return result

@@ -174,7 +174,7 @@ class DashboardCharts:
                     marker_color="rgba(242, 196, 26, 0.6)",
                     text=bar_labels,
                     textposition="outside",
-                    # High-contrast dark grey color and 16px size!
+                    # High-contrast custom yellow color and size!
                     textfont=dict(size=12, color="#f2c41a", family="sans-serif"),
                     hovertemplate="Proventos (Mês): R$ %{y:,.2f}<extra></extra>"
                 ),

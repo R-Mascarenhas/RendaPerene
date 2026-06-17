@@ -377,3 +377,33 @@ class AssetService:
             return False
         finally:
             conn.close()
+
+    @staticmethod
+    def save_dividend_correction(ticker: str, year: int, total_value: float) -> bool:
+        """Saves or updates a manual dividend correction inside the SQLite database."""
+        conn = db.get_personal_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES (?, ?, ?)",
+                (ticker.upper().strip(), int(year), float(total_value))
+            )
+            conn.commit()
+            return True
+        except Exception:
+            return False
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_dividend_corrections(ticker: str) -> dict:
+        """Returns all custom dividend corrections registered for a specific ticker."""
+        conn = db.get_personal_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT year, total_value FROM dividend_corrections WHERE ticker = ? ORDER BY year DESC", (ticker.upper().strip(),))
+            return {row[0]: row[1] for row in cursor.fetchall()}
+        except Exception:
+            return {}
+        finally:
+            conn.close()

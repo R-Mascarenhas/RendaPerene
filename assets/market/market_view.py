@@ -11,16 +11,25 @@ class MarketView:
         st.subheader("📈 Central de Monitoramento de Mercado (Bazin)")
         st.write("Acompanhe empresas da B3 em tempo real e identifique oportunidades de compra utilizando o modelo de Preço Teto de Décio Bazin.")
         
-        # 1. Action Row: Add tracked ticker & adjust target yield
+        # Load available assets from assets.csv catalog to restrict input and enable autocomplete
+        catalog = MarketData.load_assets_catalog()
+        available_tickers = sorted(catalog.index.tolist()) if not catalog.empty else []
+
+        # 1. Action Row: Add tracked ticker via searchable selectbox & adjust target yield
         col_add, col_yield = st.columns([2, 1])
         
         with col_add:
             with st.form("form_add_market_asset", clear_on_submit=True):
-                new_ticker = st.text_input("Adicionar Ticker para Acompanhamento (ex: BBAS3, TAEE11)").strip().upper()
+                new_ticker = st.selectbox(
+                    "Adicionar Ticker para Acompanhamento",
+                    options=["--- Selecione ---"] + available_tickers,
+                    index=0,
+                    help="Digite para buscar e autocompletar ativos válidos cadastrados no arquivo assets.csv"
+                )
                 submit_add = st.form_submit_button("➕ Adicionar à Lista")
                 if submit_add:
-                    if len(new_ticker) < 5 or not new_ticker[:4].isalpha():
-                        st.error("Digite um Ticker de ativo da B3 válido (ex: BBAS3, TAEE11).")
+                    if new_ticker == "--- Selecione ---":
+                        st.error("Por favor, selecione um ativo válido da lista.")
                     else:
                         success = AssetService.add_tracked_market_asset(new_ticker)
                         if success:
@@ -70,22 +79,19 @@ class MarketView:
                 
                 if details:
                     current_year = datetime.date.today().year
-                    last_5_years = [current_year - i for i in range(1, 6)] # e.g. [2025, 2024, 2023, 2022, 2021]
+                    last_5_years = [current_year - i for i in range(1, 6)]
                     
                     row_data = {
                         "Ticker": t,
                         "Empresa": details.get("name", metadata.get("name", t)),
-                        "Setor": metadata.get("sector", "Outros"),
-                        "Segmento": metadata.get("segment", "N/D"),
                         "Cotação": details.get("current_price", 0.0),
                         "Preço Teto": details.get("ceiling_price", 0.0),
-                        "VPA": details.get("vpa", 0.0),
-                        "Bai 52s": details.get("low_52w", 0.0),
-                        "Alt 52s": details.get("high_52w", 0.0),
                         "P/VP": details.get("pb", 0.0),
                         "P/L": details.get("pe", 0.0),
                         "DY %": details.get("dy", 0.0),
                         "ROE %": details.get("roe", 0.0),
+                        "low_52w": details.get("low_52w", 0.0),
+                        "high_52w": details.get("high_52w", 0.0),
                         "avg_div_5y": details.get("avg_dividend_5y", 0.0),
                         "avg_dy_5y": details.get("avg_dy_5y", 0.0)
                     }
@@ -106,45 +112,111 @@ class MarketView:
         df_display = pd.DataFrame()
         df_display["Ticker"] = df_market["Ticker"]
         df_display["Empresa"] = df_market["Empresa"]
-        df_display["Setor"] = df_market["Setor"]
-        df_display["Segmento"] = df_market["Segmento"]
         
-        # Apply high-contrast colored indicators based on Bazin Price Ceiling
-        def format_cotacao_indicator(row):
-            price = row["Cotação"]
-            ceiling = row["Preço Teto"]
-            formatted = Formatter.format_currency(price)
-            
-            if ceiling <= 0:
-                return f"⚪ {formatted}"
-                
-            # Under Bazin margin safety:
-            # 🟢 (Muito abaixo): Price is <= 80% of Ceiling Price (Excellent margin)
-            # 🟡 (Abaixo/Perto): Price is between 80% and 100% of Ceiling Price (Fair margin)
-            # 🔴 (Acima): Price is > Ceiling Price (Overvalued)
-            if price <= (ceiling * 0.8):
-                return f"🟢 {formatted}"
-            elif price <= ceiling:
-                return f"🟡 {formatted}"
-            return f"🔴 {formatted}"
-
-        df_display["Cotação"] = df_market.apply(format_cotacao_indicator, axis=1)
-        df_display["Preço Teto"] = df_market["Preço Teto"].map(Formatter.format_currency)
-        df_display["VPA"] = df_market["VPA"].map(Formatter.format_currency)
-        df_display["Bai 52 semanas"] = df_market["Bai 52s"].map(Formatter.format_currency)
-        df_display["Alt 52 semanas"] = df_market["Alt 52s"].map(Formatter.format_currency)
-        df_display["P/VP"] = df_market["P/VP"].map(lambda x: f"{x:.2f}" if x > 0 else "N/D")
-        df_display["P/L"] = df_market["P/L"].map(lambda x: f"{x:.2f}" if x > 0 else "N/D")
-        df_display["DY"] = df_market["DY %"].map(lambda x: f"{x:.2f}%" if x > 0 else "N/D")
-        df_display["ROE"] = df_market["ROE %"].map(lambda x: f"{x:.2f}%" if x > 0 else "N/D")
-
-        # Show each of the last 5 years' dividend columns dynamically
+        # Keep numeric values to preserve native sorting and filtering in the GUI
+        df_display["Cotação"] = df_market["Cotação"]
+        df_display["Preço Teto"] = df_market["Preço Teto"]
+        
         current_year = datetime.date.today().year
         last_5_years = [current_year - i for i in range(1, 6)]
         for yr in last_5_years:
-            df_display[f"Div {yr}"] = df_market[f"Div {yr}"].map(Formatter.format_currency)
+            df_display[f"Div {yr}"] = df_market[f"Div {yr}"]
+            
+        df_display["Média 5a"] = df_market["avg_div_5y"]
+        df_display["DY Médio 5a"] = df_market["avg_dy_5y"]
+        df_display["P/VP"] = df_market["P/VP"]
+        df_display["P/L"] = df_market["P/L"]
+        df_display["DY Atual"] = df_market["DY %"]
+        df_display["ROE"] = df_market["ROE %"]
 
-        df_display["Média 5 anos"] = df_market["avg_div_5y"].map(Formatter.format_currency)
-        df_display["DY Médio 5 anos"] = df_market["avg_dy_5y"].map(lambda x: f"{x:.2f}%" if x > 0 else "N/D")
+        # Combine Low and High 52-week ranges to save huge screen space
+        def format_range_52w(row):
+            low = row["low_52w"]
+            high = row["high_52w"]
+            if low <= 0 or high <= 0:
+                return "N/D"
+            return f"{Formatter.format_currency(low)} - {Formatter.format_currency(high)}"
 
-        st.dataframe(df_display, width="stretch", hide_index=True)
+        df_display["Faixa 52s"] = df_market.apply(format_range_52w, axis=1)
+
+        # Build column configs dynamically to style columns and apply dynamic PT-BR formats
+        col_configs = {
+            "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+            "Empresa": st.column_config.TextColumn("Empresa", width="medium"),
+            "Cotação": st.column_config.NumberColumn("Cotação", format="R$ %.2f", width="small"),
+            "Preço Teto": st.column_config.NumberColumn("Preço Teto (Bazin)", format="R$ %.2f", width="small"),
+        }
+        
+        # Format the 5 individual historical dividend columns to stay very tight/narrow on screen
+        for yr in last_5_years:
+            col_configs[f"Div {yr}"] = st.column_config.NumberColumn(f"Div {yr}", format="R$ %.2f", width="small")
+            
+        col_configs.update({
+            "Média 5a": st.column_config.NumberColumn("Média 5a", format="R$ %.2f", width="small"),
+            "DY Médio 5a": st.column_config.NumberColumn("DY Médio 5a", format="%.2f%%", width="small"),
+            "P/VP": st.column_config.NumberColumn("P/VP", format="%.2f", width="small"),
+            "P/L": st.column_config.NumberColumn("P/L", format="%.2f", width="small"),
+            "DY Atual": st.column_config.NumberColumn("DY Atual", format="%.2f%%", width="small"),
+            "ROE": st.column_config.NumberColumn("ROE", format="%.2f%%", width="small"),
+            "Faixa 52s": st.column_config.TextColumn("Faixa 52s (Mín-Máx)", width="medium")
+        })
+
+        # Apply CSS background-color specifically to the "Cotação" column cell (Beautifully colored cells!)
+        def style_market_dataframe(df):
+            style_df = pd.DataFrame('', index=df.index, columns=df.columns)
+            for idx in df.index:
+                price = df_market.loc[idx, "Cotação"]
+                ceiling = df_market.loc[idx, "Preço Teto"]
+                
+                if ceiling <= 0:
+                    bg_color = "transparent"
+                elif price <= (ceiling * 0.8):
+                    bg_color = "rgba(40, 167, 69, 0.25)" # Soft Green
+                elif price <= ceiling:
+                    bg_color = "rgba(255, 193, 7, 0.25)" # Soft Yellow
+                else:
+                    bg_color = "rgba(220, 53, 69, 0.25)" # Soft Red
+                    
+                # We omit the hardcoded 'color' property entirely.
+                # This lets the browser inherit Streamlit's default theme text color
+                # (which is pure white on Dark Mode, and pure black on Light Mode),
+                # guaranteeing 100% perfect readability and optimal contrast on all themes!
+                style_df.loc[idx, "Cotação"] = f"background-color: {bg_color}; font-weight: bold; border-radius: 4px;"
+            return style_df
+
+        styled_display = df_display.style.apply(style_market_dataframe, axis=None)
+
+        st.dataframe(
+            styled_display,
+            width="stretch",
+            hide_index=True,
+            column_config=col_configs
+        )
+
+        st.markdown("---")
+        # 5. Expander Form: Adjust/Correct Historical Dividends dynamically
+        with st.expander("🔧 Ajustar Proventos Históricos (Bazin)"):
+            st.write("Caso identifique erros de omissão de dividendos no Yahoo Finance (como JCPs complementares), corrija os valores consolidados de cada ano abaixo:")
+            
+            with st.form("form_dividend_correction", clear_on_submit=True):
+                col_c1, col_c2, col_c3 = st.columns(3)
+                with col_c1:
+                    corr_ticker = st.selectbox("Selecione o Ativo para Corrigir", options=["--- Selecione ---"] + tracked_tickers)
+                with col_c2:
+                    current_year = datetime.date.today().year
+                    corr_year = st.selectbox("Selecione o Ano", options=[current_year - i for i in range(1, 6)])
+                with col_c3:
+                    corr_value = st.number_input("Valor Total Pago no Ano (R$)", min_value=0.01, value=2.00, step=0.05)
+                    
+                submit_corr = st.form_submit_button("💾 Salvar Correção")
+                if submit_corr:
+                    if corr_ticker == "--- Selecione ---":
+                        st.error("Por favor, selecione um ativo válido para aplicar a correção.")
+                    else:
+                        success = AssetService.save_dividend_correction(corr_ticker, corr_year, corr_value)
+                        if success:
+                            st.success(f"Proventos de {corr_ticker} para o ano de {corr_year} corrigidos com sucesso para {Formatter.format_currency(corr_value)}!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error("Erro ao salvar a correção de dividendos.")

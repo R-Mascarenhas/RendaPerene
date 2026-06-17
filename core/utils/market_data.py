@@ -4,13 +4,6 @@ import datetime
 import os
 import pandas as pd
 
-YAHOO_DIVIDEND_CORRECTIONS = {
-    "BBAS3": {
-        2023: 2.29,  # Corrects Yahoo's omission of November 2023 JCP
-        2024: 2.61   # Corrects Yahoo's omission of November 2024 JCP
-    }
-}
-
 class MarketData:
     """Class responsible for integrations with market and financial APIs."""
 
@@ -37,10 +30,45 @@ class MarketData:
             t = yf.Ticker(ticker_sa)
             info = t.info
             history = t.history(period="1y")
-
+            
+            current_price = info.get("currentPrice", info.get("lastPrice", info.get("regularMarketPrice", 0.0)))
+            ticker_clean = ticker.strip().upper()
+            
+            # Trailing 12-Month Dividend Yield calculated dynamically to avoid Yahoo's glitched info['dividendYield']
+            div_series = t.dividends
+            one_year_ago = datetime.date.today() - datetime.timedelta(days=365)
+            l12m_dividends = 0.0
+            
+            if not div_series.empty:
+                div_series.index = pd.to_datetime(div_series.index).date
+                l12m_dividends = float(div_series.loc[one_year_ago:].sum())
+                
+            # Query custom dynamic database-driven corrections (TTM sum adjust)
+            from core.database import db
+            conn = db.get_personal_connection()
+            cursor = conn.cursor()
+            current_year = datetime.date.today().year
+            cursor.execute(
+                "SELECT year, total_value FROM dividend_corrections WHERE ticker = ? AND year IN (?, ?)",
+                (ticker_clean, current_year, current_year - 1)
+            )
+            db_corrections = {row[0]: row[1] for row in cursor.fetchall()}
+            conn.close()
+            
+            # Dynamically adjust the TTM sum if Yahoo has gaps/omissions compared to corrections table
+            for yr, corrected_total in db_corrections.items():
+                if not div_series.empty:
+                    yahoo_total = float(div_series[div_series.index.map(lambda d: d.year == yr)].sum())
+                else:
+                    yahoo_total = 0.0
+                if corrected_total > yahoo_total:
+                    l12m_dividends += (corrected_total - yahoo_total)
+                
+            dy = (l12m_dividends / current_price * 100) if current_price > 0 else 0.0
+            
             return {
-                "current_price": info.get("currentPrice", info.get("lastPrice", info.get("regularMarketPrice", 0.0))),
-                "dy": info.get("dividendYield", 0.0) * 100 if info.get("dividendYield") is not None else 0.0,
+                "current_price": current_price,
+                "dy": dy,
                 "pe": info.get("trailingPE", 0.0) if info.get("trailingPE") is not None else 0.0,
                 "pb": info.get("priceToBook", 0.0) if info.get("priceToBook") is not None else 0.0,
                 "high_52w": info.get("fiftyTwoWeekHigh", 0.0) if info.get("fiftyTwoWeekHigh") is not None else 0.0,
@@ -78,7 +106,6 @@ class MarketData:
             vpa = info.get("bookValue", 0.0)
             pb = info.get("priceToBook", 0.0)
             pe = info.get("trailingPE", 0.0)
-            dy = info.get("dividendYield", 0.0) * 100 if info.get("dividendYield") is not None else 0.0
             roe = info.get("returnOnEquity", 0.0) * 100 if info.get("returnOnEquity") is not None else 0.0
             high_52w = info.get("fiftyTwoWeekHigh", 0.0)
             low_52w = info.get("fiftyTwoWeekLow", 0.0)
@@ -91,19 +118,46 @@ class MarketData:
             div_by_year = {}
             ticker_clean = ticker.strip().upper()
 
+            # Connect to database and fetch all corrections for this ticker dynamically
+            from core.database import db
+            conn = db.get_personal_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT year, total_value FROM dividend_corrections WHERE ticker = ?", (ticker_clean,))
+            db_corrections_all = {row[0]: row[1] for row in cursor.fetchall()}
+            conn.close()
+
             if not div_series.empty:
                 div_df = div_series.groupby(div_series.index.year).sum()
                 for yr in last_5_years:
                     val = float(div_df.get(yr, 0.0))
-                    if ticker_clean in YAHOO_DIVIDEND_CORRECTIONS and yr in YAHOO_DIVIDEND_CORRECTIONS[ticker_clean]:
-                        val = YAHOO_DIVIDEND_CORRECTIONS[ticker_clean][yr]
+                    if yr in db_corrections_all:
+                        val = db_corrections_all[yr]
                     div_by_year[yr] = val
             else:
                 for yr in last_5_years:
                     val = 0.0
-                    if ticker_clean in YAHOO_DIVIDEND_CORRECTIONS and yr in YAHOO_DIVIDEND_CORRECTIONS[ticker_clean]:
-                        val = YAHOO_DIVIDEND_CORRECTIONS[ticker_clean][yr]
+                    if yr in db_corrections_all:
+                        val = db_corrections_all[yr]
                     div_by_year[yr] = val
+
+            # Calculate Trailing 12-Month Dividend Yield dynamically to avoid Yahoo's glitched dividendYield field
+            one_year_ago = datetime.date.today() - datetime.timedelta(days=365)
+            l12m_dividends_sum = 0.0
+            if not div_series.empty:
+                div_series.index = pd.to_datetime(div_series.index).date
+                l12m_dividends_sum = float(div_series.loc[one_year_ago:].sum())
+                
+            # Dynamically adjust TTM sum from SQLite
+            for yr, corrected_total in db_corrections_all.items():
+                if yr in (current_year, current_year - 1):
+                    if not div_series.empty:
+                        yahoo_total = float(div_series[div_series.index.map(lambda d: d.year == yr)].sum())
+                    else:
+                        yahoo_total = 0.0
+                    if corrected_total > yahoo_total:
+                        l12m_dividends_sum += (corrected_total - yahoo_total)
+
+            dy = (l12m_dividends_sum / current_price * 100) if current_price > 0 else 0.0
 
             avg_dividend_5y = sum(div_by_year.values()) / 5.0
             target_yield = target_yield_pct / 100

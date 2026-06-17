@@ -10,7 +10,7 @@ class TransactionService:
         """Appends a fallback asset to assets.csv if not found in the catalog."""
         import os
         import streamlit as st
-        
+
         if os.path.exists("assets.csv"):
             df = pd.read_csv("assets.csv", dtype=str, encoding="utf-8-sig")
             df.columns = df.columns.str.strip()
@@ -35,26 +35,26 @@ class TransactionService:
         """Inserts a Buy or Sell asset transaction into the personal database, avoiding duplicates."""
         conn_pers = db.get_personal_connection()
         cursor_pers = conn_pers.cursor()
-        
+
         cursor_pers.execute('''
-            SELECT id FROM transactions 
+            SELECT id FROM transactions
             WHERE date = ? AND ticker = ? AND transaction_type = ? AND quantity = ? AND unit_price = ? AND fees = ?
         ''', (date, ticker, transaction_type, quantity, unit_price, fees))
-        
+
         if cursor_pers.fetchone():
             conn_pers.close()
             return False # Skipped duplicate
-            
+
         # Ensure the asset exists in the assets CSV catalog
         catalog = MarketData.load_assets_catalog()
         if catalog.empty or ticker not in catalog.index:
             TransactionService.register_fallback_asset(ticker)
-            
+
         cursor_pers.execute('''
             INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (date, ticker, transaction_type, quantity, unit_price, fees))
-        
+
         conn_pers.commit()
         conn_pers.close()
         return True
@@ -64,26 +64,26 @@ class TransactionService:
         """Inserts a Dividend or JCP receipt into the database, avoiding duplicates."""
         conn_pers = db.get_personal_connection()
         cursor_pers = conn_pers.cursor()
-        
+
         cursor_pers.execute('''
-            SELECT id FROM dividends 
+            SELECT id FROM dividends
             WHERE date = ? AND ticker = ? AND dividend_type = ? AND total_value = ?
         ''', (date, ticker, dividend_type, total_value))
-        
+
         if cursor_pers.fetchone():
             conn_pers.close()
             return False
-            
+
         # Ensure the asset exists in the assets CSV catalog
         catalog = MarketData.load_assets_catalog()
         if catalog.empty or ticker not in catalog.index:
             TransactionService.register_fallback_asset(ticker)
-            
+
         cursor_pers.execute('''
             INSERT INTO dividends (date, ticker, dividend_type, total_value)
             VALUES (?, ?, ?, ?)
         ''', (date, ticker, dividend_type, total_value))
-        
+
         conn_pers.commit()
         conn_pers.close()
         return True
@@ -92,40 +92,40 @@ class TransactionService:
     def process_b3_import(df: pd.DataFrame) -> tuple[int, int]:
         """Processes a DataFrame imported from B3, routing the actions to the database."""
         df.columns = df.columns.str.strip()
-        
+
         processed_transactions = 0
         processed_dividends = 0
-        
+
         for _, row in df.iterrows():
             try:
                 movement = str(row.get('Tipo de Movimentação', row.get('Movimentação', ''))).strip()
                 entry_exit = str(row.get('Entrada/Saída', '')).strip().lower()
                 date_str = str(row.get('Data do Negócio', row.get('Data', ''))).strip()
-                
+
                 date_parts = date_str.split('/')
                 if len(date_parts) == 3:
                     date = f"{date_parts[2]}-{date_parts[1]}-{date_parts[0]}"
                 else:
                     date = date_str
-                    
+
                 raw_product = str(row.get('Código de Negociação', row.get('Produto', ''))).strip()
                 ticker = raw_product.split('-')[0].strip()
-                
+
                 if not ticker or len(ticker) < 5 or not ticker[:4].isalpha():
                     continue
-                    
+
                 quantity = int(row.get('Quantidade', 0))
                 raw_price = row.get('Preço', row.get('Preço unitário', 0.0))
                 price = 0.0 if raw_price == '-' else float(raw_price)
-                
+
                 # Dynamic safeguard: CXSE3 IPO price on April 30, 2021 was 9.67 per share,
                 # but B3 exports it as '-' (blank) because it occurred out-of-broker.
                 if ticker == "CXSE3" and date == "2021-04-30" and price == 0.0:
                     price = 9.67
-                
+
                 raw_value = row.get('Valor', row.get('Valor da Operação', 0.0))
                 total_value = 0.0 if raw_value == '-' else float(raw_value)
-                
+
                 transaction_type = None
                 if "Compra" in movement:
                     transaction_type = "Compra"
@@ -141,7 +141,7 @@ class TransactionService:
                         transaction_type = "Desdobro_Credito"
                 elif "Resgate" in movement:
                     transaction_type = "Venda"
-                
+
                 if transaction_type == "Compra":
                     success = TransactionService.add_transaction(ticker, date, "Compra", quantity, price)
                     if success: processed_transactions += 1
@@ -155,10 +155,10 @@ class TransactionService:
                     dividend_type = "Dividendo" if "Dividendo" in movement else "JCP"
                     success = TransactionService.add_dividend(ticker, date, dividend_type, total_value)
                     if success: processed_dividends += 1
-                    
+
             except Exception:
                 continue
-                
+
         return processed_transactions, processed_dividends
 
     @staticmethod
@@ -169,7 +169,7 @@ class TransactionService:
         try:
             cursor.execute("""
                 SELECT SUM(CASE WHEN transaction_type='Compra' THEN quantity ELSE -quantity END)
-                FROM transactions 
+                FROM transactions
                 WHERE ticker = ? AND date <= ?
             """, (ticker, date_str))
             res = cursor.fetchone()
@@ -262,14 +262,14 @@ class TransactionService:
         try:
             # Group by dividend_type for the chosen year
             cursor.execute('''
-                SELECT dividend_type, SUM(total_value) 
-                FROM dividends 
-                WHERE strftime('%Y', date) = ? 
+                SELECT dividend_type, SUM(total_value)
+                FROM dividends
+                WHERE strftime('%Y', date) = ?
                 GROUP BY dividend_type
             ''', (year,))
-            
+
             rows = cursor.fetchall()
-            
+
             # Map into a clean structured dictionary
             data = {"Dividendo": 0.0, "JCP": 0.0, "Rendimento": 0.0}
             for row in rows:
@@ -278,9 +278,9 @@ class TransactionService:
                     data[div_type] = float(total)
                 else:
                     data["Rendimento"] = data.get("Rendimento", 0.0) + float(total)
-                    
+
             total_sum = sum(data.values())
-            
+
             # Form into a neat DataFrame for display
             df = pd.DataFrame([
                 {"Categoria": "Total de Dividendos", "Valor (R$)": data["Dividendo"]},
@@ -324,5 +324,44 @@ class TransactionService:
                 {"Categoria": "Total de Proventos (Soma de todos)", "Valor (R$)": total_sum}
             ])
             return df
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_tracked_market_assets() -> list:
+        """Returns the list of tracked tickers from the database."""
+        conn = db.get_personal_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT ticker FROM tracked_market_assets ORDER BY ticker ASC")
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    @staticmethod
+    def add_tracked_market_asset(ticker: str) -> bool:
+        """Adds a ticker to the watchlist in the database."""
+        conn = db.get_personal_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT OR REPLACE INTO tracked_market_assets (ticker) VALUES (?)", (ticker.upper().strip(),))
+            conn.commit()
+            return True
+        except Exception:
+            return False
+        finally:
+            conn.close()
+
+    @staticmethod
+    def remove_tracked_market_asset(ticker: str) -> bool:
+        """Removes a ticker from the watchlist in the database."""
+        conn = db.get_personal_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM tracked_market_assets WHERE ticker = ?", (ticker.upper().strip(),))
+            conn.commit()
+            return True
+        except Exception:
+            return False
         finally:
             conn.close()

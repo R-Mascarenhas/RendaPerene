@@ -73,6 +73,14 @@ class Formatter:
         m_pt = MONTHS_PT.get(m_num, m_num)
         return f"{m_pt}/{yr}"
 
+# Manual corrections for known Yahoo Finance B3 dividend database omissions
+YAHOO_DIVIDEND_CORRECTIONS = {
+    "BBAS3": {
+        2023: 2.29,  # Corrects Yahoo's omission of November 2023 JCP
+        2024: 2.61   # Corrects Yahoo's omission of November 2024 JCP
+    }
+}
+
 class MarketData:
     """Class responsible for integrations with market APIs."""
 
@@ -127,6 +135,79 @@ class MarketData:
         except Exception:
             pass
         return 1621.0
+
+
+    @staticmethod
+    @st.cache_data(ttl=3600) # Cache for 1 hour
+    def get_ticker_market_analysis(ticker: str, target_yield_pct: float = 6.0) -> dict:
+        """Fetches comprehensive market metrics, last 5y dividends, and computes Bazin's Ceiling Price."""
+        ticker_sa = f"{ticker.strip().upper()}.SA"
+        try:
+            t = yf.Ticker(ticker_sa)
+            info = t.info
+
+            # Fetch dynamic details
+            current_price = info.get("currentPrice", info.get("lastPrice", info.get("regularMarketPrice", 0.0)))
+            vpa = info.get("bookValue", 0.0)
+            pb = info.get("priceToBook", 0.0)
+            pe = info.get("trailingPE", 0.0)
+            dy = info.get("dividendYield", 0.0) * 100 if info.get("dividendYield") is not None else 0.0
+            roe = info.get("returnOnEquity", 0.0) * 100 if info.get("returnOnEquity") is not None else 0.0
+            high_52w = info.get("fiftyTwoWeekHigh", 0.0)
+            low_52w = info.get("fiftyTwoWeekLow", 0.0)
+            name = info.get("longName", info.get("shortName", ticker))
+
+            # Fetch Dividends History
+            div_series = t.dividends
+            current_year = datetime.date.today().year
+            last_5_years = [current_year - i for i in range(1, 6)] # e.g. [2025, 2024, 2023, 2022, 2021]
+
+            div_by_year = {}
+            ticker_clean = ticker.strip().upper()
+
+            if not div_series.empty:
+                # Group by year
+                div_df = div_series.groupby(div_series.index.year).sum()
+                for yr in last_5_years:
+                    val = float(div_df.get(yr, 0.0))
+                    if ticker_clean in YAHOO_DIVIDEND_CORRECTIONS and yr in YAHOO_DIVIDEND_CORRECTIONS[ticker_clean]:
+                        val = YAHOO_DIVIDEND_CORRECTIONS[ticker_clean][yr]
+                    div_by_year[yr] = val
+            else:
+                for yr in last_5_years:
+                    val = 0.0
+                    if ticker_clean in YAHOO_DIVIDEND_CORRECTIONS and yr in YAHOO_DIVIDEND_CORRECTIONS[ticker_clean]:
+                        val = YAHOO_DIVIDEND_CORRECTIONS[ticker_clean][yr]
+                    div_by_year[yr] = val
+
+            # Calculate average dividend of the last 5 years
+            avg_dividend_5y = sum(div_by_year.values()) / 5.0
+
+            # Calculate Bazin's Ceiling Price: Avg Dividend / Target Yield
+            target_yield = target_yield_pct / 100
+            ceiling_price = (avg_dividend_5y / target_yield) if target_yield > 0 else 0.0
+
+            # 5-year Average DY
+            avg_dy_5y = (avg_dividend_5y / current_price * 100) if current_price > 0 else 0.0
+
+            return {
+                "ticker": ticker,
+                "name": name,
+                "current_price": current_price,
+                "vpa": vpa,
+                "pb": pb,
+                "pe": pe,
+                "dy": dy,
+                "roe": roe,
+                "high_52w": high_52w,
+                "low_52w": low_52w,
+                "dividends_5y": div_by_year,
+                "avg_dividend_5y": avg_dividend_5y,
+                "ceiling_price": ceiling_price,
+                "avg_dy_5y": avg_dy_5y
+            }
+        except Exception:
+            return {}
 
     @staticmethod
     @st.cache_data

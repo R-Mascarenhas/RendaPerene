@@ -6,7 +6,7 @@ class LancamentosView:
     """Class responsible for coordinating the multi-tab layout under 'Lançamentos & B3'."""
 
     def render(self):
-        # Create top-level tabs inside Lançamentos & B3
+        # Create top-level tabs inside Lançamentos & B3 as requested
         tab_ops, tab_assets, tab_market = st.tabs([
             "📥 Importar & Lançar",
             "📁 Meus Ativos",
@@ -18,3 +18,6 @@ class LancamentosView:
 
         with tab_assets:
             AssetsView().render()
+
+        with tab_market:
+            AssetsView().render_market_tab()

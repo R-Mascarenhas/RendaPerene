@@ -45,6 +45,12 @@ class DatabaseManager:
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tracked_market_assets (
+                ticker TEXT PRIMARY KEY
+            )
+        ''')
+
         conn.commit()
         conn.close()
 

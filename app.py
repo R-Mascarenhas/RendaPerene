@@ -14,24 +14,24 @@ SessionManager.initialize()
 
 st.title("💼 Carteira de Investimentos")
 
-# Import Views from Domains
+# Import Views from Domains (SOLID compliant imports)
 from dashboard.dashboard_view import DashboardView
-from lancamentos.transactions_view import LancamentosView
+from assets.assets_view import AssetsView
 from planning.planning_view import PlanningView
 
-# Create 3 main tabs
-tab_dashboard, tab_planning, tab_lancamentos = st.tabs([
+# Create 3 main tabs (Optimized user labels)
+tab_dashboard, tab_assets, tab_planning = st.tabs([
     "📊 Dashboard",
-    "🎯 Planejamento",
-    "📝 Ativos"
+    "📝 Ativos",
+    "🎯 Planejamento"
 ])
 
 # Clean MVC Routing
 with tab_dashboard:
     DashboardView().render()
 
+with tab_assets:
+    AssetsView().render()
+
 with tab_planning:
     PlanningView().render()
-
-with tab_lancamentos:
-    LancamentosView().render()

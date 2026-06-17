@@ -1,7 +1,7 @@
 import streamlit as st
 import datetime
 import pandas as pd
-from lancamentos.transactions_service import TransactionService
+from assets.assets_service import AssetService
 
 class OperationsView:
     """Class responsible for rendering the manual transactions and B3 uploader forms."""
@@ -19,8 +19,6 @@ class OperationsView:
     def _render_unified_manual_form(self):
         st.subheader("Registrar Lançamento Manual")
         
-        # Placing the selector outside the form triggers an instant, seamless
-        # Streamlit rerun, updating the form input fields dynamically!
         entry_type = st.selectbox(
             "Tipo de Lançamento", 
             [
@@ -36,7 +34,6 @@ class OperationsView:
             date = st.date_input("Data do Negócio/Pagamento", datetime.date.today(), format="DD/MM/YYYY")
             ticker_input = st.text_input("Ticker do Ativo (ex: BBAS3)").strip().upper()
             
-            # Conditionally render fields depending on the selected category
             if "Compra" in entry_type or "Venda" in entry_type:
                 qty = st.number_input("Quantidade", min_value=1, value=100, step=1)
                 price = st.number_input("Preço Unitário (R$)", min_value=0.01, value=10.00, step=0.1)
@@ -56,7 +53,7 @@ class OperationsView:
                 else:
                     if "Compra" in entry_type or "Venda" in entry_type:
                         tx_type = "Compra" if "Compra" in entry_type else "Venda"
-                        TransactionService.add_transaction(
+                        AssetService.add_transaction(
                             ticker_input, 
                             date.strftime("%Y-%m-%d"), 
                             tx_type, 
@@ -67,7 +64,7 @@ class OperationsView:
                         st.success(f"Sucesso! {tx_type} de {qty}x {ticker_input} salva no banco de dados!")
                     else:
                         div_type = "Dividendo" if "Dividendo" in entry_type else ("JCP" if "JCP" in entry_type else "Rendimento")
-                        TransactionService.add_dividend(
+                        AssetService.add_dividend(
                             ticker_input, 
                             date.strftime("%Y-%m-%d"), 
                             div_type, 
@@ -92,7 +89,7 @@ class OperationsView:
                 try:
                     with st.spinner("Processando e importando planilha B3..."):
                         df_excel = pd.read_excel(b3_file)
-                        processed_tx, processed_div = TransactionService.process_b3_import(df_excel)
+                        processed_tx, processed_div = AssetService.process_b3_import(df_excel)
                         
                         st.success(f"Importação realizada com sucesso! Foram adicionadas {processed_tx} novas transações e {processed_div} registros de proventos no banco de dados local!")
                         st.session_state.processed_files.add(file_key)

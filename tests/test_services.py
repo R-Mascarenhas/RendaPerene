@@ -360,14 +360,14 @@ def test_views_static_db_imports_sanity():
     """
     views_dir = "views"
     assert os.path.exists(views_dir)
-    
+
     # Loop through view files
     for file_name in os.listdir(views_dir):
         file_path = os.path.join(views_dir, file_name)
         if os.path.isfile(file_path) and file_name.endswith(".py"):
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            
+
             # If 'db' is used (e.g. calling db.get_personal_connection() or db.X),
             # verify that the database connection object was imported
             if " db." in content or "=db." in content:
@@ -386,10 +386,10 @@ def test_views_no_duplicate_widget_keys_sanity():
     import re
     views_dir = "views"
     assert os.path.exists(views_dir)
-    
+
     # Simple regex to extract widget keys like key="my_key" or key='my_key'
     key_pattern = re.compile(r"key\s*=\s*['\"]([^'\"]+)['\"]")
-    
+
     # Recursively traverse views/ directory
     for root, dirs, files in os.walk(views_dir):
         for file_name in files:
@@ -397,9 +397,9 @@ def test_views_no_duplicate_widget_keys_sanity():
                 file_path = os.path.join(root, file_name)
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
-                
+
                 found_keys = key_pattern.findall(content)
-                
+
                 # Check for duplicates inside this file
                 seen_keys = set()
                 duplicates = []
@@ -407,7 +407,7 @@ def test_views_no_duplicate_widget_keys_sanity():
                     if k in seen_keys:
                         duplicates.append(k)
                     seen_keys.add(k)
-                    
+
                 assert len(duplicates) == 0, (
                     f"FALHA: O arquivo {file_path} possui chaves de widgets duplicadas: {duplicates}! "
                     f"Cada widget Streamlit em um mesmo arquivo deve possuir uma chave 'key' única."
@@ -423,7 +423,7 @@ def test_views_session_state_persistent_keys_sanity():
     assert os.path.exists("views/planning_view.py")
     with open("views/planning_view.py", "r", encoding="utf-8") as f:
         content = f.read()
-        
+
     assert "key=\"desired_income_mw\"" not in content, (
         "FALHA: O arquivo views/planning_view.py ainda vincula diretamente a chave 'desired_income_mw' como chave de widget! "
         "Use 'desired_income_mw_input' e salve o valor dinamicamente para evitar exclusões do Streamlit no unmount."
@@ -432,3 +432,40 @@ def test_views_session_state_persistent_keys_sanity():
         "FALHA: O arquivo views/planning_view.py ainda vincula diretamente a chave 'desired_income_fixed' como chave de widget! "
         "Use 'desired_income_fixed_input' e salve o valor dinamicamente para evitar exclusões do Streamlit no unmount."
     )
+
+def test_formatter_colored_cell_style_dry_sanity():
+    """
+    Verifies that Formatter.get_colored_cell_style and Formatter.get_trend_cell_style
+    return the correct high-contrast CSS color tags depending on Bazin price-to-ceiling margins
+    and positive/negative trends (DRY contract sanity).
+    """
+    from core.utils.formatter import Formatter
+
+    # 1. Price is cheap/muy barato (<= 80% of ceiling) -> Green
+    style_green = Formatter.get_colored_cell_style(price=30.0, ceiling=50.0)
+    assert "rgba(40, 167, 69, 0.25)" in style_green
+    assert "font-weight: bold" in style_green
+
+    # 2. Price is fair/abaixo (<= 100% of ceiling) -> Yellow
+    style_yellow = Formatter.get_colored_cell_style(price=45.0, ceiling=50.0)
+    assert "rgba(255, 193, 7, 0.25)" in style_yellow
+
+    # 3. Price is expensive (> ceiling) -> Red
+    style_red = Formatter.get_colored_cell_style(price=55.0, ceiling=50.0)
+    assert "rgba(220, 53, 69, 0.25)" in style_red
+
+    # 4. Ceiling is invalid (<= 0.0) -> Transparent
+    style_trans = Formatter.get_colored_cell_style(price=30.0, ceiling=0.0)
+    assert "transparent" in style_trans
+
+    # 5. Trend is positive -> Green
+    trend_green = Formatter.get_trend_cell_style(15.5)
+    assert "rgba(40, 167, 69, 0.25)" in trend_green
+
+    # 6. Trend is negative -> Red
+    trend_red = Formatter.get_trend_cell_style(-3.2)
+    assert "rgba(220, 53, 69, 0.25)" in trend_red
+
+    # 7. Trend is neutral -> Transparent
+    trend_neutral = Formatter.get_trend_cell_style(0.0)
+    assert "transparent" in trend_neutral

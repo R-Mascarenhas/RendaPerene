@@ -10,12 +10,12 @@ class MarketView:
     def render(self):
         st.subheader("📈 Central de Monitoramento de Mercado (Bazin)")
         st.write("Acompanhe empresas da B3 em tempo real e identifique oportunidades de compra utilizando o modelo de Preço Teto de Décio Bazin.")
-        
+
         catalog = MarketData.load_assets_catalog()
         available_tickers = sorted(catalog.index.tolist()) if not catalog.empty else []
 
         col_add, col_yield = st.columns([2, 1])
-        
+
         with col_add:
             with st.form("form_add_market_asset", clear_on_submit=True):
                 new_ticker = st.selectbox(
@@ -36,23 +36,23 @@ class MarketView:
                             st.rerun()
                         else:
                             st.error(f"Erro ao adicionar o ativo {new_ticker} (ou ele já existe no monitor).")
-                            
+
         with col_yield:
             target_yield = st.number_input(
-                "Taxa de Rendimento Alvo Bazin (%)", 
-                min_value=1.0, 
-                max_value=20.0, 
-                value=6.0, 
+                "Taxa de Rendimento Alvo Bazin (%)",
+                min_value=1.0,
+                max_value=20.0,
+                value=6.0,
                 step=0.5,
                 key="target_bazin_yield_pct"
             )
 
         tracked_tickers = AssetService.get_tracked_market_assets()
-        
+
         if not tracked_tickers:
             st.info("Nenhuma empresa adicionada ao monitor. Digite um ticker no formulário acima para começar a acompanhar!")
             return
-            
+
         col_rem, _ = st.columns([2, 2])
         with col_rem:
             remove_ticker = st.selectbox("Remover empresa do monitor", ["--- Selecione ---"] + tracked_tickers)
@@ -71,11 +71,11 @@ class MarketView:
             for t in tracked_tickers:
                 details = MarketData.get_ticker_market_analysis(t, target_yield_pct=target_yield)
                 metadata = AssetService.get_asset_metadata(t)
-                
+
                 if details:
                     current_year = datetime.date.today().year
                     last_5_years = [current_year - i for i in range(1, 6)]
-                    
+
                     row_data = {
                         "Ticker": t,
                         "Empresa": details.get("name", metadata.get("name", t)),
@@ -90,10 +90,10 @@ class MarketView:
                         "avg_div_5y": details.get("avg_dividend_5y", 0.0),
                         "avg_dy_5y": details.get("avg_dy_5y", 0.0)
                     }
-                    
+
                     for yr in last_5_years:
                         row_data[f"Div {yr}"] = details.get("dividends_5y", {}).get(yr, 0.0)
-                        
+
                     market_rows.append(row_data)
 
         if not market_rows:
@@ -105,15 +105,15 @@ class MarketView:
         df_display = pd.DataFrame()
         df_display["Ticker"] = df_market["Ticker"]
         df_display["Empresa"] = df_market["Empresa"]
-        
+
         df_display["Cotação"] = df_market["Cotação"]
         df_display["Preço Teto"] = df_market["Preço Teto"]
-        
+
         current_year = datetime.date.today().year
         last_5_years = [current_year - i for i in range(1, 6)]
         for yr in last_5_years:
             df_display[f"Div {yr}"] = df_market[f"Div {yr}"]
-            
+
         df_display["Média 5a"] = df_market["avg_div_5y"]
         df_display["DY Médio 5a"] = df_market["avg_dy_5y"]
         df_display["P/VP"] = df_market["P/VP"]
@@ -136,10 +136,10 @@ class MarketView:
             "Cotação": st.column_config.NumberColumn("Cotação", format="R$ %.2f", width="small"),
             "Preço Teto": st.column_config.NumberColumn("Preço Teto (Bazin)", format="R$ %.2f", width="small"),
         }
-        
+
         for yr in last_5_years:
             col_configs[f"Div {yr}"] = st.column_config.NumberColumn(f"Div {yr}", format="R$ %.2f", width="small")
-            
+
         col_configs.update({
             "Média 5a": st.column_config.NumberColumn("Média 5a", format="R$ %.2f", width="small"),
             "DY Médio 5a": st.column_config.NumberColumn("DY Médio 5a", format="%.2f%%", width="small"),
@@ -155,17 +155,7 @@ class MarketView:
             for idx in df.index:
                 price = df_market.loc[idx, "Cotação"]
                 ceiling = df_market.loc[idx, "Preço Teto"]
-                
-                if ceiling <= 0:
-                    bg_color = "transparent"
-                elif price <= (ceiling * 0.8):
-                    bg_color = "rgba(40, 167, 69, 0.25)"
-                elif price <= ceiling:
-                    bg_color = "rgba(255, 193, 7, 0.25)"
-                else:
-                    bg_color = "rgba(220, 53, 69, 0.25)"
-                    
-                style_df.loc[idx, "Cotação"] = f"background-color: {bg_color}; font-weight: bold; border-radius: 4px;"
+                style_df.loc[idx, "Cotação"] = Formatter.get_colored_cell_style(price, ceiling)
             return style_df
 
         styled_display = df_display.style.apply(style_market_dataframe, axis=None)
@@ -180,7 +170,7 @@ class MarketView:
         st.markdown("---")
         with st.expander("🔧 Ajustar Proventos Históricos (Bazin)"):
             st.write("Caso identifique erros de omissão de dividendos no Yahoo Finance (como JCPs complementares), corrija os valores consolidados de cada ano abaixo:")
-            
+
             with st.form("form_dividend_correction", clear_on_submit=True):
                 col_c1, col_c2, col_c3 = st.columns(3)
                 with col_c1:
@@ -190,7 +180,7 @@ class MarketView:
                     corr_year = st.selectbox("Selecione o Ano", options=[current_year - i for i in range(1, 6)])
                 with col_c3:
                     corr_value = st.number_input("Valor Total Pago no Ano (R$)", min_value=0.01, value=2.00, step=0.05)
-                    
+
                 submit_corr = st.form_submit_button("💾 Salvar Correção")
                 if submit_corr:
                     if corr_ticker == "--- Selecione ---":

@@ -24,12 +24,11 @@ class MarketData:
     @staticmethod
     @st.cache_data(ttl=3600)
     def get_ticker_details(ticker: str) -> dict:
-        """Fetches advanced real-time metrics and historical data for a ticker from Yahoo Finance."""
+        """Fetches advanced real-time metrics for a ticker from Yahoo Finance."""
         ticker_sa = f"{ticker.strip().upper()}.SA"
         try:
             t = yf.Ticker(ticker_sa)
             info = t.info
-            history = t.history(period="1y")
             
             current_price = info.get("currentPrice", info.get("lastPrice", info.get("regularMarketPrice", 0.0)))
             ticker_clean = ticker.strip().upper()
@@ -72,11 +71,31 @@ class MarketData:
                 "pe": info.get("trailingPE", 0.0) if info.get("trailingPE") is not None else 0.0,
                 "pb": info.get("priceToBook", 0.0) if info.get("priceToBook") is not None else 0.0,
                 "high_52w": info.get("fiftyTwoWeekHigh", 0.0) if info.get("fiftyTwoWeekHigh") is not None else 0.0,
-                "low_52w": info.get("fiftyTwoWeekLow", 0.0) if info.get("fiftyTwoWeekLow") is not None else 0.0,
-                "history": history
+                "low_52w": info.get("fiftyTwoWeekLow", 0.0) if info.get("fiftyTwoWeekLow") is not None else 0.0
             }
         except Exception:
             return {}
+
+    @staticmethod
+    @st.cache_data(ttl=600)
+    def get_ticker_history(ticker: str, period: str = "1y") -> pd.DataFrame:
+        """
+        Fetches historical price data for a ticker based on the chosen period (e.g. 1d, 5d, 1mo, max).
+        Chooses appropriate intervals (e.g. 5m, 15m) to prevent blank single-dot charts on intraday.
+        """
+        ticker_sa = f"{ticker.strip().upper()}.SA"
+        try:
+            t = yf.Ticker(ticker_sa)
+            if period == "1d":
+                interval = "5m"
+            elif period == "5d":
+                interval = "15m"
+            else:
+                interval = "1d"
+            df = t.history(period=period, interval=interval)
+            return df
+        except Exception:
+            return pd.DataFrame()
 
     @staticmethod
     @st.cache_data(ttl=2592000) # Cache for 30 days

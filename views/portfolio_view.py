@@ -61,13 +61,12 @@ class PortfolioView:
             svg_fallback = f"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='108' height='108'><rect width='108' height='108' rx='12' fill='{fallback_color}'/><text x='54' y='62' fill='white' font-size='22' font-family='sans-serif' font-weight='bold' text-anchor='middle'>{ticker[:4]}</text></svg>"
 
             st.markdown(
-                f'''<img src="{github_logo_url}" referrerpolicy="no-referrer" onerror="this.onerror=null; this.src='{svg_fallback}';" style="width: 108px; height: 108px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); object-fit: contain; background-color: white;">''',
+                f'''<img src="{github_logo_url}" referrerpolicy="no-referrer" onerror="this.onerror=null; this.src='{svg_fallback}';" style="width: 144px; height: 144px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); object-fit: contain; background-color: white;">''',
                 unsafe_allow_html=True
             )
         with col_meta:
             st.subheader(f"{ticker} - {metadata.get('name', 'Nome não disponível')}")
-            st.write(f"**CNPJ:** {metadata.get('cnpj', 'N/D')} | **Setor:** {metadata.get('sector', 'N/D')} | **Segmento:** {metadata.get('segment', 'N/D')}")
-
+            st.write(f"**CNPJ:** {metadata.get('cnpj', 'N/D')}  \n**Setor:** {metadata.get('sector', 'N/D')}  \n**Segmento:** {metadata.get('segment', 'N/D')}")
         df_div = AssetService.get_asset_dividends(ticker)
 
         # SECTION 1 (AT THE TOP): Tabela Dinâmica do Ativo por Ano

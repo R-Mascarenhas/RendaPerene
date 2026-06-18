@@ -26,7 +26,7 @@ class DetailedHoldingsWidget:
         df_display['Atual'] = df_positions['current_value'].map(Formatter.format_currency)
         df_display['Cotação hoje'] = df_positions['current_price'].map(Formatter.format_currency)
 
-        df_display['Rendimento %'] = df_positions['return_pct_custom'].map(Formatter.format_currency)
+        df_display['Rendimento %'] = df_positions['return_pct_custom'].map(lambda x: f"{x:.2f}%")
         df_display['Resultado'] = df_positions['profit_loss'].map(Formatter.format_currency)
         df_display['YoC'] = df_positions['yoc_custom'].map(lambda x: f"{x:.2f}%")
         df_display['YoC/12'] = df_positions['yoc_12_custom'].map(lambda x: f"{x:.2f}%")

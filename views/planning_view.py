@@ -48,6 +48,21 @@ class PlanningView:
             st.session_state.mw_value = float(st.session_state[dynamic_key])
         self._save_params()
 
+    def _on_birth_date_change(self):
+        """Syncs birth date input back to core state and saves it."""
+        st.session_state.birth_date = st.session_state.birth_date_input
+        self._save_params()
+
+    def _on_retirement_age_change(self):
+        """Syncs retirement age input back to core state and saves it."""
+        st.session_state.retirement_age = int(st.session_state.retirement_age_input)
+        self._save_params()
+
+    def _on_annual_interest_rate_change(self):
+        """Syncs real interest rate input back to core state and saves it."""
+        st.session_state.annual_interest_rate = float(st.session_state.annual_interest_rate_input)
+        self._save_params()
+
     def _on_desired_income_mw_change(self):
         """Syncs multiplier numeric input back to core state and saves it."""
         st.session_state.desired_income_mw_val = st.session_state.desired_income_mw_input
@@ -90,7 +105,13 @@ class PlanningView:
         col_birth, col_ret_age, col_interest, col_type, col_val, col_mw = st.columns([1, 1, 1, 1.2, 1.2, 1.6])
 
         with col_birth:
-            birth_date = st.date_input("Data de Nascimento", key="birth_date", format="DD/MM/YYYY", on_change=self._save_params)
+            birth_date = st.date_input(
+                "Data de Nascimento",
+                value=st.session_state.birth_date,
+                key="birth_date_input",
+                format="DD/MM/YYYY",
+                on_change=self._on_birth_date_change
+            )
             today = datetime.date.today()
 
             # Calculate exact age in months
@@ -98,10 +119,26 @@ class PlanningView:
             current_age = months_age // 12
 
         with col_ret_age:
-            st.number_input("Idade de Aposentadoria", min_value=current_age+1, max_value=100, key="retirement_age", step=1, on_change=self._save_params)
+            st.number_input(
+                "Idade de Aposentadoria",
+                min_value=current_age+1,
+                max_value=100,
+                value=int(st.session_state.retirement_age),
+                key="retirement_age_input",
+                step=1,
+                on_change=self._on_retirement_age_change
+            )
 
         with col_interest:
-            st.number_input("Taxa de Juros (% a.a.)", min_value=1.0, max_value=15.0, key="annual_interest_rate", step=0.5, on_change=self._save_params)
+            st.number_input(
+                "Taxa de Juros (% a.a.)",
+                min_value=1.0,
+                max_value=15.0,
+                value=float(st.session_state.annual_interest_rate),
+                key="annual_interest_rate_input",
+                step=0.5,
+                on_change=self._on_annual_interest_rate_change
+            )
 
         with col_type:
             # Map database state to UI text index representation

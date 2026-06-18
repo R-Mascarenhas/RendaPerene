@@ -45,6 +45,19 @@ class DatabaseManager:
             )
         ''')
 
+        # Backward compatibility migrations: safely add English planning fields if missing
+        try:
+            cursor.execute("ALTER TABLE planning_configuration ADD COLUMN desired_income_type TEXT DEFAULT 'MULTIPLIER'")
+            conn.commit()
+        except Exception:
+            pass # Column already exists, safe to ignore
+
+        try:
+            cursor.execute("ALTER TABLE planning_configuration ADD COLUMN desired_income_fixed REAL DEFAULT 10000.0")
+            conn.commit()
+        except Exception:
+            pass # Column already exists, safe to ignore
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS tracked_market_assets (
                 ticker TEXT PRIMARY KEY

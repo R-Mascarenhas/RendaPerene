@@ -375,3 +375,60 @@ def test_views_static_db_imports_sanity():
                     f"FALHA: O arquivo {file_path} referencia o objeto de banco 'db', "
                     f"mas não importa 'from core.database import db'!"
                 )
+
+def test_views_no_duplicate_widget_keys_sanity():
+    """
+    Statically analyzes all visual view files inside views/ directory and sub-directories.
+    Extracts all occurrences of key="..." or key='...' and asserts that within
+    any single file, there are absolutely zero duplicate Streamlit widget keys,
+    completely preventing StreamlitDuplicateElementKey exceptions.
+    """
+    import re
+    views_dir = "views"
+    assert os.path.exists(views_dir)
+    
+    # Simple regex to extract widget keys like key="my_key" or key='my_key'
+    key_pattern = re.compile(r"key\s*=\s*['\"]([^'\"]+)['\"]")
+    
+    # Recursively traverse views/ directory
+    for root, dirs, files in os.walk(views_dir):
+        for file_name in files:
+            if file_name.endswith(".py"):
+                file_path = os.path.join(root, file_name)
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                
+                found_keys = key_pattern.findall(content)
+                
+                # Check for duplicates inside this file
+                seen_keys = set()
+                duplicates = []
+                for k in found_keys:
+                    if k in seen_keys:
+                        duplicates.append(k)
+                    seen_keys.add(k)
+                    
+                assert len(duplicates) == 0, (
+                    f"FALHA: O arquivo {file_path} possui chaves de widgets duplicadas: {duplicates}! "
+                    f"Cada widget Streamlit em um mesmo arquivo deve possuir uma chave 'key' única."
+                )
+
+def test_views_session_state_persistent_keys_sanity():
+    """
+    Statically analyzes views/planning_view.py to ensure that unmountable, toggled
+    widgets (like desired_income_mw and desired_income_fixed) do not bind directly
+    as widget keys in st.session_state (which Streamlit deletes upon unmounting).
+    Verifies that they utilize protected '_val' keys as their source of truth.
+    """
+    assert os.path.exists("views/planning_view.py")
+    with open("views/planning_view.py", "r", encoding="utf-8") as f:
+        content = f.read()
+        
+    assert "key=\"desired_income_mw\"" not in content, (
+        "FALHA: O arquivo views/planning_view.py ainda vincula diretamente a chave 'desired_income_mw' como chave de widget! "
+        "Use 'desired_income_mw_input' e salve o valor dinamicamente para evitar exclusões do Streamlit no unmount."
+    )
+    assert "key=\"desired_income_fixed\"" not in content, (
+        "FALHA: O arquivo views/planning_view.py ainda vincula diretamente a chave 'desired_income_fixed' como chave de widget! "
+        "Use 'desired_income_fixed_input' e salve o valor dinamicamente para evitar exclusões do Streamlit no unmount."
+    )

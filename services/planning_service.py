@@ -12,7 +12,7 @@ class SimulationService:
         conn = db.get_personal_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input FROM planning_configuration WHERE id = 1")
+            cursor.execute("SELECT birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed FROM planning_configuration WHERE id = 1")
             row = cursor.fetchone()
             if row:
                 config = {
@@ -21,7 +21,9 @@ class SimulationService:
                     "desired_income_mw": row[2],
                     "annual_interest_rate": row[3],
                     "mw_value": row[4],
-                    "initial_equity_input": row[5]
+                    "initial_equity_input": row[5],
+                    "desired_income_type": row[6] if row[6] else "MULTIPLIER",
+                    "desired_income_fixed": row[7] if row[7] is not None else 10000.0
                 }
                 return config
             return None
@@ -31,7 +33,7 @@ class SimulationService:
             conn.close()
 
     @staticmethod
-    def save_configuration(birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input):
+    def save_configuration(birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type="MULTIPLIER", desired_income_fixed=10000.0):
         """Saves or updates the planning configuration in the database."""
         conn = db.get_personal_connection()
         cursor = conn.cursor()
@@ -40,14 +42,14 @@ class SimulationService:
             if cursor.fetchone():
                 cursor.execute('''
                     UPDATE planning_configuration
-                    SET birth_date = ?, retirement_age = ?, desired_income_mw = ?, annual_interest_rate = ?, mw_value = ?, initial_equity_input = ?
+                    SET birth_date = ?, retirement_age = ?, desired_income_mw = ?, annual_interest_rate = ?, mw_value = ?, initial_equity_input = ?, desired_income_type = ?, desired_income_fixed = ?
                     WHERE id = 1
-                ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input))
+                ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed))
             else:
                 cursor.execute('''
-                    INSERT INTO planning_configuration (id, birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input)
-                    VALUES (1, ?, ?, ?, ?, ?, ?)
-                ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input))
+                    INSERT INTO planning_configuration (id, birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed)
+                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed))
             conn.commit()
         finally:
             conn.close()
@@ -91,7 +93,13 @@ class SimulationService:
         total_time_months = max(0, config['retirement_age'] * 12 - start_months_age)
         remaining_time_months = max(0, config['retirement_age'] * 12 - months_age)
         
-        target_monthly_income = config['desired_income_mw'] * config['mw_value']
+        # Calculate target income dynamically based on selection (Multiplier or Fixed Amount)
+        income_type = config.get('desired_income_type', 'MULTIPLIER')
+        if income_type == "MULTIPLIER":
+            target_monthly_income = config['desired_income_mw'] * config['mw_value']
+        else: # FIXED
+            target_monthly_income = config['desired_income_fixed']
+            
         monthly_interest_rate = (1 + config['annual_interest_rate'] / 100) ** (1 / 12) - 1
         target_equity = target_monthly_income / monthly_interest_rate if monthly_interest_rate > 0 else 0.0
         
@@ -136,6 +144,8 @@ class SimulationService:
             "total_invested": total_invested,
             "retirement_age": config['retirement_age'],
             "desired_income_mw": config['desired_income_mw'],
+            "desired_income_fixed": config['desired_income_fixed'],
+            "desired_income_type": config['desired_income_type'],
             "annual_interest_rate": config['annual_interest_rate']
         }
 

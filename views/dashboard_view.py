@@ -1,17 +1,17 @@
 import streamlit as st
 import datetime
-from dashboard.dashboard_service import DashboardService
-from dashboard.components.annual_planning import AnnualPlanningWidget
-from dashboard.components.patrimony_summary import PatrimonySummaryWidget
-from dashboard.components.detailed_holdings import DetailedHoldingsWidget
-from dashboard.components.charts import DashboardCharts
+from services.assets_service import AssetService
+from views.components.annual_planning import AnnualPlanningWidget
+from views.components.patrimony_summary import PatrimonySummaryWidget
+from views.components.detailed_holdings import DetailedHoldingsWidget
+from views.components.charts import DashboardCharts
 
 class DashboardView:
     """Clean orchestrator for the Dashboard tab layout, delegating to SRP components."""
 
     def render(self):
         # 1. Fetch consolidated positions from service
-        df_positions = DashboardService.calculate_positions()
+        df_positions = AssetService.calculate_positions()
         
         today = datetime.date.today()
         current_year = today.year
@@ -24,7 +24,7 @@ class DashboardView:
         st.header("Resumo Patrimonial")
 
         if df_positions.empty:
-            st.info("Sua carteira está vazia. Vá até a aba 'Lançamentos' para inserir seus ativos ou importar seu extrato da B3!")
+            st.info("Sua carteira está vazia. Vá até a aba 'Ativos' para inserir seus ativos ou importar seu extrato da B3!")
         else:
             # 3. Render the 5 core KPI metrics (Patrimony, Capital, YoY, YoC, Dividends)
             PatrimonySummaryWidget().render(df_positions)

@@ -1,13 +1,12 @@
 import streamlit as st
-from assets.operations.operations_view import OperationsView
-from assets.portfolio.portfolio_view import PortfolioView
-from assets.market.market_view import MarketView
+from views.operations_view import OperationsView
+from views.portfolio_view import PortfolioView
+from views.market_view import MarketView
 
 class AssetsView:
     """Class responsible for coordinating the multi-tab layout under 'Assets/Ativos'."""
 
     def render(self):
-        # Create top-level tabs inside 'Ativos'
         tab_assets, tab_market, tab_ops = st.tabs([
             "📁 Meus Ativos",
             "📈 Mercado",

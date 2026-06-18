@@ -2,9 +2,11 @@ import streamlit as st
 import pandas as pd
 import datetime
 import plotly.express as px
-from assets.assets_service import AssetService
-from dashboard.dashboard_service import DashboardService
-from core.utils import Formatter, MarketData
+import plotly.graph_objects as go
+from core.database import db
+from services.assets_service import AssetService
+from core.utils.formatter import Formatter
+from core.utils.market_data import MarketData
 
 class PortfolioView:
     """Class responsible for rendering the detailed metrics, charts, and pivot tables per active asset in your portfolio."""
@@ -13,9 +15,9 @@ class PortfolioView:
         st.subheader("📁 Detalhamento de Ativos em Carteira")
 
         # Fetch active assets in portfolio
-        df_positions = DashboardService.calculate_positions()
+        df_positions = AssetService.calculate_positions()
         if df_positions.empty:
-            st.info("Nenhum ativo em custódia encontrado. Vá na aba 'Importar & Lançar' para inserir seus ativos!")
+            st.info("Nenhum ativo em custódia encontrado. Vá na aba 'Ativos' para inserir seus ativos!")
             return
 
         tickers = sorted(df_positions['ticker'].tolist())
@@ -41,7 +43,6 @@ class PortfolioView:
         pb = details.get("pb", 0.0)
         high_52w = details.get("high_52w", 0.0)
         low_52w = details.get("low_52w", 0.0)
-        history = details.get("history", pd.DataFrame())
 
         # Header metadata block
         col_img, col_meta = st.columns([1, 4])
@@ -58,7 +59,7 @@ class PortfolioView:
 
             github_logo_url = f"https://raw.githubusercontent.com/thefintz/icones-b3/main/icones/{ticker}.png"
             svg_fallback = f"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='108' height='108'><rect width='108' height='108' rx='12' fill='{fallback_color}'/><text x='54' y='62' fill='white' font-size='22' font-family='sans-serif' font-weight='bold' text-anchor='middle'>{ticker[:4]}</text></svg>"
-
+            
             st.markdown(
                 f'''<img src="{github_logo_url}" referrerpolicy="no-referrer" onerror="this.onerror=null; this.src='{svg_fallback}';" style="width: 108px; height: 108px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.15); object-fit: contain; background-color: white; padding: 6px;">''',
                 unsafe_allow_html=True
@@ -72,25 +73,25 @@ class PortfolioView:
         # SECTION 1 (AT THE TOP): Tabela Dinâmica do Ativo por Ano
         st.markdown("---")
         st.subheader("📅 Tabela Dinâmica de Proventos do Ativo")
-
+        
         years = AssetService.get_asset_years_with_dividends(ticker)
         if years:
             p_col1, p_col2, p_col3, p_col4, p_col5, p_col6 = st.columns([1.2, 1, 1, 1, 1, 1])
-
+            
             with p_col1:
                 chosen_year = st.selectbox(
-                    "Filtrar Ano",
-                    years,
+                    "Filtrar Ano", 
+                    years, 
                     key=f"year_selector_{ticker}",
                     label_visibility="visible"
                 )
-
+                
             df_pivot = AssetService.get_asset_annual_dividends_pivot(ticker, chosen_year)
             val_div = df_pivot.loc[df_pivot['Categoria'] == 'Total de Dividendos', 'Valor (R$)'].values[0]
             val_jcp = df_pivot.loc[df_pivot['Categoria'] == 'Total de JCP', 'Valor (R$)'].values[0]
             val_rend = df_pivot.loc[df_pivot['Categoria'] == 'Total de Rendimentos', 'Valor (R$)'].values[0]
             val_total = df_pivot.loc[df_pivot['Categoria'] == 'Total de Proventos (Soma de todos)', 'Valor (R$)'].values[0]
-
+            
             total_paid_per_share = 0.0
             if not df_div.empty:
                 df_div_year = df_div[df_div['Data'].str.startswith(chosen_year)]
@@ -106,7 +107,7 @@ class PortfolioView:
             p_col4.metric("Rendimentos", Formatter.format_currency(val_rend))
             p_col5.metric("Total Recebido", Formatter.format_currency(val_total))
             p_col6.metric(
-                "Total por Ação",
+                "Total por Ação", 
                 Formatter.format_currency(total_paid_per_share),
                 help="Soma de todos os proventos unitários recebidos por cota neste ano selecionado"
             )
@@ -126,11 +127,11 @@ class PortfolioView:
         st.markdown("---")
         st.markdown("#### 📊 Indicadores Gerais do Ativo")
         m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-
+        
         m_col1.metric("Preço Ajustado (Atual)", Formatter.format_currency(current_price) if current_price > 0 else "N/D")
         m_col2.metric("Preço Médio (PM)", Formatter.format_currency(row_pos['average_price']))
         m_col3.metric("Dividend Yield (DY)", f"{dy:.2f}%" if dy > 0 else "N/D")
-
+        
         total_invested = row_pos['invested_amount']
         l12m_dividends = row_pos['l12m_dividends']
         yoc_12 = ((l12m_dividends / total_invested * 100) / 12) if total_invested > 0 else 0.0
@@ -145,7 +146,7 @@ class PortfolioView:
         # SECTION 3: Behavior chart (Google-Finance style dynamic range selector!)
         st.markdown("---")
         st.markdown("#### 📈 Comportamento Gráfico")
-
+        
         period_map = {
             "1 Dia": "1d",
             "5 Dias": "5d",
@@ -156,7 +157,7 @@ class PortfolioView:
             "5 Anos": "5y",
             "Máximo": "max"
         }
-
+        
         # Render a clean, horizontal selection bar just like Google Finance!
         chosen_label = st.radio(
             "Selecione o período do histórico de fechamento",
@@ -167,22 +168,22 @@ class PortfolioView:
             label_visibility="collapsed"
         )
         chosen_period = period_map[chosen_label]
-
+        
         # Fetch the selected history dynamically from Yahoo Finance with caching
         with st.spinner(f"Buscando histórico ({chosen_label}) para {ticker}..."):
             history = MarketData.get_ticker_history(ticker, period=chosen_period)
-
+            
         if not history.empty and 'Close' in history.columns:
             # 1. Calculate dynamic financial change metrics since the start of the period
             price_current = float(history['Close'].iloc[-1])
             price_initial = float(history['Close'].iloc[0])
             value_change = price_current - price_initial
             pct_change = (value_change / price_initial * 100) if price_initial > 0 else 0.0
-
+            
             price_fmt = Formatter.format_currency(price_current)
             abs_change_fmt = f"{abs(value_change):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             pct_change_fmt = f"{abs(pct_change):.2f}%"
-
+            
             period_label_map = {
                 "1d": "hoje",
                 "5d": "nos últimos 5 dias",
@@ -194,7 +195,7 @@ class PortfolioView:
                 "max": "no período máximo"
             }
             period_label = period_label_map.get(chosen_period, "no período")
-
+            
             # Style badges and absolute value text based on positive/negative change
             if value_change > 0:
                 badge_html = f'<span style="background-color: #28a745; color: white; padding: 4px 10px; border-radius: 8px; font-weight: bold; font-size: 14px; margin-left: 10px; margin-right: 12px;">↑ {pct_change_fmt}</span>'
@@ -205,11 +206,11 @@ class PortfolioView:
             else:
                 badge_html = f'<span style="background-color: #6c757d; color: white; padding: 4px 10px; border-radius: 8px; font-weight: bold; font-size: 14px; margin-left: 10px; margin-right: 12px;">0,00%</span>'
                 text_html = f'<span style="color: #6c757d; font-weight: bold; font-size: 15px;">0,00 {period_label}</span>'
-
+                
             header_html = f'<div style="display: flex; align-items: center; margin-top: 15px; margin-bottom: 5px;"><span style="font-size: 32px; font-weight: bold; color: inherit;">{price_fmt}</span>{badge_html}{text_html}</div>'
             st.markdown(header_html, unsafe_allow_html=True)
 
-            # Convert index to localized string representation to completely eliminate
+            # Convert index to localized string representation to completely eliminate 
             # non-trading hours, nights, and weekends gaps (categorical time axis).
             if chosen_period in ["1d", "5d"]:
                 x_vals = history.index.strftime('%d/%m %H:%M')
@@ -217,9 +218,6 @@ class PortfolioView:
             else:
                 x_vals = history.index.strftime('%d/%m/%Y')
                 hover_fmt = "Data: %{x}<br>Fechamento: R$ %{y:,.2f}<extra></extra>"
-
-            import plotly.graph_objects as go
-            from core.database import db
 
             # Fetch raw transactions for this ticker to plot Buy/Sell markers
             conn = db.get_personal_connection()
@@ -232,11 +230,11 @@ class PortfolioView:
             # Filter transactions that fall within the current selected chart timeline
             history_start = pd.to_datetime(history.index.min()).date()
             history_end = pd.to_datetime(history.index.max()).date()
-
+            
             buys_x = []
             buys_y = []
             buys_hover = []
-
+            
             sells_x = []
             sells_y = []
             sells_hover = []
@@ -244,31 +242,31 @@ class PortfolioView:
             if not df_raw_tx.empty:
                 df_raw_tx['dt'] = pd.to_datetime(df_raw_tx['date']).dt.date
                 df_filtered_tx = df_raw_tx[(df_raw_tx['dt'] >= history_start) & (df_raw_tx['dt'] <= history_end)]
-
+                
                 # Pre-map available historical dates to their exact coordinate in x_vals
                 date_to_x = {}
                 for idx, dt_val in enumerate(history.index):
                     d_key = pd.to_datetime(dt_val).date()
                     date_to_x[d_key] = x_vals[idx]
-
+                    
                 for _, row in df_filtered_tx.iterrows():
                     t_date = row['dt']
                     t_type = row['transaction_type'] # BUY or SELL
                     qty = row['quantity']
                     t_price = row['unit_price']
-
+                    
                     # Find closest trading day in history index to sit the marker perfectly on the line
                     available_dates = [d for d in date_to_x.keys() if d >= t_date]
                     if not available_dates:
                         available_dates = [d for d in date_to_x.keys() if d <= t_date]
-
+                        
                     if available_dates:
                         match_date = min(available_dates, key=lambda d: abs((d - t_date).days))
                         x_coord = date_to_x[match_date]
-
+                        
                         # Fetch the closing price on that matching trading day to position the dot exactly on the line
                         chart_price = float(history.loc[history.index.map(lambda d: pd.to_datetime(d).date() == match_date), 'Close'].iloc[0])
-
+                        
                         op_label = "Aporte (Compra)" if t_type == "BUY" else "Resgate (Venda)"
                         hover_text = (
                             f"<b>{op_label}</b><br>"
@@ -276,7 +274,7 @@ class PortfolioView:
                             f"Quantidade: {qty}<br>"
                             f"Preço Unitário: {Formatter.format_currency(t_price)}"
                         )
-
+                        
                         if t_type == "BUY":
                             buys_x.append(x_coord)
                             buys_y.append(chart_price)
@@ -307,7 +305,7 @@ class PortfolioView:
                     go.Scatter(
                         x=buys_x,
                         y=buys_y,
-                        name="Compra",
+                        name="Comprei",
                         mode="markers",
                         marker=dict(
                             color="#28a745",
@@ -319,13 +317,13 @@ class PortfolioView:
                         hovertemplate="%{text}<extra></extra>"
                     )
                 )
-
+                
             if sells_x:
                 fig.add_trace(
                     go.Scatter(
                         x=sells_x,
                         y=sells_y,
-                        name="Venda",
+                        name="Vendi",
                         mode="markers",
                         marker=dict(
                             color="#dc3545",
@@ -337,7 +335,7 @@ class PortfolioView:
                         hovertemplate="%{text}<extra></extra>"
                     )
                 )
-
+            
             # Configure X-axis as category to completely collapse any non-trading gaps,
             # and limit nticks to 8 to prevent text overlapping!
             fig.update_xaxes(
@@ -355,7 +353,7 @@ class PortfolioView:
         st.markdown("---")
         st.markdown("#### 📂 Extrato de Transações e Proventos")
         col_t1, col_t2 = st.columns(2)
-
+        
         with col_t1:
             st.subheader("🛒 Aportes Detalhados")
             df_tx = AssetService.get_asset_transactions(ticker)
@@ -376,7 +374,7 @@ class PortfolioView:
                     total = row['Total']
                     qty_owned = AssetService.get_quantity_on_date(ticker, dt)
                     unit_vals.append(total / qty_owned if qty_owned > 0 else 0.0)
-
+                    
                 df_div_display = df_div.copy()
                 df_div_display['Unitário'] = unit_vals
                 df_div_display = df_div_display[['Data', 'Tipo', 'Unitário', 'Total']]

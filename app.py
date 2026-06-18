@@ -15,9 +15,9 @@ SessionManager.initialize()
 st.title("💼 Carteira de Investimentos")
 
 # Import Views from Domains (SOLID compliant imports)
-from dashboard.dashboard_view import DashboardView
-from assets.assets_view import AssetsView
-from planning.planning_view import PlanningView
+from views.dashboard_view import DashboardView
+from views.assets_view import AssetsView
+from views.planning_view import PlanningView
 
 # Create 3 main tabs (Optimized user labels)
 tab_dashboard, tab_assets, tab_planning = st.tabs([

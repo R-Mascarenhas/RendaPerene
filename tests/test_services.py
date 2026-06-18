@@ -4,9 +4,8 @@ import os
 import datetime
 import pandas as pd
 from core.database import db, DatabaseManager
-from assets.assets_service import AssetService
-from dashboard.dashboard_service import DashboardService
-from planning.planning_service import SimulationService
+from services.assets_service import AssetService
+from services.planning_service import SimulationService
 from core.utils.market_data import MarketData
 
 TEST_PERSONAL_DB = "test_portfolio.db"
@@ -99,23 +98,23 @@ def test_average_price_calculation():
     """Ensures chronologically weighted average price math works perfectly."""
     AssetService.add_transaction("BBAS3", "2021-04-30", "BUY", 100, 20.00)
 
-    df = DashboardService.calculate_positions()
+    df = AssetService.calculate_positions()
     assert len(df) == 1
     assert df.loc[0, "quantity"] == 100
     assert df.loc[0, "average_price"] == 20.00
 
     AssetService.add_transaction("BBAS3", "2021-05-15", "BUY", 100, 30.00)
-    df = DashboardService.calculate_positions()
+    df = AssetService.calculate_positions()
     assert df.loc[0, "quantity"] == 200
     assert df.loc[0, "average_price"] == 25.00
 
     AssetService.add_transaction("BBAS3", "2021-06-01", "SELL", 50, 40.00)
-    df = DashboardService.calculate_positions()
+    df = AssetService.calculate_positions()
     assert df.loc[0, "quantity"] == 150
     assert df.loc[0, "average_price"] == 25.00
 
     AssetService.add_transaction("BBAS3", "2021-07-01", "BUY", 50, 15.00)
-    df = DashboardService.calculate_positions()
+    df = AssetService.calculate_positions()
     assert df.loc[0, "quantity"] == 200
     assert df.loc[0, "average_price"] == 22.50
 
@@ -131,7 +130,7 @@ def test_b3_excel_importer_logic():
     assert trans_count == 4
     assert prov_count == 2
 
-    df_positions = DashboardService.calculate_positions()
+    df_positions = AssetService.calculate_positions()
     assert len(df_positions) == 1
     assert df_positions.loc[0, "quantity"] == 150 # 100 buy + 100 split - 50 sell
     assert round(df_positions.loc[0, "average_price"], 2) == 6.67 # (100 * 20.00 - 50 * 20.00) / 150 = 1000 / 150 = 6.67
@@ -149,7 +148,7 @@ def test_b3_importer_deduplication():
     assert t2 == 0
     assert p2 == 0
 
-    df_positions = DashboardService.calculate_positions()
+    df_positions = AssetService.calculate_positions()
     assert len(df_positions) == 1
     assert df_positions.loc[0, "quantity"] == 150
     assert df_positions.loc[0, "total_dividends"] == 80.00
@@ -161,7 +160,7 @@ def test_dividends_time_windows():
     AssetService.add_dividend("BBAS3", "2025-11-15", "DIVIDEND", 50.00)
     AssetService.add_dividend("BBAS3", "2024-11-15", "DIVIDEND", 30.00)
 
-    df_positions = DashboardService.calculate_positions(today_date=datetime.date(2026, 6, 13))
+    df_positions = AssetService.calculate_positions(today_date=datetime.date(2026, 6, 13))
 
     assert len(df_positions) == 1
     assert df_positions.loc[0, "total_dividends"] == 180.00
@@ -174,7 +173,7 @@ def test_historical_evolution_calculation():
     AssetService.add_transaction("BBAS3", "2025-02-15", "BUY", 10, 30.00)
     AssetService.add_dividend("BBAS3", "2025-02-28", "DIVIDEND", 50.00)
 
-    df_ev = DashboardService.calculate_historical_evolution()
+    df_ev = AssetService.calculate_historical_evolution()
 
     assert len(df_ev) >= 2
     assert df_ev.loc[0, "month_str"] == "2025-01"
@@ -204,7 +203,7 @@ def test_b3_split_logic():
     assert trans == 1
     assert prov == 0
 
-    df_pos = DashboardService.calculate_positions()
+    df_pos = AssetService.calculate_positions()
     assert len(df_pos) == 1
     assert df_pos.loc[0, "quantity"] == 200
     assert df_pos.loc[0, "average_price"] == 10.00
@@ -228,7 +227,7 @@ def test_b3_resgate_logic():
     assert trans == 2
     assert prov == 0
 
-    df_pos = DashboardService.calculate_positions()
+    df_pos = AssetService.calculate_positions()
     assert len(df_pos) == 0
 
 def test_get_quantity_on_date():
@@ -291,13 +290,13 @@ def test_get_current_simulation_math():
 
 def test_views_and_services_sanity():
     """Automated SCM Sanity and View Import/Attribute Verification Test."""
-    from dashboard.dashboard_service import DashboardService
-    assert hasattr(DashboardService, "calculate_positions")
-    assert hasattr(DashboardService, "calculate_historical_evolution")
-    assert hasattr(DashboardService, "get_ytd_contributions")
-    assert hasattr(DashboardService, "get_monthly_contributions_by_year")
+    from services.assets_service import AssetService
+    assert hasattr(AssetService, "calculate_positions")
+    assert hasattr(AssetService, "calculate_historical_evolution")
+    assert hasattr(AssetService, "get_ytd_contributions")
+    assert hasattr(AssetService, "get_monthly_contributions_by_year")
 
-    from planning.planning_service import SimulationService
+    from services.planning_service import SimulationService
     assert hasattr(SimulationService, "get_configuration")
     assert hasattr(SimulationService, "save_configuration")
     assert hasattr(SimulationService, "get_initial_investment_age")
@@ -306,7 +305,7 @@ def test_views_and_services_sanity():
     assert hasattr(SimulationService, "get_updated_required_contribution")
     assert hasattr(SimulationService, "get_required_contribution")
 
-    from assets.assets_service import AssetService
+    from services.assets_service import AssetService
     assert hasattr(AssetService, "add_transaction")
     assert hasattr(AssetService, "add_dividend")
     assert hasattr(AssetService, "process_b3_import")
@@ -322,22 +321,22 @@ def test_views_and_services_sanity():
     assert hasattr(AssetService, "add_tracked_market_asset")
     assert hasattr(AssetService, "remove_tracked_market_asset")
 
-    from dashboard.dashboard_view import DashboardView
+    from views.dashboard_view import DashboardView
     assert hasattr(DashboardView, "render")
 
-    from planning.planning_view import PlanningView
+    from views.planning_view import PlanningView
     assert hasattr(PlanningView, "render")
 
-    from assets.assets_view import AssetsView
+    from views.assets_view import AssetsView
     assert hasattr(AssetsView, "render")
 
-    from assets.operations.operations_view import OperationsView
+    from views.operations_view import OperationsView
     assert hasattr(OperationsView, "render")
 
-    from assets.portfolio.portfolio_view import PortfolioView
+    from views.portfolio_view import PortfolioView
     assert hasattr(PortfolioView, "render")
 
-    from assets.market.market_view import MarketView
+    from views.market_view import MarketView
     assert hasattr(MarketView, "render")
 
 def test_app_py_static_syntax_sanity():
@@ -352,3 +351,27 @@ def test_app_py_static_syntax_sanity():
 
     assert "init_assets_db" not in content, "FALHA: O arquivo app.py ainda referencia o método obsoleto 'init_assets_db'!"
     assert "get_assets_connection" not in content, "FALHA: O arquivo app.py ainda referencia a conexão obsoleta 'get_assets_connection'!"
+
+def test_views_static_db_imports_sanity():
+    """
+    Statically analyzes all visual view files inside views/ directory.
+    Ensures that if 'db' is referenced in a file, 'from core.database import db'
+    must also be imported in that file, preventing dynamic NameErrors.
+    """
+    views_dir = "views"
+    assert os.path.exists(views_dir)
+    
+    # Loop through view files
+    for file_name in os.listdir(views_dir):
+        file_path = os.path.join(views_dir, file_name)
+        if os.path.isfile(file_path) and file_name.endswith(".py"):
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            # If 'db' is used (e.g. calling db.get_personal_connection() or db.X),
+            # verify that the database connection object was imported
+            if " db." in content or "=db." in content:
+                assert "from core.database import db" in content, (
+                    f"FALHA: O arquivo {file_path} referencia o objeto de banco 'db', "
+                    f"mas não importa 'from core.database import db'!"
+                )

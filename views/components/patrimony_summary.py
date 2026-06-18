@@ -1,6 +1,6 @@
 import streamlit as st
 from core.utils import Formatter, MarketData
-from planning.planning_service import SimulationService
+from services.planning_service import SimulationService
 
 class PatrimonySummaryWidget:
     """Displays the 5 main portfolio KPI metrics (Patrimônio, Capital, YoC, Dividends)."""

@@ -5,8 +5,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from core.constants import MONTHS_PT
 from core.utils.formatter import Formatter
-from dashboard.dashboard_service import DashboardService
-from planning.planning_service import SimulationService
+from services.assets_service import AssetService
+from services.planning_service import SimulationService
 
 class DashboardCharts:
     """Displays all interactive Plotly figures on the Dashboard."""
@@ -66,7 +66,7 @@ class DashboardCharts:
 
     def _render_evolution_chart(self):
         st.markdown("---")
-        df_evolution = DashboardService.calculate_historical_evolution()
+        df_evolution = AssetService.calculate_historical_evolution()
 
         if not df_evolution.empty:
             st.subheader("📈 Evolução Patrimonial Histórica & Planejamento")
@@ -176,7 +176,7 @@ class DashboardCharts:
 
     def _render_monthly_contributions_chart(self):
         st.markdown("---")
-        df_contribs = DashboardService.get_monthly_contributions_by_year()
+        df_contribs = AssetService.get_monthly_contributions_by_year()
         if not df_contribs.empty:
             st.subheader("📊 Histórico de Aportes por Ano e Mês")
 

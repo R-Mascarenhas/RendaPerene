@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from assets.assets_service import AssetService
+from services.assets_service import AssetService
 from core.utils import Formatter, MarketData
 
 class MarketView:
@@ -11,11 +11,9 @@ class MarketView:
         st.subheader("📈 Central de Monitoramento de Mercado (Bazin)")
         st.write("Acompanhe empresas da B3 em tempo real e identifique oportunidades de compra utilizando o modelo de Preço Teto de Décio Bazin.")
         
-        # Load available assets from assets.csv catalog to restrict input and enable autocomplete
         catalog = MarketData.load_assets_catalog()
         available_tickers = sorted(catalog.index.tolist()) if not catalog.empty else []
 
-        # 1. Action Row: Add tracked ticker via searchable selectbox & adjust target yield
         col_add, col_yield = st.columns([2, 1])
         
         with col_add:
@@ -49,14 +47,12 @@ class MarketView:
                 key="target_bazin_yield_pct"
             )
 
-        # 2. Get currently tracked assets from the personal database
         tracked_tickers = AssetService.get_tracked_market_assets()
         
         if not tracked_tickers:
             st.info("Nenhuma empresa adicionada ao monitor. Digite um ticker no formulário acima para começar a acompanhar!")
             return
             
-        # Allow the user to remove a tracked ticker cleanly
         col_rem, _ = st.columns([2, 2])
         with col_rem:
             remove_ticker = st.selectbox("Remover empresa do monitor", ["--- Selecione ---"] + tracked_tickers)
@@ -70,7 +66,6 @@ class MarketView:
         st.markdown("---")
         st.subheader("Painel de Ativos Monitorados")
 
-        # 3. Fetch live metrics & compute Bazin formula for each tracked ticker
         market_rows = []
         with st.spinner("Buscando indicadores em tempo real no Yahoo Finance..."):
             for t in tracked_tickers:
@@ -96,7 +91,6 @@ class MarketView:
                         "avg_dy_5y": details.get("avg_dy_5y", 0.0)
                     }
                     
-                    # Append dynamic historical annual dividends
                     for yr in last_5_years:
                         row_data[f"Div {yr}"] = details.get("dividends_5y", {}).get(yr, 0.0)
                         
@@ -108,12 +102,10 @@ class MarketView:
 
         df_market = pd.DataFrame(market_rows)
 
-        # 4. Form Display Dataframe and Apply Indicators
         df_display = pd.DataFrame()
         df_display["Ticker"] = df_market["Ticker"]
         df_display["Empresa"] = df_market["Empresa"]
         
-        # Keep numeric values to preserve native sorting and filtering in the GUI
         df_display["Cotação"] = df_market["Cotação"]
         df_display["Preço Teto"] = df_market["Preço Teto"]
         
@@ -129,7 +121,6 @@ class MarketView:
         df_display["DY Atual"] = df_market["DY %"]
         df_display["ROE"] = df_market["ROE %"]
 
-        # Combine Low and High 52-week ranges to save huge screen space
         def format_range_52w(row):
             low = row["low_52w"]
             high = row["high_52w"]
@@ -139,7 +130,6 @@ class MarketView:
 
         df_display["Faixa 52s"] = df_market.apply(format_range_52w, axis=1)
 
-        # Build column configs dynamically to style columns and apply dynamic PT-BR formats
         col_configs = {
             "Ticker": st.column_config.TextColumn("Ticker", width="small"),
             "Empresa": st.column_config.TextColumn("Empresa", width="medium"),
@@ -147,7 +137,6 @@ class MarketView:
             "Preço Teto": st.column_config.NumberColumn("Preço Teto (Bazin)", format="R$ %.2f", width="small"),
         }
         
-        # Format the 5 individual historical dividend columns to stay very tight/narrow on screen
         for yr in last_5_years:
             col_configs[f"Div {yr}"] = st.column_config.NumberColumn(f"Div {yr}", format="R$ %.2f", width="small")
             
@@ -161,7 +150,6 @@ class MarketView:
             "Faixa 52s": st.column_config.TextColumn("Faixa 52s (Mín-Máx)", width="medium")
         })
 
-        # Apply CSS background-color specifically to the "Cotação" column cell (Beautifully colored cells!)
         def style_market_dataframe(df):
             style_df = pd.DataFrame('', index=df.index, columns=df.columns)
             for idx in df.index:
@@ -171,16 +159,12 @@ class MarketView:
                 if ceiling <= 0:
                     bg_color = "transparent"
                 elif price <= (ceiling * 0.8):
-                    bg_color = "rgba(40, 167, 69, 0.25)" # Soft Green
+                    bg_color = "rgba(40, 167, 69, 0.25)"
                 elif price <= ceiling:
-                    bg_color = "rgba(255, 193, 7, 0.25)" # Soft Yellow
+                    bg_color = "rgba(255, 193, 7, 0.25)"
                 else:
-                    bg_color = "rgba(220, 53, 69, 0.25)" # Soft Red
+                    bg_color = "rgba(220, 53, 69, 0.25)"
                     
-                # We omit the hardcoded 'color' property entirely.
-                # This lets the browser inherit Streamlit's default theme text color
-                # (which is pure white on Dark Mode, and pure black on Light Mode),
-                # guaranteeing 100% perfect readability and optimal contrast on all themes!
                 style_df.loc[idx, "Cotação"] = f"background-color: {bg_color}; font-weight: bold; border-radius: 4px;"
             return style_df
 
@@ -194,7 +178,6 @@ class MarketView:
         )
 
         st.markdown("---")
-        # 5. Expander Form: Adjust/Correct Historical Dividends dynamically
         with st.expander("🔧 Ajustar Proventos Históricos (Bazin)"):
             st.write("Caso identifique erros de omissão de dividendos no Yahoo Finance (como JCPs complementares), corrija os valores consolidados de cada ano abaixo:")
             

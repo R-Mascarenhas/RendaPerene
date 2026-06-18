@@ -1,7 +1,7 @@
 import streamlit as st
 import datetime
 import pandas as pd
-from assets.assets_service import AssetService
+from services.assets_service import AssetService
 
 class OperationsView:
     """Class responsible for rendering the manual transactions and B3 uploader forms."""

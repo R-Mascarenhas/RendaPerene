@@ -3,8 +3,8 @@ import pandas as pd
 import numpy as np
 import datetime
 import plotly.graph_objects as go
-from planning.planning_service import SimulationService
-from dashboard.dashboard_service import DashboardService
+from services.planning_service import SimulationService
+from services.assets_service import AssetService
 from core.utils.formatter import Formatter
 from core.utils.trendlines import TrendlineCalculator, PolynomialTrendlineStrategy, LinearMomentumTrendlineStrategy
 
@@ -191,7 +191,7 @@ class ProjectionChartWidget:
 
     def _render_historical_comparisons(self, extrapolation=12):
         """Fetches and prepares the 12-month future extrapolation data, then renders both comparative charts."""
-        df_evolution = DashboardService.calculate_historical_evolution()
+        df_evolution = AssetService.calculate_historical_evolution()
         if df_evolution.empty:
             return
 

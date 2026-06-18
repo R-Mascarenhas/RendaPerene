@@ -8,7 +8,7 @@ class SessionManager:
     @staticmethod
     def initialize():
         """Initializes shared parameters in the Session State on the first page load."""
-        from planning.planning_service import SimulationService
+        from services.planning_service import SimulationService
 
         # Load from Database on first run
         if 'db_loaded' not in st.session_state:

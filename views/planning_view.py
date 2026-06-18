@@ -1,9 +1,9 @@
 import streamlit as st
 import datetime
-from planning.planning_service import SimulationService
-from planning.components.time_metrics import TimeMetricsWidget
-from planning.components.simulation_results import SimulationResultsWidget
-from planning.components.projection_chart import ProjectionChartWidget
+from services.planning_service import SimulationService
+from views.components.time_metrics import TimeMetricsWidget
+from views.components.simulation_results import SimulationResultsWidget
+from views.components.projection_chart import ProjectionChartWidget
 
 class PlanningView:
     """Clean orchestrator for the Planning tab GUI layout, delegating to SRP components."""

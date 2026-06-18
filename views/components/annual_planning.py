@@ -1,13 +1,13 @@
 import streamlit as st
-from core.utils import Formatter
-from dashboard.dashboard_service import DashboardService
-from planning.planning_service import SimulationService
+from core.utils.formatter import Formatter
+from services.assets_service import AssetService
+from services.planning_service import SimulationService
 
 class AnnualPlanningWidget:
     """Displays the progress towards your annual out-of-pocket contribution target."""
 
     def render(self, current_year, ytd_dividends):
-        ytd_contributions = DashboardService.get_ytd_contributions(current_year)
+        ytd_contributions = AssetService.get_ytd_contributions(current_year)
 
         # Pull planned contribution dynamically from Simulation Service (clean DRY pattern)
         required_monthly_contribution = SimulationService.get_updated_required_contribution()

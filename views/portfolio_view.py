@@ -75,7 +75,7 @@ class PortfolioView:
 
         years = AssetService.get_asset_years_with_dividends(ticker)
         if years:
-            p_col1, p_col2, p_col3, p_col4, p_col5, p_col6 = st.columns([1.2, 1, 1, 1, 1, 1])
+            p_col1, p_col2, p_col3, p_col4, p_col5, p_col6, p_col7 = st.columns([0.5, 1, 1, 1, 1, 1, 1])
 
             with p_col1:
                 chosen_year = st.selectbox(
@@ -101,11 +101,30 @@ class PortfolioView:
                     if qty_on_date > 0:
                         total_paid_per_share += (tot / qty_on_date)
 
+            # Calculate quantities for delta comparison (DRY-compliant)
+            qty_end_of_year = AssetService.get_quantity_on_date(ticker, f"{chosen_year}-12-31")
+            prev_year = str(int(chosen_year) - 1)
+            qty_prev_year = AssetService.get_quantity_on_date(ticker, f"{prev_year}-12-31")
+            diff = qty_end_of_year - qty_prev_year
+
+            if diff != 0:
+                qty_delta = f"{diff:+d} cotas"
+            else:
+                qty_delta = None
+
+            if diff > 0:
+                qty_help = f"Aumento de +{diff} cotas em relação ao ano de {prev_year} (posição anterior: {qty_prev_year} cotas)."
+            elif diff < 0:
+                qty_help = f"Redução de {diff} cotas em relação ao ano de {prev_year} (posição anterior: {qty_prev_year} cotas)."
+            else:
+                qty_help = f"Nenhuma alteração na quantidade de cotas em relação ao ano de {prev_year} (posição estável em {qty_prev_year} cotas)."
+
             p_col2.metric("Dividendos", Formatter.format_currency(val_div))
             p_col3.metric("JCP", Formatter.format_currency(val_jcp))
             p_col4.metric("Rendimentos", Formatter.format_currency(val_rend))
             p_col5.metric("Total Recebido", Formatter.format_currency(val_total))
-            p_col6.metric(
+            p_col6.metric("Quantidade", f"{qty_end_of_year} cotas", delta=qty_delta, help=qty_help)
+            p_col7.metric(
                 "Total por Ação",
                 Formatter.format_currency(total_paid_per_share),
                 help="Soma de todos os proventos unitários recebidos por cota neste ano selecionado"

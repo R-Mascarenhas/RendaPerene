@@ -3,6 +3,16 @@ import pandas as pd
 import datetime
 from services.assets_service import AssetService
 from core.utils import Formatter, MarketData
+from core.constants import (
+    TICKER, NAME, CURRENT_PRICE, CEILING_PRICE, MARKET_PB, MARKET_PE,
+    CURRENT_DY, MARKET_ROE, MARKET_LOW_52W, MARKET_HIGH_52W,
+    MARKET_AVG_DIV_5Y, MARKET_AVG_DY_5Y, MARKET_DIVIDENDS_5Y, MARKET_NAME
+)
+from core.strings import (
+    DISPLAY_TICKER, DISPLAY_COMPANY, DISPLAY_QUOTE, DISPLAY_CEILING,
+    DISPLAY_AVG_5Y, DISPLAY_DY_AVG_5Y, DISPLAY_P_VP, DISPLAY_P_L,
+    DISPLAY_DY_CURRENT, DISPLAY_ROE, DISPLAY_RANGE_52W
+)
 
 class MarketView:
     """Class responsible for rendering the centralized Bazin Market Watchlist monitor under the 3rd top-level tab."""
@@ -77,22 +87,22 @@ class MarketView:
                     last_5_years = [current_year - i for i in range(1, 6)]
 
                     row_data = {
-                        "Ticker": t,
-                        "Empresa": details.get("name", metadata.get("name", t)),
-                        "Cotação": details.get("current_price", 0.0),
-                        "Preço Teto": details.get("ceiling_price", 0.0),
-                        "P/VP": details.get("pb", 0.0),
-                        "P/L": details.get("pe", 0.0),
-                        "DY %": details.get("dy", 0.0),
-                        "ROE %": details.get("roe", 0.0),
-                        "low_52w": details.get("low_52w", 0.0),
-                        "high_52w": details.get("high_52w", 0.0),
-                        "avg_div_5y": details.get("avg_dividend_5y", 0.0),
-                        "avg_dy_5y": details.get("avg_dy_5y", 0.0)
+                        DISPLAY_TICKER: t,
+                        DISPLAY_COMPANY: details.get(MARKET_NAME, metadata.get(NAME, t)),
+                        DISPLAY_QUOTE: details.get(CURRENT_PRICE, 0.0),
+                        DISPLAY_CEILING: details.get(CEILING_PRICE, 0.0),
+                        DISPLAY_P_VP: details.get(MARKET_PB, 0.0),
+                        DISPLAY_P_L: details.get(MARKET_PE, 0.0),
+                        DISPLAY_DY_CURRENT: details.get(CURRENT_DY, 0.0),
+                        DISPLAY_ROE: details.get(MARKET_ROE, 0.0),
+                        MARKET_LOW_52W: details.get(MARKET_LOW_52W, 0.0),
+                        MARKET_HIGH_52W: details.get(MARKET_HIGH_52W, 0.0),
+                        MARKET_AVG_DIV_5Y: details.get(MARKET_AVG_DIV_5Y, 0.0),
+                        MARKET_AVG_DY_5Y: details.get(MARKET_AVG_DY_5Y, 0.0)
                     }
 
                     for yr in last_5_years:
-                        row_data[f"Div {yr}"] = details.get("dividends_5y", {}).get(yr, 0.0)
+                        row_data[f"Div {yr}"] = details.get(MARKET_DIVIDENDS_5Y, {}).get(yr, 0.0)
 
                     market_rows.append(row_data)
 
@@ -103,59 +113,59 @@ class MarketView:
         df_market = pd.DataFrame(market_rows)
 
         df_display = pd.DataFrame()
-        df_display["Ticker"] = df_market["Ticker"]
-        df_display["Empresa"] = df_market["Empresa"]
+        df_display[DISPLAY_TICKER] = df_market[DISPLAY_TICKER]
+        df_display[DISPLAY_COMPANY] = df_market[DISPLAY_COMPANY]
 
-        df_display["Cotação"] = df_market["Cotação"]
-        df_display["Preço Teto"] = df_market["Preço Teto"]
+        df_display[DISPLAY_QUOTE] = df_market[DISPLAY_QUOTE]
+        df_display[DISPLAY_CEILING] = df_market[DISPLAY_CEILING]
 
         current_year = datetime.date.today().year
         last_5_years = [current_year - i for i in range(1, 6)]
         for yr in last_5_years:
             df_display[f"Div {yr}"] = df_market[f"Div {yr}"]
 
-        df_display["Média 5a"] = df_market["avg_div_5y"]
-        df_display["DY Médio 5a"] = df_market["avg_dy_5y"]
-        df_display["P/VP"] = df_market["P/VP"]
-        df_display["P/L"] = df_market["P/L"]
-        df_display["DY Atual"] = df_market["DY %"]
-        df_display["ROE"] = df_market["ROE %"]
+        df_display[DISPLAY_AVG_5Y] = df_market[MARKET_AVG_DIV_5Y]
+        df_display[DISPLAY_DY_AVG_5Y] = df_market[MARKET_AVG_DY_5Y]
+        df_display[DISPLAY_P_VP] = df_market[DISPLAY_P_VP]
+        df_display[DISPLAY_P_L] = df_market[DISPLAY_P_L]
+        df_display[DISPLAY_DY_CURRENT] = df_market[DISPLAY_DY_CURRENT]
+        df_display[DISPLAY_ROE] = df_market[DISPLAY_ROE]
 
         def format_range_52w(row):
-            low = row["low_52w"]
-            high = row["high_52w"]
+            low = row[MARKET_LOW_52W]
+            high = row[MARKET_HIGH_52W]
             if low <= 0 or high <= 0:
                 return "N/D"
             return f"{Formatter.format_currency(low)} - {Formatter.format_currency(high)}"
 
-        df_display["Faixa 52s"] = df_market.apply(format_range_52w, axis=1)
+        df_display[DISPLAY_RANGE_52W] = df_market.apply(format_range_52w, axis=1)
 
         col_configs = {
-            "Ticker": st.column_config.TextColumn("Ticker", width="small"),
-            "Empresa": st.column_config.TextColumn("Empresa", width="medium"),
-            "Cotação": st.column_config.NumberColumn("Cotação", format="R$ %.2f", width="small"),
-            "Preço Teto": st.column_config.NumberColumn("Preço Teto (Bazin)", format="R$ %.2f", width="small"),
+            DISPLAY_TICKER: st.column_config.TextColumn("Ticker", width="small"),
+            DISPLAY_COMPANY: st.column_config.TextColumn("Empresa", width="medium"),
+            DISPLAY_QUOTE: st.column_config.NumberColumn("Cotação", format="R$ %.2f", width="small"),
+            DISPLAY_CEILING: st.column_config.NumberColumn("Preço Teto (Bazin)", format="R$ %.2f", width="small"),
         }
 
         for yr in last_5_years:
             col_configs[f"Div {yr}"] = st.column_config.NumberColumn(f"Div {yr}", format="R$ %.2f", width="small")
 
         col_configs.update({
-            "Média 5a": st.column_config.NumberColumn("Média 5a", format="R$ %.2f", width="small"),
-            "DY Médio 5a": st.column_config.NumberColumn("DY Médio 5a", format="%.2f%%", width="small"),
-            "P/VP": st.column_config.NumberColumn("P/VP", format="%.2f", width="small"),
-            "P/L": st.column_config.NumberColumn("P/L", format="%.2f", width="small"),
-            "DY Atual": st.column_config.NumberColumn("DY Atual", format="%.2f%%", width="small"),
-            "ROE": st.column_config.NumberColumn("ROE", format="%.2f%%", width="small"),
-            "Faixa 52s": st.column_config.TextColumn("Faixa 52s (Mín-Máx)", width="medium")
+            DISPLAY_AVG_5Y: st.column_config.NumberColumn("Média 5a", format="R$ %.2f", width="small"),
+            DISPLAY_DY_AVG_5Y: st.column_config.NumberColumn("DY Médio 5a", format="%.2f%%", width="small"),
+            DISPLAY_P_VP: st.column_config.NumberColumn("P/VP", format="%.2f", width="small"),
+            DISPLAY_P_L: st.column_config.NumberColumn("P/L", format="%.2f", width="small"),
+            DISPLAY_DY_CURRENT: st.column_config.NumberColumn("DY Atual", format="%.2f%%", width="small"),
+            DISPLAY_ROE: st.column_config.NumberColumn("ROE", format="%.2f%%", width="small"),
+            DISPLAY_RANGE_52W: st.column_config.TextColumn("Faixa 52s (Mín-Máx)", width="medium")
         })
 
         def style_market_dataframe(df):
             style_df = pd.DataFrame('', index=df.index, columns=df.columns)
             for idx in df.index:
-                price = df_market.loc[idx, "Cotação"]
-                ceiling = df_market.loc[idx, "Preço Teto"]
-                style_df.loc[idx, "Cotação"] = Formatter.get_colored_cell_style(price, ceiling)
+                price = df_market.loc[idx, DISPLAY_QUOTE]
+                ceiling = df_market.loc[idx, DISPLAY_CEILING]
+                style_df.loc[idx, DISPLAY_QUOTE] = Formatter.get_colored_cell_style(price, ceiling)
             return style_df
 
         styled_display = df_display.style.apply(style_market_dataframe, axis=None)

@@ -426,31 +426,37 @@ class AssetService:
 
         portfolio_state = {}
 
+        from core.constants import (
+            TICKER, NAME, ASSET_TYPE, SECTOR, QUANTITY, AVERAGE_PRICE,
+            INVESTED_AMOUNT, TOTAL_DIVIDENDS, L12M_DIVIDENDS, YTD_DIVIDENDS,
+            TRANSACTION_TYPE, UNIT_PRICE, FEES
+        )
+
         for _, row in df_transactions.iterrows():
-            ticker = row['ticker']
-            txn_type = row['transaction_type']
-            qty = row['quantity']
-            price = row['unit_price']
-            fees = row['fees']
+            ticker = row[TICKER]
+            txn_type = row[TRANSACTION_TYPE]
+            qty = row[QUANTITY]
+            price = row[UNIT_PRICE]
+            fees = row[FEES]
 
             if ticker not in portfolio_state:
-                portfolio_state[ticker] = {'quantity': 0, 'average_price': 0.0}
+                portfolio_state[ticker] = {QUANTITY: 0, AVERAGE_PRICE: 0.0}
 
             current_state = portfolio_state[ticker]
-            old_qty = current_state['quantity']
-            old_avg_price = current_state['average_price']
+            old_qty = current_state[QUANTITY]
+            old_avg_price = current_state[AVERAGE_PRICE]
 
             if txn_type == 'BUY':
                 new_qty = old_qty + qty
                 new_avg_price = (old_qty * old_avg_price + qty * price + fees) / new_qty if new_qty > 0 else 0.0
-                portfolio_state[ticker] = {'quantity': new_qty, 'average_price': new_avg_price}
+                portfolio_state[ticker] = {QUANTITY: new_qty, AVERAGE_PRICE: new_avg_price}
             elif txn_type == 'SELL':
                 new_qty = max(0, old_qty - qty)
-                portfolio_state[ticker] = {'quantity': new_qty, 'average_price': old_avg_price if new_qty > 0 else 0.0}
+                portfolio_state[ticker] = {QUANTITY: new_qty, AVERAGE_PRICE: old_avg_price if new_qty > 0 else 0.0}
 
         active_assets = []
         for ticker, info in portfolio_state.items():
-            if info['quantity'] > 0:
+            if info[QUANTITY] > 0:
                 if not catalog.empty and ticker in catalog.index:
                     row = catalog.loc[ticker]
                     if isinstance(row, pd.DataFrame):
@@ -484,16 +490,16 @@ class AssetService:
                 ytd_dividends = ytd_res[0] if ytd_res and ytd_res[0] is not None else 0.0
 
                 active_assets.append({
-                    'ticker': ticker,
-                    'name': name,
-                    'asset_type': asset_type,
-                    'sector': display_sector,
-                    'quantity': info['quantity'],
-                    'average_price': info['average_price'],
-                    'invested_amount': info['quantity'] * info['average_price'],
-                    'total_dividends': total_dividends,
-                    'l12m_dividends': l12m_dividends,
-                    'ytd_dividends': ytd_dividends
+                    TICKER: ticker,
+                    NAME: name,
+                    ASSET_TYPE: asset_type,
+                    SECTOR: display_sector,
+                    QUANTITY: info[QUANTITY],
+                    AVERAGE_PRICE: info[AVERAGE_PRICE],
+                    INVESTED_AMOUNT: info[QUANTITY] * info[AVERAGE_PRICE],
+                    TOTAL_DIVIDENDS: total_dividends,
+                    L12M_DIVIDENDS: l12m_dividends,
+                    YTD_DIVIDENDS: ytd_dividends
                 })
 
         conn_pers.close()
@@ -513,20 +519,25 @@ class AssetService:
         if df_transactions.empty and df_dividends.empty:
             return pd.DataFrame()
 
-        df_transactions['month_str'] = df_transactions['date'].str[:7]
-        df_dividends['month_str'] = df_dividends['date'].str[:7]
+        from core.constants import (
+            DATE, TRANSACTION_TYPE, QUANTITY, UNIT_PRICE, FEES, TOTAL_VALUE,
+            MONTH_STR, NET_CASHFLOW, MONTHLY_DIVIDEND, CUMULATIVE_INVESTED, CUMULATIVE_DIVIDENDS
+        )
 
-        df_transactions['net_cashflow'] = df_transactions.apply(
-            lambda r: (r['quantity'] * r['unit_price'] + r['fees']) if r['transaction_type'] == 'BUY'
-            else -(r['quantity'] * r['unit_price'] - r['fees']),
+        df_transactions[MONTH_STR] = df_transactions[DATE].str[:7]
+        df_dividends[MONTH_STR] = df_dividends[DATE].str[:7]
+
+        df_transactions[NET_CASHFLOW] = df_transactions.apply(
+            lambda r: (r[QUANTITY] * r[UNIT_PRICE] + r[FEES]) if r[TRANSACTION_TYPE] == 'BUY'
+            else -(r[QUANTITY] * r[UNIT_PRICE] - r[FEES]),
             axis=1
         )
 
-        monthly_t = df_transactions.groupby('month_str')['net_cashflow'].sum().reset_index()
-        monthly_d = df_dividends.groupby('month_str')['total_value'].sum().reset_index().rename(columns={'total_value': 'monthly_dividend'})
+        monthly_t = df_transactions.groupby(MONTH_STR)[NET_CASHFLOW].sum().reset_index()
+        monthly_d = df_dividends.groupby(MONTH_STR)[TOTAL_VALUE].sum().reset_index().rename(columns={TOTAL_VALUE: MONTHLY_DIVIDEND})
 
-        min_date_transactions = df_transactions['date'].min() if not df_transactions.empty else None
-        min_date_dividends = df_dividends['date'].min() if not df_dividends.empty else None
+        min_date_transactions = df_transactions[DATE].min() if not df_transactions.empty else None
+        min_date_dividends = df_dividends[DATE].min() if not df_dividends.empty else None
 
         dates = [d for d in [min_date_transactions, min_date_dividends] if d is not None]
         if not dates:
@@ -542,12 +553,12 @@ class AssetService:
         if not all_months:
             all_months = [start_date.strftime('%Y-%m')]
 
-        timeline = pd.DataFrame({'month_str': all_months})
-        timeline = timeline.merge(monthly_t, on='month_str', how='left').fillna(0.0)
-        timeline = timeline.merge(monthly_d, on='month_str', how='left').fillna(0.0)
+        timeline = pd.DataFrame({MONTH_STR: all_months})
+        timeline = timeline.merge(monthly_t, on=MONTH_STR, how='left').fillna(0.0)
+        timeline = timeline.merge(monthly_d, on=MONTH_STR, how='left').fillna(0.0)
 
-        timeline['cumulative_invested'] = timeline['net_cashflow'].cumsum()
-        timeline['cumulative_dividends'] = timeline['monthly_dividend'].cumsum()
+        timeline[CUMULATIVE_INVESTED] = timeline[NET_CASHFLOW].cumsum()
+        timeline[CUMULATIVE_DIVIDENDS] = timeline[MONTHLY_DIVIDEND].cumsum()
 
         return timeline
 

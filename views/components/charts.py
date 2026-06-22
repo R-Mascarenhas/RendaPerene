@@ -3,7 +3,11 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from core.constants import MONTHS_PT
+from core.constants import (
+    MONTHS_PT, TICKER, SECTOR, CURRENT_VALUE, INVESTED_AMOUNT, TOTAL_DIVIDENDS,
+    MONTH_STR, MONTH_DISPLAY, CUMULATIVE_INVESTED, PLANNED_INVESTED, CUMULATIVE_DIVIDENDS,
+    PLANNED_DIVIDENDS, MONTHLY_DIVIDEND, ANNUAL_INTEREST_RATE
+)
 from core.utils.formatter import Formatter
 from services.assets_service import AssetService
 from services.planning_service import SimulationService
@@ -21,8 +25,8 @@ class DashboardCharts:
         with chart_col1:
             fig_sectors = px.pie(
                 df_positions,
-                names="sector",
-                values="current_value",
+                names=SECTOR,
+                values=CURRENT_VALUE,
                 title="Divisão do Patrimônio por Setor",
                 hole=0.4
             )
@@ -30,17 +34,17 @@ class DashboardCharts:
             st.plotly_chart(fig_sectors, width="stretch")
 
         with chart_col2:
-            df_chart_evol = df_positions[['ticker', 'invested_amount', 'current_value']].copy()
-            df_chart_evol = df_chart_evol.rename(columns={'invested_amount': 'Investido', 'current_value': 'Atual'})
+            df_chart_evol = df_positions[[TICKER, INVESTED_AMOUNT, CURRENT_VALUE]].copy()
+            df_chart_evol = df_chart_evol.rename(columns={INVESTED_AMOUNT: 'Investido', CURRENT_VALUE: 'Atual'})
             df_chart_evol = df_chart_evol.sort_values(by="Investido", ascending=False)
 
             fig_evol = px.bar(
                 df_chart_evol,
-                x="ticker",
+                x=TICKER,
                 y=["Investido", "Atual"],
                 barmode="group",
                 title="Evolução por ativo",
-                labels={"value": "Valores (R$)", "ticker": "Ticker", "variable": "Legenda"},
+                labels={"value": "Valores (R$)", TICKER: "Ticker", "variable": "Legenda"},
                 color_discrete_sequence=["#1f77b4", "#2ca02c"]
             )
             fig_evol.update_traces(hovertemplate="<b>%{x}</b><br>Valor: R$ %{y:,.2f}<extra></extra>")
@@ -48,16 +52,16 @@ class DashboardCharts:
             st.plotly_chart(fig_evol, width="stretch")
 
         with chart_col3:
-            df_chart_prov = df_positions[df_positions["total_dividends"] > 0].sort_values(by="total_dividends", ascending=True)
+            df_chart_prov = df_positions[df_positions[TOTAL_DIVIDENDS] > 0].sort_values(by=TOTAL_DIVIDENDS, ascending=True)
             if not df_chart_prov.empty:
                 fig_proventos = px.bar(
                     df_chart_prov,
-                    x="total_dividends",
-                    y="ticker",
+                    x=TOTAL_DIVIDENDS,
+                    y=TICKER,
                     orientation="h",
                     title="Resultado por Ativo (Proventos Recebidos)",
-                    labels={"total_dividends": "Proventos (R$)", "ticker": "Ticker"},
-                    color="total_dividends",
+                    labels={TOTAL_DIVIDENDS: "Proventos (R$)", TICKER: "Ticker"},
+                    color=TOTAL_DIVIDENDS,
                     color_continuous_scale="Viridis"
                 )
                 fig_proventos.update_traces(hovertemplate="<b>%{y}</b><br>Proventos: R$ %{x:,.2f}<extra></extra>")
@@ -71,14 +75,14 @@ class DashboardCharts:
         if not df_evolution.empty:
             st.subheader("📈 Evolução Patrimonial Histórica & Planejamento")
 
-            df_evolution = df_evolution.sort_values(by="month_str").reset_index(drop=True)
-            df_evolution['month_display'] = df_evolution['month_str'].apply(Formatter.format_month_year)
+            df_evolution = df_evolution.sort_values(by=MONTH_STR).reset_index(drop=True)
+            df_evolution[MONTH_DISPLAY] = df_evolution[MONTH_STR].apply(Formatter.format_month_year)
 
             # Pull dynamic values
             config = SimulationService.get_configuration()
             if config:
-                annual_interest_rate = float(config['annual_interest_rate'])
-                monthly_interest_rate = (1 + annual_interest_rate / 100) ** (1 / 12) - 1
+                annual_interest_rate_val = float(config[ANNUAL_INTEREST_RATE])
+                monthly_interest_rate = (1 + annual_interest_rate_val / 100) ** (1 / 12) - 1
             else:
                 monthly_interest_rate = (1 + 6.0 / 100) ** (1 / 12) - 1
 
@@ -93,8 +97,8 @@ class DashboardCharts:
             # 1. Real Invested Capital (Solid Blue)
             fig_multi.add_trace(
                 go.Scatter(
-                    x=df_evolution['month_display'],
-                    y=df_evolution['cumulative_invested'],
+                    x=df_evolution[MONTH_DISPLAY],
+                    y=df_evolution[CUMULATIVE_INVESTED],
                     name="Valor Investido",
                     mode="lines+markers",
                     line=dict(color="#1f77b4", width=3),
@@ -107,8 +111,8 @@ class DashboardCharts:
             # 2. Planned Capital / Target (Dashed Blue)
             fig_multi.add_trace(
                 go.Scatter(
-                    x=df_evolution['month_display'],
-                    y=df_evolution['planned_invested'],
+                    x=df_evolution[MONTH_DISPLAY],
+                    y=df_evolution[PLANNED_INVESTED],
                     name="Planejado (Meta)",
                     mode="lines",
                     line=dict(color="#1f77b4", width=2, dash="dash"),
@@ -120,8 +124,8 @@ class DashboardCharts:
             # 3. Real Total Dividends Received (Solid Green)
             fig_multi.add_trace(
                 go.Scatter(
-                    x=df_evolution['month_display'],
-                    y=df_evolution['cumulative_dividends'],
+                    x=df_evolution[MONTH_DISPLAY],
+                    y=df_evolution[CUMULATIVE_DIVIDENDS],
                     name="Total de Proventos",
                     mode="lines+markers",
                     line=dict(color="#2ca02c", width=3),
@@ -134,8 +138,8 @@ class DashboardCharts:
             # 4. Planned Dividends (Dashed Green)
             fig_multi.add_trace(
                 go.Scatter(
-                    x=df_evolution['month_display'],
-                    y=df_evolution['planned_dividends'],
+                    x=df_evolution[MONTH_DISPLAY],
+                    y=df_evolution[PLANNED_DIVIDENDS],
                     name="Proventos Planejados",
                     mode="lines",
                     line=dict(color="#2ca02c", width=2, dash="dash"),
@@ -144,13 +148,13 @@ class DashboardCharts:
                 secondary_y=False
             )
 
-            bar_labels = [f"R$ {val:,.0f}".replace(",", ".") if val > 0 else "" for val in df_evolution['monthly_dividend']]
+            bar_labels = [f"R$ {val:,.0f}".replace(",", ".") if val > 0 else "" for val in df_evolution[MONTHLY_DIVIDEND]]
 
             # 5. Monthly Dividends received (Translucent Yellow Bar)
             fig_multi.add_trace(
                 go.Bar(
-                    x=df_evolution['month_display'],
-                    y=df_evolution['monthly_dividend'],
+                    x=df_evolution[MONTH_DISPLAY],
+                    y=df_evolution[MONTHLY_DIVIDEND],
                     name="Proventos (Mês)",
                     marker_color="rgba(242, 196, 26, 0.6)",
                     text=bar_labels,

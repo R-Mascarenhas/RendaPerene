@@ -1,4 +1,8 @@
 import sqlite3
+from core.constants import (
+    BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
+    MW_VALUE, INITIAL_EQUITY_INPUT, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED
+)
 
 class DatabaseManager:
     """Manages SQLite connection and initialization for the personal portfolio transactions domain."""
@@ -33,27 +37,30 @@ class DatabaseManager:
             )
         ''')
 
-        cursor.execute('''
+        # Generate planning_configuration table schema dynamically using core constants
+        cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS planning_configuration (
                 id INTEGER PRIMARY KEY DEFAULT 1,
-                birth_date TEXT NOT NULL,
-                retirement_age INTEGER NOT NULL,
-                desired_income_mw REAL NOT NULL,
-                annual_interest_rate REAL NOT NULL,
-                mw_value REAL NOT NULL,
-                initial_equity_input REAL NOT NULL
+                {BIRTH_DATE} TEXT NOT NULL,
+                {RETIREMENT_AGE} INTEGER NOT NULL,
+                {DESIRED_INCOME_MW} REAL NOT NULL,
+                {ANNUAL_INTEREST_RATE} REAL NOT NULL,
+                {MW_VALUE} REAL NOT NULL,
+                {INITIAL_EQUITY_INPUT} REAL NOT NULL,
+                {DESIRED_INCOME_TYPE} TEXT DEFAULT 'MULTIPLIER',
+                {DESIRED_INCOME_FIXED} REAL DEFAULT 10000.0
             )
         ''')
 
-        # Backward compatibility migrations: safely add English planning fields if missing
+        # Backward compatibility migrations: safely add English planning fields if missing using core constants
         try:
-            cursor.execute("ALTER TABLE planning_configuration ADD COLUMN desired_income_type TEXT DEFAULT 'MULTIPLIER'")
+            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {DESIRED_INCOME_TYPE} TEXT DEFAULT 'MULTIPLIER'")
             conn.commit()
         except Exception:
             pass # Column already exists, safe to ignore
 
         try:
-            cursor.execute("ALTER TABLE planning_configuration ADD COLUMN desired_income_fixed REAL DEFAULT 10000.0")
+            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {DESIRED_INCOME_FIXED} REAL DEFAULT 10000.0")
             conn.commit()
         except Exception:
             pass # Column already exists, safe to ignore

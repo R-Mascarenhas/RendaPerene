@@ -1,6 +1,17 @@
 import streamlit as st
 import pandas as pd
 from core.utils import Formatter, MarketData
+from core.constants import (
+    TICKER, NAME, ASSET_TYPE, SECTOR, QUANTITY, AVERAGE_PRICE,
+    INVESTED_AMOUNT, TOTAL_DIVIDENDS, L12M_DIVIDENDS, YTD_DIVIDENDS,
+    CURRENT_PRICE, CURRENT_VALUE, PROFIT_LOSS,
+    ADJUSTED_PRICE, RETURN_PCT_CUSTOM, YOC_CUSTOM, YOC_12_CUSTOM
+)
+from core.strings import (
+    DISPLAY_CODE, DISPLAY_NAME, DISPLAY_QTY, DISPLAY_AVG_PRICE, DISPLAY_ADJ_PRICE,
+    DISPLAY_INVESTED, DISPLAY_CURRENT, DISPLAY_QUOTE_TODAY, DISPLAY_RETURN_PCT,
+    DISPLAY_RESULT, DISPLAY_YOC, DISPLAY_YOC_12, DISPLAY_EARNINGS, DISPLAY_SECTOR
+)
 
 class DetailedHoldingsWidget:
     """Displays the active asset holdings detailed dataframe grid with custom financial metrics and color indicators."""
@@ -9,56 +20,56 @@ class DetailedHoldingsWidget:
         st.markdown("---")
         st.subheader("Ativos em Custódia (Detalhado)")
 
-        # 1. Compute customized financial columns
-        df_positions['adjusted_price'] = (df_positions['invested_amount'] - df_positions['total_dividends']) / df_positions['quantity']
-        df_positions['return_pct_custom'] = (df_positions['profit_loss'] / df_positions['invested_amount'] * 100)
-        df_positions['yoc_custom'] = (df_positions['total_dividends'] / df_positions['invested_amount'] * 100)
-        df_positions['yoc_12_custom'] = (df_positions['l12m_dividends'] / df_positions['invested_amount'] * 100)
+        # 1. Compute customized financial columns using compiler-checked constants
+        df_positions[ADJUSTED_PRICE] = (df_positions[INVESTED_AMOUNT] - df_positions[TOTAL_DIVIDENDS]) / df_positions[QUANTITY]
+        df_positions[RETURN_PCT_CUSTOM] = (df_positions[PROFIT_LOSS] / df_positions[INVESTED_AMOUNT] * 100)
+        df_positions[YOC_CUSTOM] = (df_positions[TOTAL_DIVIDENDS] / df_positions[INVESTED_AMOUNT] * 100)
+        df_positions[YOC_12_CUSTOM] = (df_positions[L12M_DIVIDENDS] / df_positions[INVESTED_AMOUNT] * 100)
 
-        # 2. Assemble display dataframe
+        # 2. Assemble display dataframe using display constants
         df_display = pd.DataFrame()
-        df_display['Código'] = df_positions['ticker']
-        df_display['Nome'] = df_positions['name']
-        df_display['Quantidade'] = df_positions['quantity']
-        df_display['Preço médio'] = df_positions['average_price'].map(Formatter.format_currency)
-        df_display['Preço Ajustado'] = df_positions['adjusted_price'].map(Formatter.format_currency)
-        df_display['Investido'] = df_positions['invested_amount'].map(Formatter.format_currency)
-        df_display['Atual'] = df_positions['current_value'].map(Formatter.format_currency)
-        df_display['Cotação hoje'] = df_positions['current_price'].map(Formatter.format_currency)
+        df_display[DISPLAY_CODE] = df_positions[TICKER]
+        df_display[DISPLAY_NAME] = df_positions[NAME]
+        df_display[DISPLAY_QTY] = df_positions[QUANTITY]
+        df_display[DISPLAY_AVG_PRICE] = df_positions[AVERAGE_PRICE].map(Formatter.format_currency)
+        df_display[DISPLAY_ADJ_PRICE] = df_positions[ADJUSTED_PRICE].map(Formatter.format_currency)
+        df_display[DISPLAY_INVESTED] = df_positions[INVESTED_AMOUNT].map(Formatter.format_currency)
+        df_display[DISPLAY_CURRENT] = df_positions[CURRENT_VALUE].map(Formatter.format_currency)
+        df_display[DISPLAY_QUOTE_TODAY] = df_positions[CURRENT_PRICE].map(Formatter.format_currency)
 
-        df_display['Rendimento %'] = df_positions['return_pct_custom'].map(lambda x: f"{x:.2f}%")
-        df_display['Resultado'] = df_positions['profit_loss'].map(Formatter.format_currency)
-        df_display['YoC'] = df_positions['yoc_custom'].map(lambda x: f"{x:.2f}%")
-        df_display['YoC/12'] = df_positions['yoc_12_custom'].map(lambda x: f"{x:.2f}%")
-        df_display['Proventos'] = df_positions['total_dividends'].map(Formatter.format_currency)
-        df_display['Setor'] = df_positions['sector']
+        df_display[DISPLAY_RETURN_PCT] = df_positions[RETURN_PCT_CUSTOM].map(lambda x: f"{x:.2f}%")
+        df_display[DISPLAY_RESULT] = df_positions[PROFIT_LOSS].map(Formatter.format_currency)
+        df_display[DISPLAY_YOC] = df_positions[YOC_CUSTOM].map(lambda x: f"{x:.2f}%")
+        df_display[DISPLAY_YOC_12] = df_positions[YOC_12_CUSTOM].map(lambda x: f"{x:.2f}%")
+        df_display[DISPLAY_EARNINGS] = df_positions[TOTAL_DIVIDENDS].map(Formatter.format_currency)
+        df_display[DISPLAY_SECTOR] = df_positions[SECTOR]
 
         # 3. DRY-compliant Bazin and trend cell coloring
         ceilings = {}
         target_yield = st.session_state.get("target_bazin_yield_pct", 6.0)
 
         # Load Bazin ceiling prices for each active ticker
-        for t in df_positions['ticker']:
+        for t in df_positions[TICKER]:
             details = MarketData.get_ticker_market_analysis(t, target_yield_pct=target_yield)
             ceilings[t] = details.get("ceiling_price", 0.0) if details else 0.0
 
         def style_detailed_dataframe(df):
             style_df = pd.DataFrame('', index=df.index, columns=df.columns)
             for idx in df.index:
-                ticker = df_positions.loc[idx, "ticker"]
-                price = df_positions.loc[idx, "current_price"] if "current_price" in df_positions.columns else 0.0
+                ticker = df_positions.loc[idx, TICKER]
+                price = df_positions.loc[idx, CURRENT_PRICE] if CURRENT_PRICE in df_positions.columns else 0.0
                 ceiling = ceilings.get(ticker, 0.0)
 
-                # A. Cotação hoje: Style based on Bazin Price-to-Ceiling ratio
-                style_df.loc[idx, "Cotação hoje"] = Formatter.get_colored_cell_style(price, ceiling)
+                # A. Cotação hoje: Style based on Bazin Price-to-Ceiling ratio using constants
+                style_df.loc[idx, DISPLAY_QUOTE_TODAY] = Formatter.get_colored_cell_style(price, ceiling)
 
-                # B. Rendimento %: Style based on positive/negative percentage return trend
-                ret_pct = df_positions.loc[idx, "return_pct_custom"]
-                style_df.loc[idx, "Rendimento %"] = Formatter.get_trend_cell_style(ret_pct)
+                # B. Rendimento %: Style based on positive/negative percentage return trend using constants
+                ret_pct = df_positions.loc[idx, RETURN_PCT_CUSTOM]
+                style_df.loc[idx, DISPLAY_RETURN_PCT] = Formatter.get_trend_cell_style(ret_pct)
 
-                # C. Resultado: Style based on positive/negative cash profit trend
-                pl = df_positions.loc[idx, "profit_loss"]
-                style_df.loc[idx, "Resultado"] = Formatter.get_trend_cell_style(pl)
+                # C. Resultado: Style based on positive/negative cash profit trend using constants
+                pl = df_positions.loc[idx, PROFIT_LOSS]
+                style_df.loc[idx, DISPLAY_RESULT] = Formatter.get_trend_cell_style(pl)
 
             return style_df
 

@@ -2,6 +2,11 @@ import datetime
 import numpy as np
 import pandas as pd
 from core.database import db
+from core.constants import (
+    BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
+    MW_VALUE, INITIAL_EQUITY_INPUT, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED,
+    INCOME_TYPE_MULTIPLIER
+)
 
 class SimulationService:
     """Domain Service for financial independence calculations and compound interest."""
@@ -12,18 +17,18 @@ class SimulationService:
         conn = db.get_personal_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed FROM planning_configuration WHERE id = 1")
+            cursor.execute(f"SELECT {BIRTH_DATE}, {RETIREMENT_AGE}, {DESIRED_INCOME_MW}, {ANNUAL_INTEREST_RATE}, {MW_VALUE}, {INITIAL_EQUITY_INPUT}, {DESIRED_INCOME_TYPE}, {DESIRED_INCOME_FIXED} FROM planning_configuration WHERE id = 1")
             row = cursor.fetchone()
             if row:
                 config = {
-                    "birth_date": row[0],
-                    "retirement_age": row[1],
-                    "desired_income_mw": row[2],
-                    "annual_interest_rate": row[3],
-                    "mw_value": row[4],
-                    "initial_equity_input": row[5],
-                    "desired_income_type": row[6] if row[6] else "MULTIPLIER",
-                    "desired_income_fixed": row[7] if row[7] is not None else 10000.0
+                    BIRTH_DATE: row[0],
+                    RETIREMENT_AGE: row[1],
+                    DESIRED_INCOME_MW: row[2],
+                    ANNUAL_INTEREST_RATE: row[3],
+                    MW_VALUE: row[4],
+                    INITIAL_EQUITY_INPUT: row[5],
+                    DESIRED_INCOME_TYPE: row[6] if row[6] else INCOME_TYPE_MULTIPLIER,
+                    DESIRED_INCOME_FIXED: row[7] if row[7] is not None else 10000.0
                 }
                 return config
             return None
@@ -40,14 +45,14 @@ class SimulationService:
         try:
             cursor.execute("SELECT id FROM planning_configuration WHERE id = 1")
             if cursor.fetchone():
-                cursor.execute('''
+                cursor.execute(f'''
                     UPDATE planning_configuration
-                    SET birth_date = ?, retirement_age = ?, desired_income_mw = ?, annual_interest_rate = ?, mw_value = ?, initial_equity_input = ?, desired_income_type = ?, desired_income_fixed = ?
+                    SET {BIRTH_DATE} = ?, {RETIREMENT_AGE} = ?, {DESIRED_INCOME_MW} = ?, {ANNUAL_INTEREST_RATE} = ?, {MW_VALUE} = ?, {INITIAL_EQUITY_INPUT} = ?, {DESIRED_INCOME_TYPE} = ?, {DESIRED_INCOME_FIXED} = ?
                     WHERE id = 1
                 ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed))
             else:
-                cursor.execute('''
-                    INSERT INTO planning_configuration (id, birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed)
+                cursor.execute(f'''
+                    INSERT INTO planning_configuration (id, {BIRTH_DATE}, {RETIREMENT_AGE}, {DESIRED_INCOME_MW}, {ANNUAL_INTEREST_RATE}, {MW_VALUE}, {INITIAL_EQUITY_INPUT}, {DESIRED_INCOME_TYPE}, {DESIRED_INCOME_FIXED})
                     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed))
             conn.commit()
@@ -82,7 +87,7 @@ class SimulationService:
             return None
             
         today = datetime.date.today()
-        birth_date = datetime.datetime.strptime(config['birth_date'], "%Y-%m-%d").date() if isinstance(config['birth_date'], str) else config['birth_date']
+        birth_date = datetime.datetime.strptime(config[BIRTH_DATE], "%Y-%m-%d").date() if isinstance(config[BIRTH_DATE], str) else config[BIRTH_DATE]
         
         months_age = (today.year - birth_date.year) * 12 + today.month - birth_date.month - (today.day < birth_date.day)
         current_age = months_age / 12
@@ -90,17 +95,17 @@ class SimulationService:
         start_months_age = SimulationService.get_initial_investment_age(birth_date)
         start_age_years = start_months_age / 12
         
-        total_time_months = max(0, config['retirement_age'] * 12 - start_months_age)
-        remaining_time_months = max(0, config['retirement_age'] * 12 - months_age)
+        total_time_months = max(0, config[RETIREMENT_AGE] * 12 - start_months_age)
+        remaining_time_months = max(0, config[RETIREMENT_AGE] * 12 - months_age)
         
         # Calculate target income dynamically based on selection (Multiplier or Fixed Amount)
-        income_type = config.get('desired_income_type', 'MULTIPLIER')
-        if income_type == "MULTIPLIER":
-            target_monthly_income = config['desired_income_mw'] * config['mw_value']
+        income_type = config.get(DESIRED_INCOME_TYPE, INCOME_TYPE_MULTIPLIER)
+        if income_type == INCOME_TYPE_MULTIPLIER:
+            target_monthly_income = config[DESIRED_INCOME_MW] * config[MW_VALUE]
         else: # FIXED
-            target_monthly_income = config['desired_income_fixed']
+            target_monthly_income = config[DESIRED_INCOME_FIXED]
             
-        monthly_interest_rate = (1 + config['annual_interest_rate'] / 100) ** (1 / 12) - 1
+        monthly_interest_rate = (1 + config[ANNUAL_INTEREST_RATE] / 100) ** (1 / 12) - 1
         target_equity = target_monthly_income / monthly_interest_rate if monthly_interest_rate > 0 else 0.0
         
         from services.assets_service import AssetService
@@ -140,13 +145,13 @@ class SimulationService:
             "target_equity": target_equity,
             "required_monthly_contribution": required_monthly_contribution,
             "updated_monthly_contribution": updated_monthly_contribution,
-            "mw_value": config['mw_value'],
+            "mw_value": config[MW_VALUE],
             "total_invested": total_invested,
-            "retirement_age": config['retirement_age'],
-            "desired_income_mw": config['desired_income_mw'],
-            "desired_income_fixed": config['desired_income_fixed'],
-            "desired_income_type": config['desired_income_type'],
-            "annual_interest_rate": config['annual_interest_rate']
+            "retirement_age": config[RETIREMENT_AGE],
+            "desired_income_mw": config[DESIRED_INCOME_MW],
+            "desired_income_fixed": config[DESIRED_INCOME_FIXED],
+            "desired_income_type": config[DESIRED_INCOME_TYPE],
+            "annual_interest_rate": config[ANNUAL_INTEREST_RATE]
         }
 
     @staticmethod

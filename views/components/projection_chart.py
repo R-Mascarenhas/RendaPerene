@@ -7,6 +7,12 @@ from services.planning_service import SimulationService
 from services.assets_service import AssetService
 from core.utils.formatter import Formatter
 from core.utils.trendlines import TrendlineCalculator, PolynomialTrendlineStrategy, LinearMomentumTrendlineStrategy
+from core.constants import (
+    SIM_CURRENT_AGE, SIM_START_AGE_YEARS, SIM_REMAINING_TIME_MONTHS, SIM_REQUIRED_CONTRIBUTION,
+    SIM_UPDATED_CONTRIBUTION, SIM_TOTAL_INVESTED, SIM_MONTHLY_INTEREST_RATE, SIM_TARGET_EQUITY,
+    ANNUAL_INTEREST_RATE, MONTH_STR, MONTH_DISPLAY, CUMULATIVE_INVESTED, PLANNED_INVESTED,
+    CUMULATIVE_DIVIDENDS, PLANNED_DIVIDENDS, MONTHLY_DIVIDEND
+)
 
 class ProjectionChartWidget:
     """Displays highly polished, interactive compounding projection and comparative curves."""
@@ -25,12 +31,12 @@ class ProjectionChartWidget:
     def _render_cumulative_projection(self, sim, container):
         """Renders the cumulative long-term projection area chart with crossover markers."""
         df_projection = SimulationService.build_projection_dataframe(
-            sim["start_age_years"],
-            sim["remaining_time_months"],
-            sim["total_invested"],
-            sim["updated_monthly_contribution"],
-            sim["monthly_interest_rate"],
-            sim["target_equity"]
+            sim[SIM_START_AGE_YEARS],
+            sim[SIM_REMAINING_TIME_MONTHS],
+            sim[SIM_TOTAL_INVESTED],
+            sim[SIM_UPDATED_CONTRIBUTION],
+            sim[SIM_MONTHLY_INTEREST_RATE],
+            sim[SIM_TARGET_EQUITY]
         )
 
         if df_projection.empty:
@@ -122,11 +128,11 @@ class ProjectionChartWidget:
     def _render_monthly_comparison(self, sim, container):
         """Renders the constant out-of-pocket contribution vs growing passive interest monthly comparison chart."""
         df_cashflow = SimulationService.build_monthly_cashflow_dataframe(
-            sim["start_age_years"],
-            sim["remaining_time_months"],
-            sim["total_invested"],
-            sim["updated_monthly_contribution"],
-            sim["monthly_interest_rate"]
+            sim[SIM_START_AGE_YEARS],
+            sim[SIM_REMAINING_TIME_MONTHS],
+            sim[SIM_TOTAL_INVESTED],
+            sim[SIM_UPDATED_CONTRIBUTION],
+            sim[SIM_MONTHLY_INTEREST_RATE]
         )
 
         if df_cashflow.empty:
@@ -200,29 +206,29 @@ class ProjectionChartWidget:
         st.write(f"Compare as curvas planejadas no seu cockpit contra os dados reais colhidos da B3. A linha pontilhada extrapola a tendência do seu ritmo real pelos próximos {extrapolation} meses!")
 
         # 1. EXPAND TIMELINE BY 12 MONTHS
-        df_evolution = df_evolution.sort_values(by="month_str").reset_index(drop=True)
-        start_date_str = df_evolution.loc[0, 'month_str'] + "-01"
+        df_evolution = df_evolution.sort_values(by=MONTH_STR).reset_index(drop=True)
+        start_date_str = df_evolution.loc[0, MONTH_STR] + "-01"
         start_date = pd.to_datetime(start_date_str).replace(day=1)
 
         end_date = datetime.date.today() + datetime.timedelta(days=365)
 
         date_range_extrap = pd.date_range(start=start_date, end=end_date, freq='MS')
         all_months_extrap = date_range_extrap.strftime('%Y-%m').tolist()
-        df_extrap = pd.DataFrame({'month_str': all_months_extrap})
+        df_extrap = pd.DataFrame({MONTH_STR: all_months_extrap})
 
         df_extrap = df_extrap.merge(
-            df_evolution[['month_str', 'cumulative_invested', 'cumulative_dividends']],
-            on='month_str',
+            df_evolution[[MONTH_STR, CUMULATIVE_INVESTED, CUMULATIVE_DIVIDENDS]],
+            on=MONTH_STR,
             how='left'
         )
 
-        df_extrap['month_display'] = df_extrap['month_str'].apply(Formatter.format_month_year)
+        df_extrap[MONTH_DISPLAY] = df_extrap[MONTH_STR].apply(Formatter.format_month_year)
 
         # 2. GENERATE CONTINUOUS PLANNED CURVES (DRY Compliant)
         config = SimulationService.get_configuration()
         if config:
-            annual_interest_rate = float(config['annual_interest_rate'])
-            monthly_interest_rate = (1 + annual_interest_rate / 100) ** (1 / 12) - 1
+            annual_interest_rate_val = float(config[ANNUAL_INTEREST_RATE])
+            monthly_interest_rate = (1 + annual_interest_rate_val / 100) ** (1 / 12) - 1
         else:
             monthly_interest_rate = (1 + 6.0 / 100) ** (1 / 12) - 1
 
@@ -235,10 +241,10 @@ class ProjectionChartWidget:
         # - Dividends: 2nd degree Polynomial Strategy
         # - Invested: 12-month Linear Momentum Strategy (Highly realistic, goes flat if you stop contributing!)
         df_extrap['trend_dividends'] = TrendlineCalculator.calculate_trend(
-            df_extrap, 'cumulative_dividends', PolynomialTrendlineStrategy(deg=2), extrapolate_periods=extrapolation
+            df_extrap, CUMULATIVE_DIVIDENDS, PolynomialTrendlineStrategy(deg=2), extrapolate_periods=extrapolation
         )
         df_extrap['trend_invested'] = TrendlineCalculator.calculate_trend(
-            df_extrap, 'cumulative_invested', LinearMomentumTrendlineStrategy(window_months=12), extrapolate_periods=extrapolation
+            df_extrap, CUMULATIVE_INVESTED, LinearMomentumTrendlineStrategy(window_months=12), extrapolate_periods=extrapolation
         )
 
         current_month_str = datetime.date.today().strftime("%Y-%m")
@@ -257,8 +263,8 @@ class ProjectionChartWidget:
 
             fig3.add_trace(
                 go.Scatter(
-                    x=df_extrap['month_display'],
-                    y=df_extrap['cumulative_dividends'],
+                    x=df_extrap[MONTH_DISPLAY],
+                    y=df_extrap[CUMULATIVE_DIVIDENDS],
                     name="Proventos Reais (B3)",
                     mode="lines+markers",
                     line=dict(color="#2ca02c", width=3),
@@ -268,8 +274,8 @@ class ProjectionChartWidget:
 
             fig3.add_trace(
                 go.Scatter(
-                    x=df_extrap['month_display'],
-                    y=df_extrap['planned_dividends'],
+                    x=df_extrap[MONTH_DISPLAY],
+                    y=df_extrap[PLANNED_DIVIDENDS],
                     name="Proventos Planejados (Meta)",
                     mode="lines",
                     line=dict(color="#a02c2c", width=2, dash="dash"),
@@ -279,7 +285,7 @@ class ProjectionChartWidget:
 
             fig3.add_trace(
                 go.Scatter(
-                    x=df_extrap['month_display'],
+                    x=df_extrap[MONTH_DISPLAY],
                     y=df_extrap['trend_dividends'],
                     name="Tendência Polinomial (Real)",
                     mode="lines",
@@ -317,8 +323,8 @@ class ProjectionChartWidget:
 
             fig4.add_trace(
                 go.Scatter(
-                    x=df_extrap['month_display'],
-                    y=df_extrap['cumulative_invested'],
+                    x=df_extrap[MONTH_DISPLAY],
+                    y=df_extrap[CUMULATIVE_INVESTED],
                     name="Aportes Reais (B3)",
                     mode="lines+markers",
                     line=dict(color="#1f77b4", width=3),
@@ -328,8 +334,8 @@ class ProjectionChartWidget:
 
             fig4.add_trace(
                 go.Scatter(
-                    x=df_extrap['month_display'],
-                    y=df_extrap['planned_invested'],
+                    x=df_extrap[MONTH_DISPLAY],
+                    y=df_extrap[PLANNED_INVESTED],
                     name="Aportes Planejados (Meta)",
                     mode="lines",
                     line=dict(color="#b41f1f", width=2, dash="dash"),
@@ -339,7 +345,7 @@ class ProjectionChartWidget:
 
             fig4.add_trace(
                 go.Scatter(
-                    x=df_extrap['month_display'],
+                    x=df_extrap[MONTH_DISPLAY],
                     y=df_extrap['trend_invested'],
                     name="Tendência (Real)",
                     mode="lines",

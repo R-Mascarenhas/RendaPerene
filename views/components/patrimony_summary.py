@@ -1,30 +1,34 @@
 import streamlit as st
 from core.utils import Formatter, MarketData
 from services.planning_service import SimulationService
+from core.constants import (
+    TICKER, QUANTITY, INVESTED_AMOUNT, TOTAL_DIVIDENDS, L12M_DIVIDENDS, YTD_DIVIDENDS,
+    CURRENT_PRICE, CURRENT_VALUE, PROFIT_LOSS
+)
 
 class PatrimonySummaryWidget:
     """Displays the 5 main portfolio KPI metrics (Patrimônio, Capital, YoC, Dividends)."""
 
     def render(self, df_positions):
-        tickers = df_positions['ticker'].tolist()
+        tickers = df_positions[TICKER].tolist()
         with st.spinner("Buscando cotações em tempo real na B3..."):
             quote_map = MarketData.get_batch_quotes(tickers)
 
-        df_positions['current_price'] = df_positions['ticker'].map(quote_map)
-        df_positions['current_value'] = df_positions['quantity'] * df_positions['current_price']
-        df_positions['profit_loss'] = df_positions['current_value'] - df_positions['invested_amount']
+        df_positions[CURRENT_PRICE] = df_positions[TICKER].map(quote_map)
+        df_positions[CURRENT_VALUE] = df_positions[QUANTITY] * df_positions[CURRENT_PRICE]
+        df_positions[PROFIT_LOSS] = df_positions[CURRENT_VALUE] - df_positions[INVESTED_AMOUNT]
 
-        df_positions['return_pct'] = (df_positions['profit_loss'] / df_positions['invested_amount']) * 100
-        df_positions['total_yoc'] = (df_positions['total_dividends'] / df_positions['invested_amount']) * 100
-        df_positions['l12m_yoc'] = (df_positions['l12m_dividends'] / df_positions['invested_amount']) * 100
+        df_positions['return_pct'] = (df_positions[PROFIT_LOSS] / df_positions[INVESTED_AMOUNT]) * 100
+        df_positions['total_yoc'] = (df_positions[TOTAL_DIVIDENDS] / df_positions[INVESTED_AMOUNT]) * 100
+        df_positions['l12m_yoc'] = (df_positions[L12M_DIVIDENDS] / df_positions[INVESTED_AMOUNT]) * 100
 
-        total_invested = df_positions['invested_amount'].sum()
-        total_equity = df_positions['current_value'].sum()
+        total_invested = df_positions[INVESTED_AMOUNT].sum()
+        total_equity = df_positions[CURRENT_VALUE].sum()
         st.session_state.calculated_equity_cache = total_equity
 
-        total_dividends = df_positions['total_dividends'].sum()
-        l12m_dividends = df_positions['l12m_dividends'].sum()
-        ytd_dividends = df_positions['ytd_dividends'].sum()
+        total_dividends = df_positions[TOTAL_DIVIDENDS].sum()
+        l12m_dividends = df_positions[L12M_DIVIDENDS].sum()
+        ytd_dividends = df_positions[YTD_DIVIDENDS].sum()
 
         total_profit = total_equity - total_invested
         overall_return = (total_profit / total_invested * 100) if total_invested > 0 else 0.0

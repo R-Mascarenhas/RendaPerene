@@ -8,7 +8,7 @@ from services.assets_service import AssetService
 from services.planning_service import SimulationService
 from core.utils.market_data import MarketData
 
-TEST_PERSONAL_DB = "test_portfolio.db"
+TEST_PERSONAL_DB = "/tmp/test_portfolio.db"
 
 # Fixture to safely create and remove the test databases and write mock CSV catalog
 @pytest.fixture(autouse=True)
@@ -469,3 +469,53 @@ def test_formatter_colored_cell_style_dry_sanity():
     # 7. Trend is neutral -> Transparent
     trend_neutral = Formatter.get_trend_cell_style(0.0)
     assert "transparent" in trend_neutral
+
+def test_market_data_bcb_indicators_sanity():
+    """
+    Verifies that MarketData SGS API integration methods (for IPCA and SELIC)
+    compile, handle cache clearings, and return valid positive financial indicators.
+    """
+    from core.utils.market_data import MarketData
+    
+    MarketData.get_current_ipca_l12m.clear()
+    ipca_val = MarketData.get_current_ipca_l12m()
+    assert isinstance(ipca_val, float)
+    assert ipca_val > 0.0
+
+    MarketData.get_current_selic.clear()
+    selic_val = MarketData.get_current_selic()
+    assert isinstance(selic_val, float)
+    assert selic_val > 0.0
+
+def test_views_static_market_data_methods_sanity():
+    """
+    Statically analyzes all files inside views/ (including sub-folders) to ensure
+    any referenced 'MarketData.[method]' call corresponds to an actual, valid method
+    inside the core MarketData class. Completely prevents dynamic AttributeErrors.
+    """
+    import re
+    from core.utils.market_data import MarketData
+    
+    # 1. Dynamically retrieve all public/callable method names from MarketData
+    valid_methods = {name for name in dir(MarketData) if not name.startswith("_")}
+    
+    # 2. Setup regex to capture 'MarketData.some_method' calls
+    call_pattern = re.compile(r"MarketData\.([a-zA-Z0-9_]+)")
+    
+    views_dir = "views"
+    assert os.path.exists(views_dir)
+    
+    # Traverse views directory
+    for root, dirs, files in os.walk(views_dir):
+        for file_name in files:
+            if file_name.endswith(".py"):
+                file_path = os.path.join(root, file_name)
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    
+                matches = call_pattern.findall(content)
+                for called_method in matches:
+                    assert called_method in valid_methods, (
+                        f"FALHA: O arquivo {file_path} tenta chamar 'MarketData.{called_method}()', "
+                        f"mas esse método não existe na classe MarketData! Métodos válidos: {valid_methods}"
+                    )

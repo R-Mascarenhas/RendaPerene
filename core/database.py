@@ -1,8 +1,11 @@
 import sqlite3
 from core.constants import (
     BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
-    MW_VALUE, INITIAL_EQUITY_INPUT, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED
+    MW_VALUE, INITIAL_EQUITY_INPUT, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED,
+    CEILING_MODEL_SELECTION, BAZIN_TARGET_YIELD, BAZIN_TARGET_SPREAD, INCOME_TYPE_MULTIPLIER
 )
+
+from core.strings import MODEL_CLASSIC
 
 class DatabaseManager:
     """Manages SQLite connection and initialization for the personal portfolio transactions domain."""
@@ -48,13 +51,16 @@ class DatabaseManager:
                 {MW_VALUE} REAL NOT NULL,
                 {INITIAL_EQUITY_INPUT} REAL NOT NULL,
                 {DESIRED_INCOME_TYPE} TEXT DEFAULT 'MULTIPLIER',
-                {DESIRED_INCOME_FIXED} REAL DEFAULT 10000.0
+                {DESIRED_INCOME_FIXED} REAL DEFAULT 10000.0,
+                {CEILING_MODEL_SELECTION} TEXT DEFAULT '{MODEL_CLASSIC}',
+                {BAZIN_TARGET_YIELD} REAL DEFAULT 6.0,
+                {BAZIN_TARGET_SPREAD} REAL DEFAULT 3.0
             )
         ''')
 
         # Backward compatibility migrations: safely add English planning fields if missing using core constants
         try:
-            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {DESIRED_INCOME_TYPE} TEXT DEFAULT 'MULTIPLIER'")
+            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {DESIRED_INCOME_TYPE} TEXT DEFAULT '{INCOME_TYPE_MULTIPLIER}'")
             conn.commit()
         except Exception:
             pass # Column already exists, safe to ignore
@@ -64,6 +70,24 @@ class DatabaseManager:
             conn.commit()
         except Exception:
             pass # Column already exists, safe to ignore
+
+        try:
+            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {CEILING_MODEL_SELECTION} TEXT DEFAULT '{MODEL_CLASSIC}'")
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
+            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {BAZIN_TARGET_YIELD} REAL DEFAULT 6.0")
+            conn.commit()
+        except Exception:
+            pass
+
+        try:
+            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {BAZIN_TARGET_SPREAD} REAL DEFAULT 3.0")
+            conn.commit()
+        except Exception:
+            pass
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS tracked_market_assets (

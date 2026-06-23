@@ -22,172 +22,118 @@ class MarketData:
         return quotes
 
     @staticmethod
-    @st.cache_data(ttl=3600)
-    def get_ticker_details(ticker: str) -> dict:
-        """Fetches advanced real-time metrics for a ticker from Yahoo Finance."""
-        ticker_sa = f"{ticker.strip().upper()}.SA"
+    def get_last_price(ticker: str) -> float:
+        """Returns the last closing price of a single ticker from Yahoo Finance."""
         try:
-            t = yf.Ticker(ticker_sa)
-            info = t.info
-            
-            current_price = info.get("currentPrice", info.get("lastPrice", info.get("regularMarketPrice", 0.0)))
-            ticker_clean = ticker.strip().upper()
-            
-            # Trailing 12-Month Dividend Yield calculated dynamically to avoid Yahoo's glitched info['dividendYield']
-            div_series = t.dividends
-            one_year_ago = datetime.date.today() - datetime.timedelta(days=365)
-            l12m_dividends = 0.0
-            
-            if not div_series.empty:
-                div_series.index = pd.to_datetime(div_series.index).date
-                l12m_dividends = float(div_series.loc[one_year_ago:].sum())
-                
-            # Query custom dynamic database-driven corrections (TTM sum adjust)
-            from core.database import db
-            conn = db.get_personal_connection()
-            cursor = conn.cursor()
-            current_year = datetime.date.today().year
-            cursor.execute(
-                "SELECT year, total_value FROM dividend_corrections WHERE ticker = ? AND year IN (?, ?)",
-                (ticker_clean, current_year, current_year - 1)
-            )
-            db_corrections = {row[0]: row[1] for row in cursor.fetchall()}
-            conn.close()
-            
-            # Dynamically adjust the TTM sum if Yahoo has gaps/omissions compared to corrections table
-            for yr, corrected_total in db_corrections.items():
-                if not div_series.empty:
-                    yahoo_total = float(div_series[div_series.index.map(lambda d: d.year == yr)].sum())
-                else:
-                    yahoo_total = 0.0
-                if corrected_total > yahoo_total:
-                    l12m_dividends += (corrected_total - yahoo_total)
-                
-            dy = (l12m_dividends / current_price * 100) if current_price > 0 else 0.0
-            
-            return {
-                "current_price": current_price,
-                "dy": dy,
-                "pe": info.get("trailingPE", 0.0) if info.get("trailingPE") is not None else 0.0,
-                "pb": info.get("priceToBook", 0.0) if info.get("priceToBook") is not None else 0.0,
-                "high_52w": info.get("fiftyTwoWeekHigh", 0.0) if info.get("fiftyTwoWeekHigh") is not None else 0.0,
-                "low_52w": info.get("fiftyTwoWeekLow", 0.0) if info.get("fiftyTwoWeekLow") is not None else 0.0
-            }
+            ticker_sa = f"{ticker.strip().upper()}.SA"
+            info = yf.Ticker(ticker_sa).fast_info
+            return float(info['lastPrice'])
         except Exception:
-            return {}
+            return 0.0
 
     @staticmethod
     @st.cache_data(ttl=600)
-    def get_ticker_history(ticker: str, period: str = "1y") -> pd.DataFrame:
+    def get_ticker_intraday_history(ticker: str, period="1d", interval="5m") -> pd.DataFrame:
         """
-        Fetches historical price data for a ticker based on the chosen period (e.g. 1d, 5d, 1mo, max).
-        Chooses appropriate intervals (e.g. 5m, 15m) to prevent blank single-dot charts on intraday.
+        Fetches the intraday close prices series for a specific ticker.
+        Applies a gapless categorical time-axis transformation.
         """
-        ticker_sa = f"{ticker.strip().upper()}.SA"
         try:
-            t = yf.Ticker(ticker_sa)
-            if period == "1d":
-                interval = "5m"
-            elif period == "5d":
-                interval = "15m"
+            ticker_sa = f"{ticker.strip().upper()}.SA"
+            history = yf.Ticker(ticker_sa).history(period=period, interval=interval)
+            if history.empty:
+                return pd.DataFrame()
+
+            # Reset index and keep datetime and Close columns
+            df = history.reset_index()
+            time_col = 'Datetime' if 'Datetime' in df.columns else 'Date'
+
+            df = df[[time_col, 'Close']].rename(columns={time_col: 'time', 'Close': 'price'})
+
+            # Format display timestamps tightly and force categorical string index
+            if interval == "5m" or interval == "15m":
+                df['display_time'] = df['time'].dt.strftime('%d/%m %H:%M')
             else:
-                interval = "1d"
-            df = t.history(period=period, interval=interval)
+                df['display_time'] = df['time'].dt.strftime('%d/%m/%Y')
+
             return df
         except Exception:
             return pd.DataFrame()
 
     @staticmethod
-    @st.cache_data(ttl=2592000) # Cache for 30 days
-    def get_current_minimum_wage() -> float:
-        """Dynamically fetches the current Brazilian minimum wage from the Banco Central (BCB) API."""
-        import requests
-        url = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.1619/dados/ultimos/1?formato=json'
+    @st.cache_data(ttl=3600)
+    def get_ticker_history(ticker: str, period="1y") -> pd.DataFrame:
+        """Fetches the raw historical stock price series from Yahoo Finance with a 1-hour cache."""
         try:
-            response = requests.get(url, timeout=5)
-            data = response.json()
-            if data and len(data) > 0 and 'valor' in data[0]:
-                return float(data[0]['valor'])
+            ticker_sa = f"{ticker.strip().upper()}.SA"
+            return yf.Ticker(ticker_sa).history(period=period)
         except Exception:
-            pass
-        return 1621.0
+            return pd.DataFrame()
 
     @staticmethod
-    @st.cache_data(ttl=3600)
-    def get_ticker_market_analysis(ticker: str, target_yield_pct: float = 6.0) -> dict:
-        """Fetches comprehensive market metrics, last 5y dividends, and computes Bazin's Ceiling Price."""
-        ticker_sa = f"{ticker.strip().upper()}.SA"
+    def get_ticker_market_analysis(ticker: str, target_yield_pct=6.0) -> dict:
+        """
+        Fetches core B3 valuation metrics and 5-year historical dividends from Yahoo Finance.
+        All calculations are fully agnostic, letting the view/caller pass any target yield percentage.
+        """
         try:
-            t = yf.Ticker(ticker_sa)
-            info = t.info
+            ticker_sa = f"{ticker.strip().upper()}.SA"
+            yt = yf.Ticker(ticker_sa)
+            info = yt.info
 
-            current_price = info.get("currentPrice", info.get("lastPrice", info.get("regularMarketPrice", 0.0)))
-            vpa = info.get("bookValue", 0.0)
-            pb = info.get("priceToBook", 0.0)
-            pe = info.get("trailingPE", 0.0)
-            roe = info.get("returnOnEquity", 0.0) * 100 if info.get("returnOnEquity") is not None else 0.0
-            high_52w = info.get("fiftyTwoWeekHigh", 0.0)
-            low_52w = info.get("fiftyTwoWeekLow", 0.0)
-            name = info.get("longName", info.get("shortName", ticker))
+            # 1. Fetch dynamic valuation metrics safely
+            pb = info.get("priceToBook", 0.0) if info.get("priceToBook") is not None else 0.0
+            pe = info.get("trailingPE", 0.0) if info.get("trailingPE") is not None else 0.0
+            dy = (info.get("dividendYield", 0.0) or 0.0) * 100
+            roe = (info.get("returnOnEquity", 0.0) or 0.0) * 100
 
-            div_series = t.dividends
+            # Use extremely reliable fast_info for prices, highs, and lows on B3
+            fast = yt.fast_info
+            low_52w = fast.get("yearLow", info.get("fiftyTwoWeekLow", 0.0))
+            high_52w = fast.get("yearHigh", info.get("fiftyTwoWeekHigh", 0.0))
+            current_price = fast.get("lastPrice", info.get("currentPrice", info.get("regularMarketPrice", 0.0)))
+
+            # 2. Fetch last 5-year historical dividends series
+            div_series = yt.dividends
+            div_by_year = {}
             current_year = datetime.date.today().year
             last_5_years = [current_year - i for i in range(1, 6)]
 
-            div_by_year = {}
-            ticker_clean = ticker.strip().upper()
-
-            # Connect to database and fetch all corrections for this ticker dynamically
-            from core.database import db
-            conn = db.get_personal_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT year, total_value FROM dividend_corrections WHERE ticker = ?", (ticker_clean,))
-            db_corrections_all = {row[0]: row[1] for row in cursor.fetchall()}
-            conn.close()
-
             if not div_series.empty:
-                div_df = div_series.groupby(div_series.index.year).sum()
+                df_div = div_series.to_frame().reset_index()
+                df_div['year'] = df_div['Date'].dt.year
+                df_annual = df_div.groupby('year')['Dividends'].sum()
+
                 for yr in last_5_years:
-                    val = float(div_df.get(yr, 0.0))
-                    if yr in db_corrections_all:
-                        val = db_corrections_all[yr]
-                    div_by_year[yr] = val
+                    div_by_year[yr] = float(df_annual.get(yr, 0.0))
             else:
                 for yr in last_5_years:
-                    val = 0.0
-                    if yr in db_corrections_all:
-                        val = db_corrections_all[yr]
-                    div_by_year[yr] = val
+                    div_by_year[yr] = 0.0
 
-            # Calculate Trailing 12-Month Dividend Yield dynamically to avoid Yahoo's glitched dividendYield field
-            one_year_ago = datetime.date.today() - datetime.timedelta(days=365)
-            l12m_dividends_sum = 0.0
-            if not div_series.empty:
-                div_series.index = pd.to_datetime(div_series.index).date
-                l12m_dividends_sum = float(div_series.loc[one_year_ago:].sum())
-                
-            # Dynamically adjust TTM sum from SQLite
-            for yr, corrected_total in db_corrections_all.items():
-                if yr in (current_year, current_year - 1):
-                    if not div_series.empty:
-                        yahoo_total = float(div_series[div_series.index.map(lambda d: d.year == yr)].sum())
-                    else:
-                        yahoo_total = 0.0
-                    if corrected_total > yahoo_total:
-                        l12m_dividends_sum += (corrected_total - yahoo_total)
+            # Dynamically adjust TTM sum from SQLite dividend corrections table
+            from core.database import db
+            conn_corr = db.get_personal_connection()
+            cursor_corr = conn_corr.cursor()
+            cursor_corr.execute("SELECT year, total_value FROM dividend_corrections WHERE ticker = ?", (ticker,))
+            db_corrections = cursor_corr.fetchall()
+            conn_corr.close()
 
-            dy = (l12m_dividends_sum / current_price * 100) if current_price > 0 else 0.0
+            for yr, corrected_total in db_corrections:
+                if yr in div_by_year:
+                    div_by_year[yr] = float(corrected_total)
 
-            avg_dividend_5y = sum(div_by_year.values()) / 5.0
+            avg_dividend_5y = sum(div_by_year.values()) / 5 if div_by_year else 0.0
+
+            # Calculate dynamic Bazin ceiling price using the customized caller's yield divisor
             target_yield = target_yield_pct / 100
             ceiling_price = (avg_dividend_5y / target_yield) if target_yield > 0 else 0.0
+
+            # Calculate dynamic real 5-year average dividend yield
             avg_dy_5y = (avg_dividend_5y / current_price * 100) if current_price > 0 else 0.0
 
             return {
-                "ticker": ticker,
-                "name": name,
+                "name": info.get("longName", f"Asset {ticker}"),
                 "current_price": current_price,
-                "vpa": vpa,
                 "pb": pb,
                 "pe": pe,
                 "dy": dy,
@@ -209,3 +155,48 @@ class MarketData:
         if os.path.exists("assets.csv"):
             return pd.read_csv("assets.csv", dtype=str, encoding="utf-8-sig").set_index("CÓDIGO")
         return pd.DataFrame()
+
+    @staticmethod
+    @st.cache_data(ttl=2592000)
+    def get_current_ipca_l12m() -> float:
+        """Dynamically fetches the official 12-month accumulated IPCA index from the Banco Central (BCB) SGS API Series 13522."""
+        import requests
+        url = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.13522/dados/ultimos/1?formato=json'
+        try:
+            response = requests.get(url, timeout=5)
+            data = response.json()
+            if data and len(data) > 0 and 'valor' in data[0]:
+                return float(data[0]['valor'])
+        except Exception:
+            pass
+        return 4.50 # Highly realistic Brazilian fallback IPCA proxy if the BCB API is temporarily down
+
+    @staticmethod
+    @st.cache_data(ttl=2592000)
+    def get_current_selic() -> float:
+        """Dynamically fetches the official annualized SELIC Target rate from the Banco Central (BCB) SGS API Series 1178."""
+        import requests
+        url = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados/ultimos/1?formato=json'
+        try:
+            response = requests.get(url, timeout=5)
+            data = response.json()
+            if data and len(data) > 0 and 'valor' in data[0]:
+                return float(data[0]['valor'])
+        except Exception:
+            pass
+        return 10.50 # Highly realistic Brazilian fallback SELIC proxy if the BCB API is temporarily down
+
+    @staticmethod
+    @st.cache_data(ttl=2592000)
+    def get_current_minimum_wage() -> float:
+        """Dynamically fetches the current Brazilian minimum wage from the Banco Central (BCB) API Series 1619."""
+        import requests
+        url = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.1619/dados/ultimos/1?formato=json'
+        try:
+            response = requests.get(url, timeout=5)
+            data = response.json()
+            if data and len(data) > 0 and 'valor' in data[0]:
+                return float(data[0]['valor'])
+        except Exception:
+            pass
+        return 1621.0

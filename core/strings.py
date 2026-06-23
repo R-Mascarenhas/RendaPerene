@@ -17,7 +17,7 @@ DISPLAY_YOC_12 = "YoC/12"
 DISPLAY_EARNINGS = "Proventos"
 DISPLAY_SECTOR = "Setor"
 
-# 2. Bazin Watchlist / Market Monitor Grid Headers
+# 2. Market Monitor Grid Headers
 DISPLAY_TICKER = "Ticker"
 DISPLAY_COMPANY = "Empresa"
 DISPLAY_QUOTE = "Cotação"
@@ -29,3 +29,8 @@ DISPLAY_P_L = "P/L"
 DISPLAY_DY_CURRENT = "DY Atual"
 DISPLAY_ROE = "ROE"
 DISPLAY_RANGE_52W = "Faixa 52s"
+
+# 3. Price-Ceiling model selection option string values (Presentation Strings)
+MODEL_CLASSIC = "Bazin Clássico"
+MODEL_SELIC = "SELIC Nominal"
+MODEL_IPCA_SPREAD = "IPCA + Spread Alvo"

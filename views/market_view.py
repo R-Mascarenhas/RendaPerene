@@ -2,16 +2,23 @@ import streamlit as st
 import pandas as pd
 import datetime
 from services.assets_service import AssetService
+from services.planning_service import SimulationService
 from core.utils import Formatter, MarketData
 from core.constants import (
     TICKER, NAME, CURRENT_PRICE, CEILING_PRICE, MARKET_PB, MARKET_PE,
     CURRENT_DY, MARKET_ROE, MARKET_LOW_52W, MARKET_HIGH_52W,
-    MARKET_AVG_DIV_5Y, MARKET_AVG_DY_5Y, MARKET_DIVIDENDS_5Y, MARKET_NAME
+    MARKET_AVG_DIV_5Y, MARKET_AVG_DY_5Y, MARKET_DIVIDENDS_5Y, MARKET_NAME,
+    BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
+    MW_VALUE, INITIAL_EQUITY_INPUT, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED,
+    CEILING_MODEL_SELECTION, BAZIN_TARGET_YIELD, BAZIN_TARGET_SPREAD,
+    SESSION_CEILING_MODEL_SELECTION, SESSION_BAZIN_TARGET_YIELD, SESSION_BAZIN_TARGET_SPREAD,
+    WIDGET_CEILING_MODEL_SELECTOR, WIDGET_BAZIN_YIELD_INPUT, WIDGET_BAZIN_SPREAD_INPUT
 )
 from core.strings import (
     DISPLAY_TICKER, DISPLAY_COMPANY, DISPLAY_QUOTE, DISPLAY_CEILING,
     DISPLAY_AVG_5Y, DISPLAY_DY_AVG_5Y, DISPLAY_P_VP, DISPLAY_P_L,
-    DISPLAY_DY_CURRENT, DISPLAY_ROE, DISPLAY_RANGE_52W
+    DISPLAY_DY_CURRENT, DISPLAY_ROE, DISPLAY_RANGE_52W,
+    MODEL_CLASSIC, MODEL_SELIC, MODEL_IPCA_SPREAD
 )
 
 class MarketView:
@@ -48,14 +55,53 @@ class MarketView:
                             st.error(f"Erro ao adicionar o ativo {new_ticker} (ou ele já existe no monitor).")
 
         with col_yield:
-            target_yield = st.number_input(
-                "Taxa de Rendimento Alvo Bazin (%)",
-                min_value=1.0,
-                max_value=20.0,
-                value=6.0,
-                step=0.5,
-                key="target_bazin_yield_pct"
+            # Load from persistent session state using visual string constants
+            default_db_model = st.session_state.get(SESSION_CEILING_MODEL_SELECTION, MODEL_CLASSIC)
+            model_options = [MODEL_CLASSIC, MODEL_SELIC, MODEL_IPCA_SPREAD]
+            default_index = model_options.index(default_db_model) if default_db_model in model_options else 0
+
+            st.selectbox(
+                "Modelo de Preço Teto",
+                options=model_options,
+                index=default_index,
+                key=WIDGET_CEILING_MODEL_SELECTOR,
+                on_change=self._on_bazin_model_change
             )
+            
+            model = st.session_state.get(SESSION_CEILING_MODEL_SELECTION, MODEL_CLASSIC)
+            ipca_val = MarketData.get_current_ipca_l12m()
+            selic_val = MarketData.get_current_selic()
+            
+            if model == MODEL_CLASSIC:
+                st.number_input(
+                    "Taxa Alvo Bazin (%)",
+                    min_value=1.0,
+                    max_value=20.0,
+                    value=float(st.session_state[SESSION_BAZIN_TARGET_YIELD]),
+                    key=WIDGET_BAZIN_YIELD_INPUT,
+                    step=0.5,
+                    on_change=self._on_bazin_yield_change
+                )
+                target_yield = st.session_state[SESSION_BAZIN_TARGET_YIELD]
+            elif model == MODEL_SELIC:
+                target_yield = selic_val
+                st.caption(f"ℹ️ Taxa SELIC Meta (BCB): **{selic_val:.2f}% a.a.**")
+            else: # IPCA + Spread Alvo
+                st.number_input(
+                    "Spread Alvo (%)",
+                    min_value=0.0,
+                    max_value=15.0,
+                    value=float(st.session_state[SESSION_BAZIN_TARGET_SPREAD]),
+                    key=WIDGET_BAZIN_SPREAD_INPUT,
+                    step=0.5,
+                    on_change=self._on_bazin_spread_change
+                )
+                spread = st.session_state[SESSION_BAZIN_TARGET_SPREAD]
+                target_yield = ipca_val + spread
+                st.caption(f"ℹ️ Divisor Resultante: **{target_yield:.2f}%** (IPCA: {ipca_val:.2f}% + Spread: {spread:.2f}%)")
+                
+            # Permanently cache the evaluated target yield in session state so other views sync instantly!
+            st.session_state.target_bazin_yield_pct = target_yield
 
         tracked_tickers = AssetService.get_tracked_market_assets()
 
@@ -69,7 +115,7 @@ class MarketView:
             if remove_ticker != "--- Selecione ---":
                 if st.button(f"🗑️ Confirmar Remoção de {remove_ticker}"):
                     AssetService.remove_tracked_market_asset(remove_ticker)
-                    st.success(f"Ativo {remove_ticker} removido com sucesso!")
+                    st.success(f"Ativo {remove_ticker} removed com sucesso!")
                     st.cache_data.clear()
                     st.rerun()
 
@@ -203,3 +249,53 @@ class MarketView:
                             st.rerun()
                         else:
                             st.error("Erro ao salvar a correção de dividendos.")
+
+    def _on_bazin_model_change(self):
+        """Syncs the selectbox model change to persistent state and database."""
+        st.session_state[SESSION_CEILING_MODEL_SELECTION] = st.session_state[WIDGET_CEILING_MODEL_SELECTOR]
+        self._save_market_params()
+
+    def _on_bazin_yield_change(self):
+        """Syncs target yield input back to persistent state and database."""
+        st.session_state[SESSION_BAZIN_TARGET_YIELD] = float(st.session_state[WIDGET_BAZIN_YIELD_INPUT])
+        self._save_market_params()
+
+    def _on_bazin_spread_change(self):
+        """Syncs target spread input back to persistent state and database."""
+        st.session_state[SESSION_BAZIN_TARGET_SPREAD] = float(st.session_state[WIDGET_BAZIN_SPREAD_INPUT])
+        self._save_market_params()
+
+    def _save_market_params(self):
+        """Calculates the resulting target yield dynamically and persists configurations to SQLite portfolio.db."""
+        model = st.session_state[SESSION_CEILING_MODEL_SELECTION]
+        yield_val = float(st.session_state[SESSION_BAZIN_TARGET_YIELD])
+        spread_val = float(st.session_state[SESSION_BAZIN_TARGET_SPREAD])
+
+        ipca_val = MarketData.get_current_ipca_l12m()
+        selic_val = MarketData.get_current_selic()
+
+        if model == MODEL_CLASSIC:
+            target_yield = yield_val
+        elif model == MODEL_SELIC:
+            target_yield = selic_val
+        else:
+            target_yield = ipca_val + spread_val
+
+        st.session_state.target_bazin_yield_pct = target_yield
+
+        # Retrieve and load general simulation settings to preserve them cleanly
+        config = SimulationService.get_configuration()
+        if config:
+            SimulationService.save_configuration(
+                config[BIRTH_DATE],
+                config[RETIREMENT_AGE],
+                config[DESIRED_INCOME_MW],
+                config[ANNUAL_INTEREST_RATE],
+                config[MW_VALUE],
+                0.0,
+                desired_income_type=config[DESIRED_INCOME_TYPE],
+                desired_income_fixed=config[DESIRED_INCOME_FIXED],
+                ceiling_model_selection=model,
+                bazin_target_yield=yield_val,
+                bazin_target_spread=spread_val
+            )

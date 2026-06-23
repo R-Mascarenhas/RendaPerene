@@ -5,8 +5,9 @@ from core.database import db
 from core.constants import (
     BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
     MW_VALUE, INITIAL_EQUITY_INPUT, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED,
-    INCOME_TYPE_MULTIPLIER
+    INCOME_TYPE_MULTIPLIER, BAZIN_TARGET_YIELD, BAZIN_TARGET_SPREAD, CEILING_MODEL_SELECTION
 )
+from core.strings import MODEL_CLASSIC
 
 class SimulationService:
     """Domain Service for financial independence calculations and compound interest."""
@@ -17,7 +18,7 @@ class SimulationService:
         conn = db.get_personal_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute(f"SELECT {BIRTH_DATE}, {RETIREMENT_AGE}, {DESIRED_INCOME_MW}, {ANNUAL_INTEREST_RATE}, {MW_VALUE}, {INITIAL_EQUITY_INPUT}, {DESIRED_INCOME_TYPE}, {DESIRED_INCOME_FIXED} FROM planning_configuration WHERE id = 1")
+            cursor.execute(f"SELECT {BIRTH_DATE}, {RETIREMENT_AGE}, {DESIRED_INCOME_MW}, {ANNUAL_INTEREST_RATE}, {MW_VALUE}, {INITIAL_EQUITY_INPUT}, {DESIRED_INCOME_TYPE}, {DESIRED_INCOME_FIXED}, {CEILING_MODEL_SELECTION}, {BAZIN_TARGET_YIELD}, {BAZIN_TARGET_SPREAD} FROM planning_configuration WHERE id = 1")
             row = cursor.fetchone()
             if row:
                 config = {
@@ -28,7 +29,10 @@ class SimulationService:
                     MW_VALUE: row[4],
                     INITIAL_EQUITY_INPUT: row[5],
                     DESIRED_INCOME_TYPE: row[6] if row[6] else INCOME_TYPE_MULTIPLIER,
-                    DESIRED_INCOME_FIXED: row[7] if row[7] is not None else 10000.0
+                    DESIRED_INCOME_FIXED: row[7] if row[7] is not None else 10000.0,
+                    CEILING_MODEL_SELECTION: row[8] if row[8] else MODEL_CLASSIC,
+                    BAZIN_TARGET_YIELD: row[9] if row[9] is not None else 6.0,
+                    BAZIN_TARGET_SPREAD: row[10] if row[10] is not None else 3.0
                 }
                 return config
             return None
@@ -38,7 +42,7 @@ class SimulationService:
             conn.close()
 
     @staticmethod
-    def save_configuration(birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type="MULTIPLIER", desired_income_fixed=10000.0):
+    def save_configuration(birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type="MULTIPLIER", desired_income_fixed=10000.0, ceiling_model_selection="Bazin Clássico", bazin_target_yield=6.0, bazin_target_spread=3.0):
         """Saves or updates the planning configuration in the database."""
         conn = db.get_personal_connection()
         cursor = conn.cursor()
@@ -47,14 +51,14 @@ class SimulationService:
             if cursor.fetchone():
                 cursor.execute(f'''
                     UPDATE planning_configuration
-                    SET {BIRTH_DATE} = ?, {RETIREMENT_AGE} = ?, {DESIRED_INCOME_MW} = ?, {ANNUAL_INTEREST_RATE} = ?, {MW_VALUE} = ?, {INITIAL_EQUITY_INPUT} = ?, {DESIRED_INCOME_TYPE} = ?, {DESIRED_INCOME_FIXED} = ?
+                    SET {BIRTH_DATE} = ?, {RETIREMENT_AGE} = ?, {DESIRED_INCOME_MW} = ?, {ANNUAL_INTEREST_RATE} = ?, {MW_VALUE} = ?, {INITIAL_EQUITY_INPUT} = ?, {DESIRED_INCOME_TYPE} = ?, {DESIRED_INCOME_FIXED} = ?, {CEILING_MODEL_SELECTION} = ?, {BAZIN_TARGET_YIELD} = ?, {BAZIN_TARGET_SPREAD} = ?
                     WHERE id = 1
-                ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed))
+                ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread))
             else:
                 cursor.execute(f'''
-                    INSERT INTO planning_configuration (id, {BIRTH_DATE}, {RETIREMENT_AGE}, {DESIRED_INCOME_MW}, {ANNUAL_INTEREST_RATE}, {MW_VALUE}, {INITIAL_EQUITY_INPUT}, {DESIRED_INCOME_TYPE}, {DESIRED_INCOME_FIXED})
-                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed))
+                    INSERT INTO planning_configuration (id, {BIRTH_DATE}, {RETIREMENT_AGE}, {DESIRED_INCOME_MW}, {ANNUAL_INTEREST_RATE}, {MW_VALUE}, {INITIAL_EQUITY_INPUT}, {DESIRED_INCOME_TYPE}, {DESIRED_INCOME_FIXED}, {CEILING_MODEL_SELECTION}, {BAZIN_TARGET_YIELD}, {BAZIN_TARGET_SPREAD})
+                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread))
             conn.commit()
         finally:
             conn.close()
@@ -71,7 +75,7 @@ class SimulationService:
 
         start_date = datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
         
-        start_months_age = (start_date.year - birth_date.year) * 12 + start_date.month - birth_date.month - (start_date.day < birth_date.day)
+        start_months_age = (start_date.year - birth_date.year) * 12 + start_date.month - birth_date.month - (start_date.day < start_date.day)
         return start_months_age
 
     @staticmethod

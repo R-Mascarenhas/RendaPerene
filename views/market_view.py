@@ -35,24 +35,27 @@ class MarketView:
 
         with col_add:
             with st.form("form_add_market_asset", clear_on_submit=True):
-                new_ticker = st.selectbox(
+                # Construct autocompleting ticker + name options for premium UX
+                market_options = ["--- Selecione ---"] + [f"{t} - {catalog.loc[t, 'NOME']}" for t in available_tickers if t in catalog.index]
+                new_ticker_selection = st.selectbox(
                     "Adicionar Ticker para Acompanhamento",
-                    options=["--- Selecione ---"] + available_tickers,
+                    options=market_options,
                     index=0,
-                    help="Digite para buscar e autocompletar ativos válidos cadastrados no arquivo assets.csv"
+                    help="Digite para buscar e autocompletar ativos válidos por ticker ou nome da empresa cadastrados no assets.csv"
                 )
                 submit_add = st.form_submit_button("➕ Adicionar à Lista")
                 if submit_add:
-                    if new_ticker == "--- Selecione ---":
+                    if new_ticker_selection == "--- Selecione ---":
                         st.error("Por favor, selecione um ativo válido da lista.")
                     else:
-                        success = AssetService.add_tracked_market_asset(new_ticker)
+                        ticker_to_add = new_ticker_selection.split(" - ")[0]
+                        success = AssetService.add_tracked_market_asset(ticker_to_add)
                         if success:
-                            st.success(f"Ativo {new_ticker} adicionado com sucesso ao monitor!")
+                            st.success(f"Ativo {ticker_to_add} adicionado com sucesso ao monitor!")
                             st.cache_data.clear()
                             st.rerun()
                         else:
-                            st.error(f"Erro ao adicionar o ativo {new_ticker} (ou ele já existe no monitor).")
+                            st.error(f"Erro ao adicionar o ativo {ticker_to_add} (ou ele já existe no monitor).")
 
         with col_yield:
             # Load from persistent session state using visual string constants

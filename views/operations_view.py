@@ -2,6 +2,7 @@ import streamlit as st
 import datetime
 import pandas as pd
 from services.assets_service import AssetService
+from core.utils.market_data import MarketData
 
 class OperationsView:
     """Class responsible for rendering the manual transactions and B3 uploader forms."""
@@ -30,9 +31,21 @@ class OperationsView:
             ]
         )
         
+        # Load the assets catalog dynamically to construct the autocompleting ticker + name options
+        catalog = MarketData.load_assets_catalog()
+        available_tickers = sorted(catalog.index.tolist()) if not catalog.empty else []
+        options = ["--- Selecione ---"] + [f"{t} - {catalog.loc[t, 'NOME']}" for t in available_tickers if t in catalog.index]
+
         with st.form("form_unified_entry", clear_on_submit=True):
             date = st.date_input("Data do Negócio/Pagamento", datetime.date.today(), format="DD/MM/YYYY")
-            ticker_input = st.text_input("Ticker do Ativo (ex: BBAS3)").strip().upper()
+            
+            # Premium autocomplete select box enabling searching by either ticker or company name!
+            ticker_selection = st.selectbox(
+                "Selecione o Ativo",
+                options=options,
+                index=0,
+                help="Digite para buscar pelo ticker ou por qualquer parte do nome da empresa cadastrada no assets.csv"
+            )
             
             if "Compra" in entry_type or "Venda" in entry_type:
                 qty = st.number_input("Quantidade", min_value=1, value=100, step=1)
@@ -48,9 +61,12 @@ class OperationsView:
             submit = st.form_submit_button("Registrar Lançamento")
             
             if submit:
-                if len(ticker_input) < 4:
-                    st.error("Por favor, digite um Ticker de ativo válido (mínimo de 4 letras).")
+                if ticker_selection == "--- Selecione ---":
+                    st.error("Por favor, selecione um ativo válido da lista.")
                 else:
+                    # Extract the pure ticker from the custom selected string
+                    ticker_input = ticker_selection.split(" - ")[0]
+                    
                     if "Compra" in entry_type or "Venda" in entry_type:
                         tx_type = "Compra" if "Compra" in entry_type else "Venda"
                         AssetService.add_transaction(
@@ -98,4 +114,4 @@ class OperationsView:
                 except Exception as e:
                     st.error(f"Erro ao processar arquivo B3. Certifique-se de que é o arquivo oficial da Área do Investidor. Detalhes: {e}")
             else:
-                st.info("Este arquivo já foi importado e processado nesta sessão. Remova o arquivo para fazer uma nova importação.")
+                pass

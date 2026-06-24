@@ -84,7 +84,7 @@ class MarketData:
             # 1. Fetch dynamic valuation metrics safely
             pb = info.get("priceToBook", 0.0) if info.get("priceToBook") is not None else 0.0
             pe = info.get("trailingPE", 0.0) if info.get("trailingPE") is not None else 0.0
-            dy = (info.get("dividendYield", 0.0) or 0.0) * 100
+            dy = (info.get("dividendYield", 0.0) or 0.0)
             roe = (info.get("returnOnEquity", 0.0) or 0.0) * 100
 
             # Use extremely reliable fast_info for prices, highs, and lows on B3

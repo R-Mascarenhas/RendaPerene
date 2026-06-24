@@ -470,6 +470,45 @@ def test_formatter_colored_cell_style_dry_sanity():
     trend_neutral = Formatter.get_trend_cell_style(0.0)
     assert "transparent" in trend_neutral
 
+def test_get_ticker_market_analysis(monkeypatch):
+    """
+    Verifies that get_ticker_market_analysis correctly parses and calculates market data.
+    In particular, checks that the dividend yield (dy) is NOT multiplied by 100 if yfinance
+    already returns it as a percentage (e.g. 1.2 for BBAS3 instead of 0.012).
+    """
+    import pandas as pd
+    from core.utils.market_data import MarketData
+
+    class MockTicker:
+        def __init__(self, ticker_name):
+            self.info = {
+                "longName": "Banco do Brasil S.A.",
+                "priceToBook": 0.85,
+                "trailingPE": 4.5,
+                "dividendYield": 1.2,  # Already percentage (1.2%)
+                "returnOnEquity": 0.09224  # Decimal fraction (9.224%)
+            }
+            self.fast_info = {
+                "yearLow": 15.0,
+                "yearHigh": 30.0,
+                "lastPrice": 19.86
+            }
+            self.dividends = pd.Series(dtype=float)
+
+    import yfinance as yf
+    monkeypatch.setattr(yf, "Ticker", MockTicker)
+
+    # Call get_ticker_market_analysis for a mock ticker
+    analysis = MarketData.get_ticker_market_analysis("BBAS3")
+
+    # Assertions
+    assert analysis["name"] == "Banco do Brasil S.A."
+    assert analysis["current_price"] == 19.86
+    assert analysis["pb"] == 0.85
+    assert analysis["pe"] == 4.5
+    assert analysis["roe"] == 9.224  # Should be multiplied by 100 since ROE is a decimal fraction
+    assert analysis["dy"] == 1.2      # Should be exactly 1.2, NOT 120.0
+
 def test_market_data_bcb_indicators_sanity():
     """
     Verifies that MarketData SGS API integration methods (for IPCA and SELIC)

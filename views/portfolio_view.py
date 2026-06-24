@@ -37,14 +37,25 @@ class PortfolioView:
         with st.spinner(f"Buscando cotações em tempo real para {ticker}..."):
             details = MarketData.get_ticker_market_analysis(ticker)
 
-        current_price = details.get("current_price", 0.0)
-        dy = details.get("dy", 0.0)
-        pe = details.get("pe", 0.0)
-        pb = details.get("pb", 0.0)
-        high_52w = details.get("high_52w", 0.0)
-        low_52w = details.get("low_52w", 0.0)
+        # 1. Render Header Metadata Block
+        self._render_header_metadata_block(ticker, metadata)
 
-        # Header metadata block
+        df_div = AssetService.get_asset_dividends(ticker)
+
+        # 2. SECTION 1 (AT THE TOP): Tabela Dinâmica do Ativo por Ano
+        self._render_proventos_pivot_table(ticker, df_div)
+
+        # 3. SECTION 2: General Indicators & Metrics
+        self._render_indicators_block(row_pos, details)
+
+        # 4. SECTION 3: Behavior chart (Google-Finance style dynamic range selector!)
+        self._render_behavior_chart(ticker, details)
+
+        # 5. SECTION 4: Tables (Transactions and Dividends side by side)
+        self._render_transactions_and_dividends_tables(ticker, df_div)
+
+    def _render_header_metadata_block(self, ticker, metadata):
+        """Renders the top header block containing the asset's logo, name, and main registry details."""
         col_img, col_meta = st.columns([1, 4])
         with col_img:
             sector_lower = str(metadata.get('sector', '')).lower()
@@ -67,9 +78,9 @@ class PortfolioView:
         with col_meta:
             st.subheader(f"{ticker} - {metadata.get('name', 'Nome não disponível')}")
             st.write(f"**CNPJ:** {metadata.get('cnpj', 'N/D')}  \n**Setor:** {metadata.get('sector', 'N/D')}  \n**Segmento:** {metadata.get('segment', 'N/D')}")
-        df_div = AssetService.get_asset_dividends(ticker)
 
-        # SECTION 1 (AT THE TOP): Tabela Dinâmica do Ativo por Ano
+    def _render_proventos_pivot_table(self, ticker, df_div):
+        """SECTION 1: Renders the annual pivot table of received dividends and metrics."""
         st.markdown("---")
         st.subheader("📅 Tabela Dinâmica de Proventos do Ativo")
 
@@ -141,7 +152,15 @@ class PortfolioView:
         else:
             st.info(f"Nenhum provento recebido registrado para o ativo {ticker} no banco de dados.")
 
-        # SECTION 2: General Indicators & Metrics
+    def _render_indicators_block(self, row_pos, details):
+        """SECTION 2: Renders general financial and valuation indicators for the asset."""
+        current_price = details.get("current_price", 0.0)
+        dy = details.get("dy", 0.0)
+        pe = details.get("pe", 0.0)
+        pb = details.get("pb", 0.0)
+        high_52w = details.get("high_52w", 0.0)
+        low_52w = details.get("low_52w", 0.0)
+
         st.markdown("---")
         st.markdown("#### 📊 Indicadores Gerais do Ativo")
         m_col1, m_col2, m_col3, m_col4 = st.columns(4)
@@ -161,7 +180,8 @@ class PortfolioView:
         m_col7.metric("Alt. 52 Semanas", Formatter.format_currency(high_52w) if high_52w > 0 else "N/D")
         m_col8.metric("Bai. 52 Semanas", Formatter.format_currency(low_52w) if low_52w > 0 else "N/D")
 
-        # SECTION 3: Behavior chart (Google-Finance style dynamic range selector!)
+    def _render_behavior_chart(self, ticker, details):
+        """SECTION 3: Renders the historical behavior chart with buy/sell annotations."""
         st.markdown("---")
         st.markdown("#### 📈 Comportamento Gráfico")
 
@@ -367,7 +387,8 @@ class PortfolioView:
         else:
             st.info("Dados gráficos de cotações não disponíveis para este ativo no Yahoo Finance.")
 
-        # SECTION 4: Tables (Transactions and Dividends side by side)
+    def _render_transactions_and_dividends_tables(self, ticker, df_div):
+        """SECTION 4: Renders detailed tables for deposits and dividends side-by-side."""
         st.markdown("---")
         st.markdown("#### 📂 Extrato de Transações e Proventos")
         col_t1, col_t2 = st.columns(2)

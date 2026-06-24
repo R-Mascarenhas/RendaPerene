@@ -9,10 +9,6 @@ __pycache__/
 
 # Databases (Sensitive / Local)
 *.db
-carteira.db
-assets.db
-test_carteira.db
-test_assets.db
 
 # Spreadsheets (Sensitive)
 *.ods
@@ -29,3 +25,4 @@ out/
 # Local Agent Context (Do not commit)
 GEMINI.md
 git_commit_features.py
+docs/reports/

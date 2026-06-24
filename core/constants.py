@@ -118,3 +118,6 @@ WIDGET_INCOME_FIXED = "desired_income_fixed_input"
 WIDGET_CEILING_MODEL_SELECTOR = "ceiling_model_selection_selector"
 WIDGET_BAZIN_YIELD_INPUT = "bazin_target_yield_input"
 WIDGET_BAZIN_SPREAD_INPUT = "bazin_target_spread_input"
+
+WEIGHT_PCT = "weight_pct"
+CEILING_PRICE_GRID = "ceiling_price_grid"

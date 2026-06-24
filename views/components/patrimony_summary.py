@@ -1,6 +1,12 @@
 import streamlit as st
+
 from core.utils import Formatter, MarketData
 from services.planning_service import SimulationService
+from core.strings import (
+    LABEL_PATRIMONY_TOTAL, LABEL_CAPITAL_INVESTED, LABEL_DIVIDENDS_TOTAL,
+    LABEL_DIVIDENDS_L12M, LABEL_DIVIDENDS_YTD, HELP_PATRIMONY_RETURN, HELP_YOC_TOTAL,
+    HELP_YOC_L12M, HELP_PLANNING_PARAM
+)
 from core.constants import (
     TICKER, QUANTITY, INVESTED_AMOUNT, TOTAL_DIVIDENDS, L12M_DIVIDENDS, YTD_DIVIDENDS,
     CURRENT_PRICE, CURRENT_VALUE, PROFIT_LOSS
@@ -41,8 +47,8 @@ class PatrimonySummaryWidget:
         total_invested = sim["total_invested"] if sim else 0.0
 
         m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("Patrimônio Atual", Formatter.format_currency(total_equity), f"Retorno: {overall_return:+.2f}%")
-        m2.metric("Capital Investido", Formatter.format_currency(total_invested), "Parâmetro do Planejamento")
-        m3.metric("Proventos Totais", Formatter.format_currency(total_dividends), f"YoC Total: {overall_yoc:.2f}%")
-        m4.metric("Proventos 12 Meses (L12M)", Formatter.format_currency(l12m_dividends), f"YoC L12M: {overall_l12m_yoc:.2f}%")
-        m5.metric("Proventos Ano Corrente (YTD)", Formatter.format_currency(ytd_dividends))
+        m1.metric(LABEL_PATRIMONY_TOTAL, Formatter.format_currency(total_equity), HELP_PATRIMONY_RETURN.format(val=overall_return))
+        m2.metric(LABEL_CAPITAL_INVESTED, Formatter.format_currency(total_invested), HELP_PLANNING_PARAM)
+        m3.metric(LABEL_DIVIDENDS_TOTAL, Formatter.format_currency(total_dividends), HELP_YOC_TOTAL.format(val=overall_yoc))
+        m4.metric(LABEL_DIVIDENDS_L12M, Formatter.format_currency(l12m_dividends), HELP_YOC_L12M.format(val=overall_l12m_yoc))
+        m5.metric(LABEL_DIVIDENDS_YTD, Formatter.format_currency(ytd_dividends))

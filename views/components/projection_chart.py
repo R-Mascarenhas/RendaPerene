@@ -1,4 +1,5 @@
 import streamlit as st
+
 import pandas as pd
 import numpy as np
 import datetime
@@ -7,11 +8,14 @@ from services.planning_service import SimulationService
 from services.assets_service import AssetService
 from core.utils.formatter import Formatter
 from core.utils.trendlines import TrendlineCalculator, PolynomialTrendlineStrategy, LinearMomentumTrendlineStrategy
+from core.strings import (
+    MSG_LONG_TERM_PROJECTION_TITLE, MSG_CONSTANT_CONTRIB_VS_INTEREST_TITLE,
+    MSG_REAL_VS_PLANNED_TITLE, MSG_REAL_VS_PLANNED_DESC
+)
 from core.constants import (
-    SIM_CURRENT_AGE, SIM_START_AGE_YEARS, SIM_REMAINING_TIME_MONTHS, SIM_REQUIRED_CONTRIBUTION,
+    SIM_START_AGE_YEARS, SIM_REMAINING_TIME_MONTHS, PLANNED_DIVIDENDS, CUMULATIVE_DIVIDENDS,
     SIM_UPDATED_CONTRIBUTION, SIM_TOTAL_INVESTED, SIM_MONTHLY_INTEREST_RATE, SIM_TARGET_EQUITY,
-    ANNUAL_INTEREST_RATE, MONTH_STR, MONTH_DISPLAY, CUMULATIVE_INVESTED, PLANNED_INVESTED,
-    CUMULATIVE_DIVIDENDS, PLANNED_DIVIDENDS, MONTHLY_DIVIDEND
+    ANNUAL_INTEREST_RATE, MONTH_STR, MONTH_DISPLAY, CUMULATIVE_INVESTED, PLANNED_INVESTED
 )
 
 class ProjectionChartWidget:
@@ -43,7 +47,7 @@ class ProjectionChartWidget:
             return
 
         with container:
-            st.subheader("📈 Projeção Acumulada de Longo Prazo")
+            st.subheader(MSG_LONG_TERM_PROJECTION_TITLE)
             fig = go.Figure()
 
             fig.add_trace(
@@ -139,7 +143,7 @@ class ProjectionChartWidget:
             return
 
         with container:
-            st.subheader("📊 Aporte Constante vs. Juros Crescente")
+            st.subheader(MSG_CONSTANT_CONTRIB_VS_INTEREST_TITLE)
             fig2 = go.Figure()
 
             fig2.add_trace(
@@ -202,8 +206,8 @@ class ProjectionChartWidget:
             return
 
         st.markdown("---")
-        st.subheader(f"📊 Histórico Real vs. Planejado (Com Projeção de {extrapolation} Meses no Futuro)")
-        st.write(f"Compare as curvas planejadas no seu cockpit contra os dados reais colhidos da B3. A linha pontilhada extrapola a tendência do seu ritmo real pelos próximos {extrapolation} meses!")
+        st.subheader(MSG_REAL_VS_PLANNED_TITLE.format(months=extrapolation))
+        st.write(MSG_REAL_VS_PLANNED_DESC.format(months=extrapolation))
 
         # 1. EXPAND TIMELINE BY 12 MONTHS
         df_evolution = df_evolution.sort_values(by=MONTH_STR).reset_index(drop=True)

@@ -7,17 +7,17 @@ from core.database import db
 from services.assets_service import AssetService
 from core.utils.formatter import Formatter
 from core.utils.market_data import MarketData
-
+from core.strings import *
 class PortfolioView:
     """Class responsible for rendering the detailed metrics, charts, and pivot tables per active asset in your portfolio."""
 
     def render(self):
-        st.subheader("📁 Detalhamento de Ativos em Carteira")
+        st.subheader(MSG_PORTFOLIO_DETAIL_TITLE)
 
         # Fetch active assets in portfolio
         df_positions = AssetService.calculate_positions()
         if df_positions.empty:
-            st.info("Nenhum ativo em custódia encontrado. Vá na aba 'Ativos' para inserir seus ativos!")
+            st.info(MSG_PORTFOLIO_EMPTY_ASSETS)
             return
 
         tickers = sorted(df_positions['ticker'].tolist())
@@ -67,12 +67,12 @@ class PortfolioView:
             )
         with col_meta:
             st.subheader(f"{ticker} - {metadata.get('name', 'Nome não disponível')}")
-            st.write(f"**CNPJ:** {metadata.get('cnpj', 'N/D')}  \n**Setor:** {metadata.get('sector', 'N/D')}  \n**Segmento:** {metadata.get('segment', 'N/D')}")
+            st.write(MSG_ASSET_INFO_CNPJ.format(cnpj=metadata.get('cnpj', 'N/D'), sector=metadata.get('sector', 'N/D'), segment=metadata.get('segment', 'N/D')))
 
     def _render_proventos_pivot_table(self, ticker, df_div):
         """SECTION 1: Renders the annual pivot table of received dividends and metrics."""
         st.markdown("---")
-        st.subheader("📅 Tabela Dinâmica de Proventos do Ativo")
+        st.subheader(MSG_DIVIDENDS_DYNAMIC_TABLE)
 
         years = AssetService.get_asset_years_with_dividends(ticker)
         if years:
@@ -118,20 +118,20 @@ class PortfolioView:
             elif diff < 0:
                 qty_help = f"Redução de {diff} cotas em relação ao ano de {prev_year} (posição anterior: {qty_prev_year} cotas)."
             else:
-                qty_help = f"Nenhuma alteração na quantidade de cotas em relação ao ano de {prev_year} (posição estável em {qty_prev_year} cotas)."
+                qty_help = HELP_QTY_NO_CHANGE.format(prev_year=prev_year, qty_prev_year=qty_prev_year)
 
-            p_col2.metric("Dividendos", Formatter.format_currency(val_div))
-            p_col3.metric("JCP", Formatter.format_currency(val_jcp))
-            p_col4.metric("Rendimentos", Formatter.format_currency(val_rend))
-            p_col5.metric("Total Recebido", Formatter.format_currency(val_total))
-            p_col6.metric("Quantidade", f"{qty_end_of_year} cotas", delta=qty_delta, help=qty_help)
+            p_col2.metric(LABEL_DIVIDENDS, Formatter.format_currency(val_div))
+            p_col3.metric(LABEL_JCP, Formatter.format_currency(val_jcp))
+            p_col4.metric(LABEL_YIELDS, Formatter.format_currency(val_rend))
+            p_col5.metric(LABEL_TOTAL_RECEIVED, Formatter.format_currency(val_total))
+            p_col6.metric(LABEL_QUANTITY, f"{qty_end_of_year} cotas", delta=qty_delta, help=qty_help)
             p_col7.metric(
-                "Total por Ação",
+                LABEL_TOTAL_PER_SHARE,
                 Formatter.format_currency(total_paid_per_share),
-                help="Soma de todos os proventos unitários recebidos por cota neste ano selecionado"
+                help=HELP_TOTAL_PAID_PER_SHARE
             )
 
-            with st.expander("🔍 Ver Tabela Resumo Detalhada do Ano"):
+            with st.expander(MSG_VIEW_DETAILED_YEAR_TABLE):
                 df_pivot_display = df_pivot.copy()
                 df_pivot_display = pd.concat([df_pivot_display, pd.DataFrame([{
                     "Categoria": "Total Pago por Ação (Cota)", "Valor (R$)": total_paid_per_share
@@ -140,7 +140,7 @@ class PortfolioView:
                 df_pivot_display['Valor (R$)'] = df_pivot_display['Valor (R$)'].map(Formatter.format_currency)
                 st.dataframe(df_pivot_display, width="stretch", hide_index=True)
         else:
-            st.info(f"Nenhum provento recebido registrado para o ativo {ticker} no banco de dados.")
+            st.info(MSG_NO_DIVIDENDS_RECORDED.format(ticker=ticker))
 
     def _render_indicators_block(self, row_pos, details):
         """SECTION 2: Renders general financial and valuation indicators for the asset."""
@@ -151,29 +151,36 @@ class PortfolioView:
         high_52w = details.get("high_52w", 0.0)
         low_52w = details.get("low_52w", 0.0)
 
-        st.markdown("---")
-        st.markdown("#### 📊 Indicadores Gerais do Ativo")
-        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+        # Calculate actual adjusted price: (invested_amount - total_dividends) / quantity
+        qty = row_pos['quantity']
+        total_dividends = row_pos['total_dividends']
+        invested_amount = row_pos['invested_amount']
+        adjusted_price = (invested_amount - total_dividends) / qty if qty > 0 else 0.0
 
-        m_col1.metric("Preço Ajustado (Atual)", Formatter.format_currency(current_price) if current_price > 0 else "N/D")
-        m_col2.metric("Preço Médio (PM)", Formatter.format_currency(row_pos['average_price']))
-        m_col3.metric("Dividend Yield (DY)", f"{dy:.2f}%" if dy > 0 else "N/D")
+        st.markdown("---")
+        st.markdown(MSG_ASSET_GENERAL_INDICATORS)
+        m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
+
+        m_col1.metric(LABEL_CURRENT_PRICE, Formatter.format_currency(current_price) if current_price > 0 else "N/D", help=HELP_CURRENT_PRICE)
+        m_col2.metric(LABEL_AVG_PRICE, Formatter.format_currency(row_pos['average_price']), help=HELP_AVG_PRICE)
+        m_col3.metric(DISPLAY_ADJ_PRICE, Formatter.format_currency(adjusted_price), help=HELP_ADJ_PRICE)
+        m_col4.metric(LABEL_DY, f"{dy:.2f}%" if dy > 0 else "N/D", help=HELP_DY)
 
         total_invested = row_pos['invested_amount']
         l12m_dividends = row_pos['l12m_dividends']
         yoc_12 = ((l12m_dividends / total_invested * 100) / 12) if total_invested > 0 else 0.0
-        m_col4.metric("YoC / 12", f"{yoc_12:.2f}%")
+        m_col5.metric(LABEL_YOC_12_MONTHLY, f"{yoc_12:.2f}%", help=HELP_YOC_12)
 
-        m_col5, m_col6, m_col7, m_col8 = st.columns(4)
-        m_col5.metric("Índice P/L", f"{pe:.2f}" if pe > 0 else "N/D")
-        m_col6.metric("P/VP", f"{pb:.2f}" if pb > 0 else "N/D")
-        m_col7.metric("Alt. 52 Semanas", Formatter.format_currency(high_52w) if high_52w > 0 else "N/D")
-        m_col8.metric("Bai. 52 Semanas", Formatter.format_currency(low_52w) if low_52w > 0 else "N/D")
+        m_col6_row2, m_col7_row2, m_col8_row2, m_col9_row2 = st.columns(4)
+        m_col6_row2.metric(LABEL_PE_RATIO, f"{pe:.2f}" if pe > 0 else "N/D", help=HELP_PE_RATIO)
+        m_col7_row2.metric(LABEL_P_VP, f"{pb:.2f}" if pb > 0 else "N/D", help=HELP_P_VP)
+        m_col8_row2.metric(LABEL_HIGH_52W, Formatter.format_currency(high_52w) if high_52w > 0 else "N/D")
+        m_col9_row2.metric(LABEL_LOW_52W, Formatter.format_currency(low_52w) if low_52w > 0 else "N/D")
 
     def _render_behavior_chart(self, ticker, details):
         """SECTION 3: Renders the historical behavior chart with buy/sell annotations."""
         st.markdown("---")
-        st.markdown("##### 📈 Comportamento Gráfico")
+        st.markdown(MSG_CHART_BEHAVIOR)
 
         period_map = {
             "1 Dia": "1d",
@@ -403,16 +410,16 @@ class PortfolioView:
             fig.update_layout(yaxis_tickformat="R$ ,.2f")
             st.plotly_chart(fig, width="stretch")
         else:
-            st.info("Dados gráficos de cotações não disponíveis para este ativo no Yahoo Finance.")
+            st.info(MSG_NO_YF_CHART_DATA)
 
     def _render_transactions_and_dividends_tables(self, ticker, df_div):
         """SECTION 4: Renders detailed tables for deposits and dividends side-by-side."""
         st.markdown("---")
-        st.markdown("#### 📂 Extrato de Transações e Proventos")
+        st.markdown(MSG_TX_EXTRACT_TITLE)
         col_t1, col_t2 = st.columns(2)
 
         with col_t1:
-            st.subheader("🛒 Aportes Detalhados")
+            st.subheader(MSG_DETAILED_CONTRIBUTIONS)
             df_tx = AssetService.get_asset_transactions(ticker)
             if not df_tx.empty:
                 df_tx_display = df_tx.copy()
@@ -420,10 +427,10 @@ class PortfolioView:
                 df_tx_display['Valor Total'] = df_tx_display['Valor Total'].map(Formatter.format_currency)
                 st.dataframe(df_tx_display, width="stretch", hide_index=True)
             else:
-                st.write("Nenhuma transação registrada.")
+                st.write(MSG_NO_TX_RECORDED)
 
         with col_t2:
-            st.subheader("💰 Proventos Recebidos")
+            st.subheader(MSG_RECEIVED_DIVIDENDS)
             if not df_div.empty:
                 unit_vals = []
                 for _, row in df_div.iterrows():
@@ -440,4 +447,4 @@ class PortfolioView:
                 df_div_display['Total'] = df_div_display['Total'].map(Formatter.format_currency)
                 st.dataframe(df_div_display, width="stretch", hide_index=True)
             else:
-                st.write("Nenhum provento registrado.")
+                st.write(MSG_NO_DIVIDENDS_RECORDED_SIMPLE)

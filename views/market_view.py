@@ -1,4 +1,5 @@
 import streamlit as st
+
 import pandas as pd
 import datetime
 from services.assets_service import AssetService
@@ -9,24 +10,27 @@ from core.constants import (
     CURRENT_DY, MARKET_ROE, MARKET_LOW_52W, MARKET_HIGH_52W,
     MARKET_AVG_DIV_5Y, MARKET_AVG_DY_5Y, MARKET_DIVIDENDS_5Y, MARKET_NAME,
     BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
-    MW_VALUE, INITIAL_EQUITY_INPUT, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED,
-    CEILING_MODEL_SELECTION, BAZIN_TARGET_YIELD, BAZIN_TARGET_SPREAD,
+    MW_VALUE, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED,
     SESSION_CEILING_MODEL_SELECTION, SESSION_BAZIN_TARGET_YIELD, SESSION_BAZIN_TARGET_SPREAD,
     WIDGET_CEILING_MODEL_SELECTOR, WIDGET_BAZIN_YIELD_INPUT, WIDGET_BAZIN_SPREAD_INPUT
 )
 from core.strings import (
-    DISPLAY_TICKER, DISPLAY_COMPANY, DISPLAY_QUOTE, DISPLAY_CEILING,
-    DISPLAY_AVG_5Y, DISPLAY_DY_AVG_5Y, DISPLAY_P_VP, DISPLAY_P_L,
-    DISPLAY_DY_CURRENT, DISPLAY_ROE, DISPLAY_RANGE_52W,
-    MODEL_CLASSIC, MODEL_SELIC, MODEL_IPCA_SPREAD
+    MSG_MARKET_MONITOR_TITLE, MSG_MARKET_MONITOR_DESC, MSG_INVALID_ASSET_SELECTION,
+    MSG_ASSET_ADDED_SUCCESS, MSG_ASSET_ADD_ERROR, MSG_NO_ASSETS_MONITOR,
+    MSG_CONFIRM_REMOVE, MSG_ASSET_REMOVED_SUCCESS, MSG_MONITORED_ASSETS_PANEL,
+    MSG_YF_FETCH_ERROR, MSG_ADJUST_DIVIDENDS_EXPANDER, MSG_ADJUST_DIVIDENDS_DESC,
+    MSG_INVALID_ASSET_CORRECTION, MSG_DIVIDEND_CORRECTION_SUCCESS, MSG_DIVIDEND_CORRECTION_ERROR,
+    HELP_MARKET_MONITOR_SEARCH, DISPLAY_TICKER, DISPLAY_COMPANY, DISPLAY_QUOTE,
+    DISPLAY_CEILING, DISPLAY_AVG_5Y, DISPLAY_DY_AVG_5Y, DISPLAY_P_VP, DISPLAY_P_L,
+    DISPLAY_DY_CURRENT, DISPLAY_ROE, DISPLAY_RANGE_52W, MODEL_CLASSIC, MODEL_SELIC, MODEL_IPCA_SPREAD
 )
 
 class MarketView:
     """Class responsible for rendering the centralized Bazin Market Watchlist monitor under the 3rd top-level tab."""
 
     def render(self):
-        st.subheader("📈 Central de Monitoramento de Mercado (Bazin)")
-        st.write("Acompanhe empresas da B3 em tempo real e identifique oportunidades de compra utilizando o modelo de Preço Teto de Décio Bazin.")
+        st.subheader(MSG_MARKET_MONITOR_TITLE)
+        st.write(MSG_MARKET_MONITOR_DESC)
 
         catalog = MarketData.load_assets_catalog()
         available_tickers = sorted(catalog.index.tolist()) if not catalog.empty else []
@@ -41,21 +45,21 @@ class MarketView:
                     "Adicionar Ticker para Acompanhamento",
                     options=market_options,
                     index=0,
-                    help="Digite para buscar e autocompletar ativos válidos por ticker ou nome da empresa cadastrados no assets.csv"
+                    help=HELP_MARKET_MONITOR_SEARCH
                 )
                 submit_add = st.form_submit_button("➕ Adicionar à Lista")
                 if submit_add:
                     if new_ticker_selection == "--- Selecione ---":
-                        st.error("Por favor, selecione um ativo válido da lista.")
+                        st.error(MSG_INVALID_ASSET_SELECTION)
                     else:
                         ticker_to_add = new_ticker_selection.split(" - ")[0]
                         success = AssetService.add_tracked_market_asset(ticker_to_add)
                         if success:
-                            st.success(f"Ativo {ticker_to_add} adicionado com sucesso ao monitor!")
+                            st.success(MSG_ASSET_ADDED_SUCCESS.format(ticker=ticker_to_add))
                             st.cache_data.clear()
                             st.rerun()
                         else:
-                            st.error(f"Erro ao adicionar o ativo {ticker_to_add} (ou ele já existe no monitor).")
+                            st.error(MSG_ASSET_ADD_ERROR.format(ticker=ticker_to_add))
 
         with col_yield:
             # Load from persistent session state using visual string constants
@@ -70,11 +74,11 @@ class MarketView:
                 key=WIDGET_CEILING_MODEL_SELECTOR,
                 on_change=self._on_bazin_model_change
             )
-            
+
             model = st.session_state.get(SESSION_CEILING_MODEL_SELECTION, MODEL_CLASSIC)
             ipca_val = MarketData.get_current_ipca_l12m()
             selic_val = MarketData.get_current_selic()
-            
+
             if model == MODEL_CLASSIC:
                 st.number_input(
                     "Taxa Alvo Bazin (%)",
@@ -102,28 +106,28 @@ class MarketView:
                 spread = st.session_state[SESSION_BAZIN_TARGET_SPREAD]
                 target_yield = ipca_val + spread
                 st.caption(f"ℹ️ Divisor Resultante: **{target_yield:.2f}%** (IPCA: {ipca_val:.2f}% + Spread: {spread:.2f}%)")
-                
+
             # Permanently cache the evaluated target yield in session state so other views sync instantly!
             st.session_state.target_bazin_yield_pct = target_yield
 
         tracked_tickers = AssetService.get_tracked_market_assets()
 
         if not tracked_tickers:
-            st.info("Nenhuma empresa adicionada ao monitor. Digite um ticker no formulário acima para começar a acompanhar!")
+            st.info(MSG_NO_ASSETS_MONITOR)
             return
 
         col_rem, _ = st.columns([2, 2])
         with col_rem:
             remove_ticker = st.selectbox("Remover empresa do monitor", ["--- Selecione ---"] + tracked_tickers)
             if remove_ticker != "--- Selecione ---":
-                if st.button(f"🗑️ Confirmar Remoção de {remove_ticker}"):
+                if st.button(MSG_CONFIRM_REMOVE.format(ticker=remove_ticker)):
                     AssetService.remove_tracked_market_asset(remove_ticker)
-                    st.success(f"Ativo {remove_ticker} removed com sucesso!")
+                    st.success(MSG_ASSET_REMOVED_SUCCESS.format(ticker=remove_ticker))
                     st.cache_data.clear()
                     st.rerun()
 
         st.markdown("---")
-        st.subheader("Painel de Ativos Monitorados")
+        st.subheader(MSG_MONITORED_ASSETS_PANEL)
 
         market_rows = []
         with st.spinner("Buscando indicadores em tempo real no Yahoo Finance..."):
@@ -156,7 +160,7 @@ class MarketView:
                     market_rows.append(row_data)
 
         if not market_rows:
-            st.warning("Falha ao obter dados do Yahoo Finance para as empresas monitoradas. Verifique se digitou os tickers corretamente.")
+            st.warning(MSG_YF_FETCH_ERROR)
             return
 
         df_market = pd.DataFrame(market_rows)
@@ -227,8 +231,8 @@ class MarketView:
         )
 
         st.markdown("---")
-        with st.expander("🔧 Ajustar Proventos Históricos (Bazin)"):
-            st.write("Caso identifique erros de omissão de dividendos no Yahoo Finance (como JCPs complementares), corrija os valores consolidados de cada ano abaixo:")
+        with st.expander(MSG_ADJUST_DIVIDENDS_EXPANDER):
+            st.write(MSG_ADJUST_DIVIDENDS_DESC)
 
             with st.form("form_dividend_correction", clear_on_submit=True):
                 col_c1, col_c2, col_c3 = st.columns(3)
@@ -243,15 +247,15 @@ class MarketView:
                 submit_corr = st.form_submit_button("💾 Salvar Correção")
                 if submit_corr:
                     if corr_ticker == "--- Selecione ---":
-                        st.error("Por favor, selecione um ativo válido para aplicar a correção.")
+                        st.error(MSG_INVALID_ASSET_CORRECTION)
                     else:
                         success = AssetService.save_dividend_correction(corr_ticker, corr_year, corr_value)
                         if success:
-                            st.success(f"Proventos de {corr_ticker} para o ano de {corr_year} corrigidos com sucesso para {Formatter.format_currency(corr_value)}!")
+                            st.success(MSG_DIVIDEND_CORRECTION_SUCCESS.format(ticker=corr_ticker, year=corr_year, value=Formatter.format_currency(corr_value)))
                             st.cache_data.clear()
                             st.rerun()
                         else:
-                            st.error("Erro ao salvar a correção de dividendos.")
+                            st.error(MSG_DIVIDEND_CORRECTION_ERROR)
 
     def _on_bazin_model_change(self):
         """Syncs the selectbox model change to persistent state and database."""

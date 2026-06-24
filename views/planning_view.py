@@ -1,4 +1,5 @@
 import streamlit as st
+
 import datetime
 from services.planning_service import SimulationService
 from core.utils.formatter import Formatter
@@ -8,12 +9,15 @@ from views.components.simulation_results import SimulationResultsWidget
 from views.components.projection_chart import ProjectionChartWidget
 from core.constants import (
     SESSION_BIRTH_DATE, SESSION_RETIREMENT_AGE, SESSION_DESIRED_INCOME_MW, SESSION_ANNUAL_INTEREST_RATE,
-    SESSION_MW_VALUE, SESSION_INITIAL_EQUITY, SESSION_DESIRED_INCOME_TYPE, SESSION_DESIRED_INCOME_FIXED,
+    SESSION_MW_VALUE, SESSION_DESIRED_INCOME_TYPE, SESSION_DESIRED_INCOME_FIXED,
     SESSION_REQUIRED_CONTRIBUTION_CACHE,
     WIDGET_BIRTH_DATE, WIDGET_RETIREMENT_AGE, WIDGET_INTEREST_RATE, WIDGET_INCOME_TYPE, WIDGET_INCOME_MW,
-    WIDGET_INCOME_FIXED,
-    BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE, MW_VALUE, INITIAL_EQUITY_INPUT,
-    DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED
+    WIDGET_INCOME_FIXED
+)
+from core.strings import (
+    MSG_PLANNING_DESC, MSG_PLANNING_LOAD_ERROR, MSG_PLANNING_INVESTED_CAPITAL,
+    MSG_PLANNING_LIFE_PARAMS, MSG_UPDATE_MW_BTN, MSG_BCB_FETCH_ERROR, MSG_BCB_CONN_ERROR,
+    HELP_PLANNING_AUTOMATED, HELP_INCOME_MULTIPLIER, HELP_UPDATE_MW
 )
 
 class PlanningView:
@@ -21,7 +25,7 @@ class PlanningView:
 
     def render(self):
         st.header("🎯 Planejamento de Aposentadoria e Independência Financeira")
-        st.write("Calcule as metas de patrimônio necessárias e simule a sua curva de independência financeira utilizando as taxas reais da carteira.")
+        st.write(MSG_PLANNING_DESC)
 
         # 1. Renders all editable life parameters and minimum wage controls on exactly the same single horizontal row!
         current_age, months_age = self._render_life_parameters()
@@ -29,16 +33,16 @@ class PlanningView:
         # 2. Unified Service call (Single source of truth)
         sim = SimulationService.get_current_simulation()
         if not sim:
-            st.warning("Falha ao carregar as configurações do planejador.")
+            st.warning(MSG_PLANNING_LOAD_ERROR)
             return
 
         st.markdown("---")
-        
+
         # Display Capital Investido on top of widgets
         st.metric(
-            "Capital Investido Atual",
+            MSG_PLANNING_INVESTED_CAPITAL,
             f"R$ {sim['total_invested']:,.2f}",
-            help="Calculado de forma automatizada a partir do seu histórico de compras na B3"
+            help=HELP_PLANNING_AUTOMATED
         )
 
         # Cache contribution in session state for fallback references if needed
@@ -92,7 +96,7 @@ class PlanningView:
         """Callback to save the current session state parameters to the database."""
         core_birth_date = st.session_state[SESSION_BIRTH_DATE]
         birth_str = core_birth_date.strftime("%Y-%m-%d") if hasattr(core_birth_date, 'strftime') else str(core_birth_date)
-        
+
         db_type = st.session_state[SESSION_DESIRED_INCOME_TYPE]
         desired_mw = float(st.session_state[SESSION_DESIRED_INCOME_MW])
         desired_fixed = float(st.session_state[SESSION_DESIRED_INCOME_FIXED])
@@ -109,17 +113,17 @@ class PlanningView:
         )
 
     def _render_life_parameters(self):
-        st.subheader("Seus Parâmetros de Vida")
-        
+        st.subheader(MSG_PLANNING_LIFE_PARAMS)
+
         # All 6 parameters and buttons placed on exactly the same single horizontal row!
         col_birth, col_ret_age, col_interest, col_type, col_val, col_mw = st.columns([1, 1, 1, 1.2, 1.2, 1.6])
-        
+
         with col_birth:
             birth_date = st.date_input(
-                "Data de Nascimento", 
+                "Data de Nascimento",
                 value=st.session_state[SESSION_BIRTH_DATE],
-                key=WIDGET_BIRTH_DATE, 
-                format="DD/MM/YYYY", 
+                key=WIDGET_BIRTH_DATE,
+                format="DD/MM/YYYY",
                 on_change=self._on_birth_date_change
             )
             today = datetime.date.today()
@@ -130,23 +134,23 @@ class PlanningView:
 
         with col_ret_age:
             st.number_input(
-                "Idade de Aposentadoria", 
-                min_value=current_age+1, 
-                max_value=100, 
+                "Idade de Aposentadoria",
+                min_value=current_age+1,
+                max_value=100,
                 value=int(st.session_state[SESSION_RETIREMENT_AGE]),
-                key=WIDGET_RETIREMENT_AGE, 
-                step=1, 
+                key=WIDGET_RETIREMENT_AGE,
+                step=1,
                 on_change=self._on_retirement_age_change
             )
-            
+
         with col_interest:
             st.number_input(
-                "Taxa de Juros (% a.a.)", 
-                min_value=1.0, 
-                max_value=15.0, 
+                "Taxa de Juros (% a.a.)",
+                min_value=1.0,
+                max_value=15.0,
                 value=float(st.session_state[SESSION_ANNUAL_INTEREST_RATE]),
-                key=WIDGET_INTEREST_RATE, 
-                step=0.5, 
+                key=WIDGET_INTEREST_RATE,
+                step=0.5,
                 on_change=self._on_annual_interest_rate_change
             )
 
@@ -154,7 +158,7 @@ class PlanningView:
             # Map database state to UI text index representation
             default_db_type = st.session_state.get(SESSION_DESIRED_INCOME_TYPE, 'MULTIPLIER')
             default_index = 0 if default_db_type == 'MULTIPLIER' else 1
-            
+
             # High-fidelity radio button replacing selectbox for premium UX with Bazin tooltip help!
             st.radio(
                 "Tipo de Renda Desejada",
@@ -163,30 +167,30 @@ class PlanningView:
                 key=WIDGET_INCOME_TYPE,
                 horizontal=True,
                 on_change=self._on_desired_income_type_change,
-                help=f"Multiplicador: Define a renda com base em salários mínimos. O salário mínimo atual cadastrado é {Formatter.format_currency(st.session_state[SESSION_MW_VALUE])}."
+                help=HELP_INCOME_MULTIPLIER.format(value=Formatter.format_currency(st.session_state[SESSION_MW_VALUE]))
             )
-            
+
         with col_val:
             ui_type = st.session_state.get(WIDGET_INCOME_TYPE, "Multiplicador")
-            
+
             if ui_type == "Multiplicador":
                 st.number_input(
-                    "Salários Desejados", 
-                    min_value=1.0, 
-                    max_value=1000.0, 
+                    "Salários Desejados",
+                    min_value=1.0,
+                    max_value=1000.0,
                     value=st.session_state[SESSION_DESIRED_INCOME_MW],
-                    key=WIDGET_INCOME_MW, 
-                    step=0.5, 
+                    key=WIDGET_INCOME_MW,
+                    step=0.5,
                     on_change=self._on_desired_income_mw_change
                 )
             else: # Valor Fixo em Reais
                 st.number_input(
-                    "Valor Desejado (R$)", 
-                    min_value=1000.0, 
-                    max_value=100000.0, 
+                    "Valor Desejado (R$)",
+                    min_value=1000.0,
+                    max_value=100000.0,
                     value=st.session_state[SESSION_DESIRED_INCOME_FIXED],
-                    key=WIDGET_INCOME_FIXED, 
-                    step=100.0, 
+                    key=WIDGET_INCOME_FIXED,
+                    step=100.0,
                     on_change=self._on_desired_income_fixed_change
                 )
 
@@ -196,18 +200,18 @@ class PlanningView:
             with col_mw_val:
                 # Dynamic key is built from the current minimum wage value to force Streamlit to refresh completely on cloud fetch!
                 st.number_input(
-                    "Salário Mínimo (R$)", 
-                    min_value=1000.0, 
-                    max_value=5000.0, 
+                    "Salário Mínimo (R$)",
+                    min_value=1000.0,
+                    max_value=5000.0,
                     value=st.session_state[SESSION_MW_VALUE],
-                    key=f"mw_value_input_{st.session_state[SESSION_MW_VALUE]}", 
-                    step=10.0, 
+                    key=f"mw_value_input_{st.session_state[SESSION_MW_VALUE]}",
+                    step=10.0,
                     on_change=self._on_mw_value_change
                 )
             with col_mw_btn:
                 st.write("") # Spacer label alignment
                 st.write("")
-                if st.button("🔄", help="Atualizar valor do salário mínimo da nuvem (API SGS Banco Central)"):
+                if st.button(MSG_UPDATE_MW_BTN, help=HELP_UPDATE_MW):
                     with st.spinner("BCB..."):
                         try:
                             # Clear cache and force live HTTP fetch
@@ -221,8 +225,8 @@ class PlanningView:
                                 st.toast(f"Salário Mínimo atualizado com sucesso direto do BCB: {Formatter.format_currency(live_mw)}!", icon="🎉")
                                 st.rerun()
                             else:
-                                st.error("Falha ao recuperar dados oficiais do BCB.")
+                                st.error(MSG_BCB_FETCH_ERROR)
                         except Exception as e:
-                            st.error(f"Erro ao conectar com a API do BCB: {e}")
+                            st.error(MSG_BCB_CONN_ERROR.format(e=e))
 
         return current_age, months_age

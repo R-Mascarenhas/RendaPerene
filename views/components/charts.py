@@ -1,4 +1,5 @@
 import streamlit as st
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -7,6 +8,9 @@ from core.constants import (
     MONTHS_PT, TICKER, SECTOR, CURRENT_VALUE, INVESTED_AMOUNT, TOTAL_DIVIDENDS,
     MONTH_STR, MONTH_DISPLAY, CUMULATIVE_INVESTED, PLANNED_INVESTED, CUMULATIVE_DIVIDENDS,
     PLANNED_DIVIDENDS, MONTHLY_DIVIDEND, ANNUAL_INTEREST_RATE
+)
+from core.strings import (
+    MSG_HISTORIC_EVOLUTION_TITLE, MSG_HISTORIC_CONTRIBUTIONS_TITLE,
 )
 from core.utils.formatter import Formatter
 from services.assets_service import AssetService
@@ -73,7 +77,7 @@ class DashboardCharts:
         df_evolution = AssetService.calculate_historical_evolution()
 
         if not df_evolution.empty:
-            st.subheader("📈 Evolução Patrimonial Histórica & Planejamento")
+            st.subheader(MSG_HISTORIC_EVOLUTION_TITLE)
 
             df_evolution = df_evolution.sort_values(by=MONTH_STR).reset_index(drop=True)
             df_evolution[MONTH_DISPLAY] = df_evolution[MONTH_STR].apply(Formatter.format_month_year)
@@ -182,7 +186,7 @@ class DashboardCharts:
         st.markdown("---")
         df_contribs = AssetService.get_monthly_contributions_by_year()
         if not df_contribs.empty:
-            st.subheader("📊 Histórico de Aportes por Ano e Mês")
+            st.subheader(MSG_HISTORIC_CONTRIBUTIONS_TITLE)
 
             df_contribs['Mês'] = df_contribs['month'].map(MONTHS_PT)
             df_contribs = df_contribs.sort_values(by=['month'])

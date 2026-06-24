@@ -1,7 +1,11 @@
 import streamlit as st
+
 from core.utils.formatter import Formatter
 from services.assets_service import AssetService
 from services.planning_service import SimulationService
+from core.strings import (
+    MSG_ANNUAL_PLANNING_TITLE, MSG_YTD_CONTRIBUTIONS, MSG_REMAINING_TO_BUY, MSG_ALL_GOALS_MET,
+)
 
 class AnnualPlanningWidget:
     """Displays the progress towards your annual out-of-pocket contribution target."""
@@ -14,7 +18,7 @@ class AnnualPlanningWidget:
         annual_salary_goal = required_monthly_contribution * 12
         total_annual_goal = annual_salary_goal + ytd_dividends
 
-        st.subheader(f"📅 Planejamento Anual de Investimentos ({current_year})")
+        st.subheader(MSG_ANNUAL_PLANNING_TITLE.format(year=current_year))
         plan_col1, plan_col2, plan_col3 = st.columns(3)
         plan_col1.metric("Meta de Aporte do Salário (Ano)", Formatter.format_currency(annual_salary_goal), "Baseado no seu Planejamento")
         plan_col2.metric("Proventos a Reinvestir (YTD)", Formatter.format_currency(ytd_dividends), "Soma dos dividendos recebidos")
@@ -23,10 +27,10 @@ class AnnualPlanningWidget:
         percent_achieved = (ytd_contributions / total_annual_goal) if total_annual_goal > 0 else 0.0
         remaining_to_buy = max(0.0, total_annual_goal - ytd_contributions)
 
-        st.markdown(f"**Total Comprado (Aportado) este ano na B3:** {Formatter.format_currency(ytd_contributions)} ({percent_achieved*100:.1f}%)")
+        st.markdown(MSG_YTD_CONTRIBUTIONS.format(value=Formatter.format_currency(ytd_contributions), pct=percent_achieved*100))
         if remaining_to_buy > 0:
-            st.markdown(f"🔴 **Falta comprar/reinvestir na B3 para bater a meta:** {Formatter.format_currency(remaining_to_buy)}")
+            st.markdown(MSG_REMAINING_TO_BUY.format(value=Formatter.format_currency(remaining_to_buy)))
         else:
-            st.markdown("🎉 **Excelente! Todos os aportes mínimos e proventos do ano foram totalmente investidos e reinvestidos na B3!**")
+            st.markdown(MSG_ALL_GOALS_MET)
 
         st.progress(min(1.0, percent_achieved))

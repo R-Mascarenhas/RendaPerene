@@ -37,21 +37,11 @@ class PortfolioView:
         with st.spinner(f"Buscando cotações em tempo real para {ticker}..."):
             details = MarketData.get_ticker_market_analysis(ticker)
 
-        # 1. Render Header Metadata Block
         self._render_header_metadata_block(ticker, metadata)
-
-        df_div = AssetService.get_asset_dividends(ticker)
-
-        # 2. SECTION 1 (AT THE TOP): Tabela Dinâmica do Ativo por Ano
-        self._render_proventos_pivot_table(ticker, df_div)
-
-        # 3. SECTION 2: General Indicators & Metrics
-        self._render_indicators_block(row_pos, details)
-
-        # 4. SECTION 3: Behavior chart (Google-Finance style dynamic range selector!)
         self._render_behavior_chart(ticker, details)
-
-        # 5. SECTION 4: Tables (Transactions and Dividends side by side)
+        df_div = AssetService.get_asset_dividends(ticker)
+        self._render_proventos_pivot_table(ticker, df_div)
+        self._render_indicators_block(row_pos, details)
         self._render_transactions_and_dividends_tables(ticker, df_div)
 
     def _render_header_metadata_block(self, ticker, metadata):
@@ -183,7 +173,7 @@ class PortfolioView:
     def _render_behavior_chart(self, ticker, details):
         """SECTION 3: Renders the historical behavior chart with buy/sell annotations."""
         st.markdown("---")
-        st.markdown("#### 📈 Comportamento Gráfico")
+        st.markdown("##### 📈 Comportamento Gráfico")
 
         period_map = {
             "1 Dia": "1d",
@@ -196,7 +186,17 @@ class PortfolioView:
             "Máximo": "max"
         }
 
-        # Render a clean, horizontal selection bar just like Google Finance!
+        interval_map = {
+            "1d": "5m",
+            "5d": "30m",
+            "1mo": "1d",
+            "6mo": "1d",
+            "ytd": "1d",
+            "1y": "1d",
+            "5y": "1wk",
+            "max": "1wk"
+        }
+
         chosen_label = st.radio(
             "Selecione o período do histórico de fechamento",
             options=list(period_map.keys()),
@@ -206,17 +206,31 @@ class PortfolioView:
             label_visibility="collapsed"
         )
         chosen_period = period_map[chosen_label]
+        chosen_interval = interval_map[chosen_period]
 
         # Fetch the selected history dynamically from Yahoo Finance with caching
         with st.spinner(f"Buscando histórico ({chosen_label}) para {ticker}..."):
-            history = MarketData.get_ticker_history(ticker, period=chosen_period)
+            history = MarketData.get_ticker_history(ticker, period=chosen_period, interval=chosen_interval)
 
         if not history.empty and 'Close' in history.columns:
+            # Downsample 'max' if duration is > 8 years
+            if chosen_period == "max":
+                days_span = (pd.to_datetime(history.index.max()).date() - pd.to_datetime(history.index.min()).date()).days
+                if days_span > (8 * 365.25):
+                    history = history.iloc[::3]
+
             # 1. Calculate dynamic financial change metrics since the start of the period
             price_current = float(history['Close'].iloc[-1])
             price_initial = float(history['Close'].iloc[0])
-            value_change = price_current - price_initial
-            pct_change = (value_change / price_initial * 100) if price_initial > 0 else 0.0
+
+            is_1d_not_open_yet = (chosen_period == "1d" and pd.to_datetime(history.index.max()).date() != datetime.date.today())
+
+            if is_1d_not_open_yet:
+                value_change = 0.0
+                pct_change = 0.0
+            else:
+                value_change = price_current - price_initial
+                pct_change = (value_change / price_initial * 100) if price_initial > 0 else 0.0
 
             price_fmt = Formatter.format_currency(price_current)
             abs_change_fmt = f"{abs(value_change):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -325,6 +339,10 @@ class PortfolioView:
             # Create a highly polished, pure Graph Objects figure to guarantee 100% exact layering order!
             fig = go.Figure()
 
+            line_color = "#2ca02c"
+            if is_1d_not_open_yet:
+                line_color = "#6c757d"
+
             # 1. Add the main closing price line FIRST (so it sits at the bottom layer of the SVG canvas)
             fig.add_trace(
                 go.Scatter(
@@ -332,7 +350,7 @@ class PortfolioView:
                     y=history['Close'],
                     name="Preço de Fechamento",
                     mode="lines",
-                    line=dict(color="#2ca02c", width=2.5),
+                    line=dict(color=line_color, width=2.5),
                     hovertemplate=hover_fmt
                 )
             )

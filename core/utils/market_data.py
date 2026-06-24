@@ -62,11 +62,11 @@ class MarketData:
 
     @staticmethod
     @st.cache_data(ttl=3600)
-    def get_ticker_history(ticker: str, period="1y") -> pd.DataFrame:
+    def get_ticker_history(ticker: str, period="1y", interval="1d") -> pd.DataFrame:
         """Fetches the raw historical stock price series from Yahoo Finance with a 1-hour cache."""
         try:
             ticker_sa = f"{ticker.strip().upper()}.SA"
-            return yf.Ticker(ticker_sa).history(period=period)
+            return yf.Ticker(ticker_sa).history(period=period, interval=interval)
         except Exception:
             return pd.DataFrame()
 

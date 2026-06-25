@@ -153,3 +153,12 @@ MSG_REAL_VS_PLANNED_DESC = "Compare as curvas planejadas no seu cockpit contra o
 HELP_INCOME_MULTIPLIER = "Multiplicador: Define a renda com base em salários mínimos. O salário mínimo atual cadastrado é {value}."
 LABEL_CURRENT_PRICE = "Cotação Atual"
 HELP_CURRENT_PRICE = "Cotação em tempo real consultada via Yahoo Finance (B3)."
+
+# 5. Tab and Navigation Labels (Localization / DRY compliant)
+TAB_DASHBOARD = "📊 Dashboard"
+TAB_ASSETS = "📝 Ativos"
+TAB_PLANNING = "🎯 Planejamento"
+
+TAB_MY_ASSETS = "📁 Meus Ativos"
+TAB_MARKET = "📈 Mercado"
+TAB_IMPORT_LAUNCH = "📥 Importar & Lançar"

@@ -71,6 +71,7 @@ class MarketData:
             return pd.DataFrame()
 
     @staticmethod
+    @st.cache_data(ttl=600)
     def get_ticker_market_analysis(ticker: str, target_yield_pct=6.0) -> dict:
         """
         Fetches core B3 valuation metrics and 5-year historical dividends from Yahoo Finance.

@@ -241,7 +241,6 @@ class PlanningView:
 
     def _render_sandbox_simulation(self):
         """Renders an interactive, isolated sandbox simulation expander for quick scenarios without modifying saved state."""
-        st.markdown("---")
         with st.expander("🧮 Simulação Rápida (Espaço de Simulação Independente)", expanded=False):
             st.write("Simule cenários alternativos rapidamente sem alterar seus parâmetros salvos de aposentadoria.")
 

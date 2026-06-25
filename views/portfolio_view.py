@@ -22,13 +22,19 @@ class PortfolioView:
 
         tickers = sorted(df_positions['ticker'].tolist())
 
-        # Create nested subtabs per active ticker (Strictly active tickers only!)
-        asset_tabs = st.tabs(tickers)
+        # Premium segmented control to isolate and lazy-load details for exactly one asset (extremely fast and matches tabs style!)
+        selected_ticker = st.segmented_control(
+            "Selecione o Ativo para Detalhar",
+            options=tickers,
+            default=tickers[0] if tickers else None,
+            label_visibility="collapsed"
+        )
 
-        # Render each single asset subtab
-        for idx, ticker in enumerate(tickers):
-            with asset_tabs[idx]:
-                self._render_single_asset_subtab(ticker, df_positions)
+        if not selected_ticker and tickers:
+            selected_ticker = tickers[0]
+
+        if selected_ticker:
+            self._render_single_asset_subtab(selected_ticker, df_positions)
 
     def _render_single_asset_subtab(self, ticker, df_positions):
         row_pos = df_positions[df_positions['ticker'] == ticker].iloc[0]

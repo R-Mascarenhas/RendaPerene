@@ -18,20 +18,27 @@ st.title("💼 Carteira de Investimentos")
 from views.dashboard_view import DashboardView
 from views.assets_view import AssetsView
 from views.planning_view import PlanningView
+from core.strings import TAB_DASHBOARD, TAB_ASSETS, TAB_PLANNING
 
-# Create 3 main tabs (Optimized user labels)
-tab_dashboard, tab_assets, tab_planning = st.tabs([
-    "📊 Dashboard",
-    "📝 Ativos",
-    "🎯 Planejamento"
-])
+# Create 3 main tabs using a premium native segmented control for isolated, lazy-loaded rendering (blazing fast and beautiful!)
+selected_tab = st.segmented_control(
+    "Navegação Principal",
+    options=[
+        TAB_DASHBOARD,
+        TAB_ASSETS,
+        TAB_PLANNING
+    ],
+    default=TAB_DASHBOARD,
+    label_visibility="collapsed"
+)
 
-# Clean MVC Routing
-with tab_dashboard:
+if not selected_tab:
+    selected_tab = TAB_DASHBOARD
+
+# Clean MVC Routing with strict isolation
+if selected_tab == TAB_DASHBOARD:
     DashboardView().render()
-
-with tab_assets:
+elif selected_tab == TAB_ASSETS:
     AssetsView().render()
-
-with tab_planning:
+elif selected_tab == TAB_PLANNING:
     PlanningView().render()

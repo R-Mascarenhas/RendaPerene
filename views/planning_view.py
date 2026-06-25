@@ -252,15 +252,15 @@ class PlanningView:
                     "Tempo de Contribuição (Anos)",
                     min_value=1,
                     max_value=80,
-                    value=20,
+                    value=30,
                     step=1,
                     key="sandbox_tempo_anos"
                 )
             with col_salario:
                 salario_desejado = st.number_input(
                     "Renda Mensal Desejada (R$)",
-                    min_value=100.0,
-                    max_value=200000.0,
+                    min_value=1000.0,
+                    max_value=200_000.0,
                     value=10000.0,
                     step=500.0,
                     key="sandbox_salario_desejado"
@@ -269,7 +269,7 @@ class PlanningView:
                 taxa_juros = st.number_input(
                     "Taxa de Juros (% a.a.)",
                     min_value=1.0,
-                    max_value=15.0,
+                    max_value=20.0,
                     value=6.0,
                     step=0.5,
                     key="sandbox_taxa_juros"
@@ -278,13 +278,13 @@ class PlanningView:
                 patrimonio_inicial = st.number_input(
                     "Patrimônio Inicial (R$, opcional)",
                     min_value=0.0,
-                    max_value=10000000.0,
+                    max_value=10_000_000.0,
                     value=0.0,
                     step=1000.0,
                     key="sandbox_patrimonio_inicial"
                 )
 
-            # 2. Math calculations using core SimulationService
+
             n_months = tempo_anos * 12
             monthly_rate = (1 + taxa_juros / 100) ** (1 / 12) - 1
             target_equity = salario_desejado / monthly_rate if monthly_rate > 0 else 0.0
@@ -307,10 +307,8 @@ class PlanningView:
                 SIM_TOTAL_INVESTED: patrimonio_inicial
             }
 
-            # 3. Render Metric Widgets using existing core component (100% DRY!)
             SimulationResultsWidget().render(sandbox_sim, show_updated=False)
 
-            # 4. Render Projection Charts side-by-side using existing core component (100% DRY!)
             st.markdown("---")
             chart_col1, chart_col2 = st.columns(2)
             ProjectionChartWidget()._render_cumulative_projection(sandbox_sim, chart_col1)

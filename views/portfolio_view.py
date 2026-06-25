@@ -99,19 +99,23 @@ class PortfolioView:
             val_total = df_pivot.loc[df_pivot['Categoria'] == 'Total de Proventos (Soma de todos)', 'Valor (R$)'].values[0]
 
             total_paid_per_share = 0.0
-            if not df_div.empty:
-                df_div_year = df_div[df_div['Data'].str.startswith(chosen_year)]
-                for _, row in df_div_year.iterrows():
-                    dt = row['Data']
-                    tot = row['Total']
-                    qty_on_date = AssetService.get_quantity_on_date(ticker, dt)
-                    if qty_on_date > 0:
-                        total_paid_per_share += (tot / qty_on_date)
+            conn_shared = db.get_personal_connection()
+            try:
+                if not df_div.empty:
+                    df_div_year = df_div[df_div['Data'].str.startswith(chosen_year)]
+                    for _, row in df_div_year.iterrows():
+                        dt = row['Data']
+                        tot = row['Total']
+                        qty_on_date = AssetService.get_quantity_on_date(ticker, dt, conn=conn_shared)
+                        if qty_on_date > 0:
+                            total_paid_per_share += (tot / qty_on_date)
 
-            # Calculate quantities for delta comparison (DRY-compliant)
-            qty_end_of_year = AssetService.get_quantity_on_date(ticker, f"{chosen_year}-12-31")
-            prev_year = str(int(chosen_year) - 1)
-            qty_prev_year = AssetService.get_quantity_on_date(ticker, f"{prev_year}-12-31")
+                # Calculate quantities for delta comparison (DRY-compliant)
+                qty_end_of_year = AssetService.get_quantity_on_date(ticker, f"{chosen_year}-12-31", conn=conn_shared)
+                prev_year = str(int(chosen_year) - 1)
+                qty_prev_year = AssetService.get_quantity_on_date(ticker, f"{prev_year}-12-31", conn=conn_shared)
+            finally:
+                conn_shared.close()
             diff = qty_end_of_year - qty_prev_year
 
             if diff != 0:
@@ -439,11 +443,15 @@ class PortfolioView:
             st.subheader(MSG_RECEIVED_DIVIDENDS)
             if not df_div.empty:
                 unit_vals = []
-                for _, row in df_div.iterrows():
-                    dt = row['Data']
-                    total = row['Total']
-                    qty_owned = AssetService.get_quantity_on_date(ticker, dt)
-                    unit_vals.append(total / qty_owned if qty_owned > 0 else 0.0)
+                conn_shared = db.get_personal_connection()
+                try:
+                    for _, row in df_div.iterrows():
+                        dt = row['Data']
+                        total = row['Total']
+                        qty_owned = AssetService.get_quantity_on_date(ticker, dt, conn=conn_shared)
+                        unit_vals.append(total / qty_owned if qty_owned > 0 else 0.0)
+                finally:
+                    conn_shared.close()
 
                 df_div_display = df_div.copy()
                 df_div_display['Unitário'] = unit_vals

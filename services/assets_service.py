@@ -11,7 +11,7 @@ class AssetService:
         """Appends a fallback asset to assets.csv if not found in the catalog."""
         import os
         import streamlit as st
-        
+
         if os.path.exists("assets.csv"):
             df = pd.read_csv("assets.csv", dtype=str, encoding="utf-8-sig")
             df.columns = df.columns.str.strip()
@@ -36,30 +36,30 @@ class AssetService:
         """Inserts a Buy (BUY) or Sell (SELL) asset transaction into the personal database, avoiding duplicates."""
         conn_pers = db.get_personal_connection()
         cursor_pers = conn_pers.cursor()
-        
+
         if transaction_type in ('Compra', 'BUY'):
             transaction_type = "BUY"
         elif transaction_type in ('Venda', 'SELL'):
             transaction_type = "SELL"
-        
+
         cursor_pers.execute('''
-            SELECT id FROM transactions 
+            SELECT id FROM transactions
             WHERE date = ? AND ticker = ? AND transaction_type = ? AND quantity = ? AND unit_price = ? AND fees = ?
         ''', (date, ticker, transaction_type, quantity, unit_price, fees))
-        
+
         if cursor_pers.fetchone():
             conn_pers.close()
             return False # Skipped duplicate
-            
+
         catalog = MarketData.load_assets_catalog()
         if catalog.empty or ticker not in catalog.index:
             AssetService.register_fallback_asset(ticker)
-            
+
         cursor_pers.execute('''
             INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (date, ticker, transaction_type, quantity, unit_price, fees))
-        
+
         conn_pers.commit()
         conn_pers.close()
         return True
@@ -69,32 +69,32 @@ class AssetService:
         """Inserts a Dividend, JCP, or Yield receipt into the database, avoiding duplicates."""
         conn_pers = db.get_personal_connection()
         cursor_pers = conn_pers.cursor()
-        
+
         if dividend_type in ('Dividendo', 'DIVIDEND'):
             dividend_type = "DIVIDEND"
         elif dividend_type in ('JCP', 'JCP'):
             dividend_type = "JCP"
         elif dividend_type in ('Rendimento', 'YIELD'):
             dividend_type = "YIELD"
-        
+
         cursor_pers.execute('''
-            SELECT id FROM dividends 
+            SELECT id FROM dividends
             WHERE date = ? AND ticker = ? AND dividend_type = ? AND total_value = ?
         ''', (date, ticker, dividend_type, total_value))
-        
+
         if cursor_pers.fetchone():
             conn_pers.close()
             return False
-            
+
         catalog = MarketData.load_assets_catalog()
         if catalog.empty or ticker not in catalog.index:
             AssetService.register_fallback_asset(ticker)
-            
+
         cursor_pers.execute('''
             INSERT INTO dividends (date, ticker, dividend_type, total_value)
             VALUES (?, ?, ?, ?)
         ''', (date, ticker, dividend_type, total_value))
-        
+
         conn_pers.commit()
         conn_pers.close()
         return True
@@ -103,38 +103,38 @@ class AssetService:
     def process_b3_import(df: pd.DataFrame) -> tuple[int, int]:
         """Processes a DataFrame imported from B3, routing and translating row categories to English."""
         df.columns = df.columns.str.strip()
-        
+
         processed_transactions = 0
         processed_dividends = 0
-        
+
         for _, row in df.iterrows():
             try:
                 movement = str(row.get('Tipo de Movimentação', row.get('Movimentação', ''))).strip()
                 entry_exit = str(row.get('Entrada/Saída', '')).strip().lower()
                 date_str = str(row.get('Data do Negócio', row.get('Data', ''))).strip()
-                
+
                 date_parts = date_str.split('/')
                 if len(date_parts) == 3:
                     date = f"{date_parts[2]}-{date_parts[1]}-{date_parts[0]}"
                 else:
                     date = date_str
-                    
+
                 raw_product = str(row.get('Código de Negociação', row.get('Produto', ''))).strip()
                 ticker = raw_product.split('-')[0].strip()
-                
+
                 if not ticker or len(ticker) < 5 or not ticker[:4].isalpha():
                     continue
-                    
+
                 quantity = int(row.get('Quantidade', 0))
                 raw_price = row.get('Preço', row.get('Preço unitário', 0.0))
                 price = 0.0 if raw_price == '-' else float(raw_price)
-                
+
                 if ticker == "CXSE3" and date == "2021-04-30" and price == 0.0:
                     price = 9.67
-                
+
                 raw_value = row.get('Valor', row.get('Valor da Operação', 0.0))
                 total_value = 0.0 if raw_value == '-' else float(raw_value)
-                
+
                 transaction_type = None
                 if "Compra" in movement:
                     transaction_type = "BUY"
@@ -150,7 +150,7 @@ class AssetService:
                         transaction_type = "SPLIT"
                 elif "Resgate" in movement:
                     transaction_type = "SELL"
-                
+
                 if transaction_type == "BUY":
                     success = AssetService.add_transaction(ticker, date, "BUY", quantity, price)
                     if success: processed_transactions += 1
@@ -166,27 +166,28 @@ class AssetService:
                         dividend_type = "YIELD"
                     success = AssetService.add_dividend(ticker, date, dividend_type, total_value)
                     if success: processed_dividends += 1
-                    
+
             except Exception:
                 continue
-                
+
         return processed_transactions, processed_dividends
 
     @staticmethod
-    def get_quantity_on_date(ticker: str, date_str: str) -> int:
+    def get_quantity_on_date(ticker: str, date_str: str, conn=None) -> int:
         """Returns the accumulated quantity owned of a specific ticker on a given date."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
+        local_conn = conn if conn is not None else db.get_personal_connection()
+        cursor = local_conn.cursor()
         try:
             cursor.execute("""
                 SELECT SUM(CASE WHEN transaction_type='BUY' THEN quantity ELSE -quantity END)
-                FROM transactions 
+                FROM transactions
                 WHERE ticker = ? AND date <= ?
             """, (ticker, date_str))
             res = cursor.fetchone()
             return res[0] if res and res[0] is not None else 0
         finally:
-            conn.close()
+            if conn is None:
+                local_conn.close()
 
     @staticmethod
     def get_asset_transactions(ticker: str) -> pd.DataFrame:
@@ -266,37 +267,41 @@ class AssetService:
             conn.close()
 
     @staticmethod
+    def _build_dividends_pivot_dataframe(rows) -> pd.DataFrame:
+        """Converts raw database rows into a structured PT-BR dividends pivot DataFrame (DRY helper)."""
+        data = {"DIVIDEND": 0.0, "JCP": 0.0, "YIELD": 0.0}
+        for row in rows:
+            div_type, total = row
+            if div_type in data:
+                data[div_type] = float(total)
+            else:
+                data["YIELD"] = data.get("YIELD", 0.0) + float(total)
+
+        total_sum = sum(data.values())
+
+        df = pd.DataFrame([
+            {"Categoria": "Total de Dividendos", "Valor (R$)": data["DIVIDEND"]},
+            {"Categoria": "Total de JCP", "Valor (R$)": data["JCP"]},
+            {"Categoria": "Total de Rendimentos", "Valor (R$)": data["YIELD"]},
+            {"Categoria": "Total de Proventos (Soma de todos)", "Valor (R$)": total_sum}
+        ])
+        return df
+
+    @staticmethod
     def get_annual_dividends_pivot(year: str) -> pd.DataFrame:
         """Returns aggregated totals for dividends, JCP, and rendimentos for a specific year."""
         conn = db.get_personal_connection()
         cursor = conn.cursor()
         try:
             cursor.execute('''
-                SELECT dividend_type, SUM(total_value) 
-                FROM dividends 
-                WHERE strftime('%Y', date) = ? 
+                SELECT dividend_type, SUM(total_value)
+                FROM dividends
+                WHERE strftime('%Y', date) = ?
                 GROUP BY dividend_type
             ''', (year,))
-            
+
             rows = cursor.fetchall()
-            
-            data = {"DIVIDEND": 0.0, "JCP": 0.0, "YIELD": 0.0}
-            for row in rows:
-                div_type, total = row
-                if div_type in data:
-                    data[div_type] = float(total)
-                else:
-                    data["YIELD"] = data.get("YIELD", 0.0) + float(total)
-                    
-            total_sum = sum(data.values())
-            
-            df = pd.DataFrame([
-                {"Categoria": "Total de Dividendos", "Valor (R$)": data["DIVIDEND"]},
-                {"Categoria": "Total de JCP", "Valor (R$)": data["JCP"]},
-                {"Categoria": "Total de Rendimentos", "Valor (R$)": data["YIELD"]},
-                {"Categoria": "Total de Proventos (Soma de todos)", "Valor (R$)": total_sum}
-            ])
-            return df
+            return AssetService._build_dividends_pivot_dataframe(rows)
         finally:
             conn.close()
 
@@ -314,24 +319,7 @@ class AssetService:
             ''', (ticker, year))
 
             rows = cursor.fetchall()
-
-            data = {"DIVIDEND": 0.0, "JCP": 0.0, "YIELD": 0.0}
-            for row in rows:
-                div_type, total = row
-                if div_type in data:
-                    data[div_type] = float(total)
-                else:
-                    data["YIELD"] = data.get("YIELD", 0.0) + float(total)
-
-            total_sum = sum(data.values())
-
-            df = pd.DataFrame([
-                {"Categoria": "Total de Dividendos", "Valor (R$)": data["DIVIDEND"]},
-                {"Categoria": "Total de JCP", "Valor (R$)": data["JCP"]},
-                {"Categoria": "Total de Rendimentos", "Valor (R$)": data["YIELD"]},
-                {"Categoria": "Total de Proventos (Soma de todos)", "Valor (R$)": total_sum}
-            ])
-            return df
+            return AssetService._build_dividends_pivot_dataframe(rows)
         finally:
             conn.close()
 
@@ -568,7 +556,7 @@ class AssetService:
         conn = db.get_personal_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT SUM(quantity * unit_price + fees) FROM transactions WHERE transaction_type = 'BUY' AND date >= ?", 
+            "SELECT SUM(quantity * unit_price + fees) FROM transactions WHERE transaction_type = 'BUY' AND date >= ?",
             (f"{current_year}-01-01",)
         )
         res_ytd = cursor.fetchone()

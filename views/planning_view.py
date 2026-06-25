@@ -1,6 +1,8 @@
 import streamlit as st
-
 import datetime
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
 from services.planning_service import SimulationService
 from core.utils.formatter import Formatter
 from core.utils.market_data import MarketData
@@ -12,7 +14,10 @@ from core.constants import (
     SESSION_MW_VALUE, SESSION_DESIRED_INCOME_TYPE, SESSION_DESIRED_INCOME_FIXED,
     SESSION_REQUIRED_CONTRIBUTION_CACHE,
     WIDGET_BIRTH_DATE, WIDGET_RETIREMENT_AGE, WIDGET_INTEREST_RATE, WIDGET_INCOME_TYPE, WIDGET_INCOME_MW,
-    WIDGET_INCOME_FIXED
+    WIDGET_INCOME_FIXED,
+    SIM_CURRENT_AGE, SIM_START_AGE_YEARS, SIM_TOTAL_TIME_MONTHS, SIM_REMAINING_TIME_MONTHS,
+    SIM_TARGET_MONTHLY_INCOME, SIM_MONTHLY_INTEREST_RATE, SIM_TARGET_EQUITY,
+    SIM_REQUIRED_CONTRIBUTION, SIM_UPDATED_CONTRIBUTION, SIM_TOTAL_INVESTED
 )
 from core.strings import (
     MSG_PLANNING_DESC, MSG_PLANNING_LOAD_ERROR, MSG_PLANNING_INVESTED_CAPITAL,
@@ -26,6 +31,9 @@ class PlanningView:
     def render(self):
         st.header("🎯 Planejamento de Aposentadoria e Independência Financeira")
         st.write(MSG_PLANNING_DESC)
+
+        # Renders the Sandbox Simulation expander (in-memory play zone)
+        self._render_sandbox_simulation()
 
         # 1. Renders all editable life parameters and minimum wage controls on exactly the same single horizontal row!
         current_age, months_age = self._render_life_parameters()
@@ -230,3 +238,81 @@ class PlanningView:
                             st.error(MSG_BCB_CONN_ERROR.format(e=e))
 
         return current_age, months_age
+
+    def _render_sandbox_simulation(self):
+        """Renders an interactive, isolated sandbox simulation expander for quick scenarios without modifying saved state."""
+        st.markdown("---")
+        with st.expander("🧮 Simulação Rápida (Espaço de Simulação Independente)", expanded=False):
+            st.write("Simule cenários alternativos rapidamente sem alterar seus parâmetros salvos de aposentadoria.")
+
+            # 1. Inputs layout
+            col_tempo, col_salario, col_taxa, col_inicial = st.columns(4)
+
+            with col_tempo:
+                tempo_anos = st.number_input(
+                    "Tempo de Contribuição (Anos)",
+                    min_value=1,
+                    max_value=80,
+                    value=20,
+                    step=1,
+                    key="sandbox_tempo_anos"
+                )
+            with col_salario:
+                salario_desejado = st.number_input(
+                    "Renda Mensal Desejada (R$)",
+                    min_value=100.0,
+                    max_value=200000.0,
+                    value=10000.0,
+                    step=500.0,
+                    key="sandbox_salario_desejado"
+                )
+            with col_taxa:
+                taxa_juros = st.number_input(
+                    "Taxa de Juros (% a.a.)",
+                    min_value=1.0,
+                    max_value=15.0,
+                    value=6.0,
+                    step=0.5,
+                    key="sandbox_taxa_juros"
+                )
+            with col_inicial:
+                patrimonio_inicial = st.number_input(
+                    "Patrimônio Inicial (R$, opcional)",
+                    min_value=0.0,
+                    max_value=10000000.0,
+                    value=0.0,
+                    step=1000.0,
+                    key="sandbox_patrimonio_inicial"
+                )
+
+            # 2. Math calculations using core SimulationService
+            n_months = tempo_anos * 12
+            monthly_rate = (1 + taxa_juros / 100) ** (1 / 12) - 1
+            target_equity = salario_desejado / monthly_rate if monthly_rate > 0 else 0.0
+
+            aporte_necessario = SimulationService.pmt_annuity_due(
+                monthly_rate, n_months, patrimonio_inicial, target_equity
+            )
+
+            # Build a dynamic simulation dictionary that fully satisfies existing Widget schemas
+            sandbox_sim = {
+                SIM_CURRENT_AGE: 0.0,
+                SIM_START_AGE_YEARS: 0.0,
+                SIM_TOTAL_TIME_MONTHS: n_months,
+                SIM_REMAINING_TIME_MONTHS: n_months,
+                SIM_TARGET_MONTHLY_INCOME: salario_desejado,
+                SIM_MONTHLY_INTEREST_RATE: monthly_rate,
+                SIM_TARGET_EQUITY: target_equity,
+                SIM_REQUIRED_CONTRIBUTION: aporte_necessario,
+                SIM_UPDATED_CONTRIBUTION: aporte_necessario,  # Required by ProjectionChartWidget
+                SIM_TOTAL_INVESTED: patrimonio_inicial
+            }
+
+            # 3. Render Metric Widgets using existing core component (100% DRY!)
+            SimulationResultsWidget().render(sandbox_sim, show_updated=False)
+
+            # 4. Render Projection Charts side-by-side using existing core component (100% DRY!)
+            st.markdown("---")
+            chart_col1, chart_col2 = st.columns(2)
+            ProjectionChartWidget()._render_cumulative_projection(sandbox_sim, chart_col1)
+            ProjectionChartWidget()._render_monthly_comparison(sandbox_sim, chart_col2)

@@ -79,6 +79,16 @@ class SimulationService:
         return start_months_age
 
     @staticmethod
+    def pmt_annuity_due(rate, nper, pv, fv):
+        """Helper function to calculate PMT Annuity Due (Excel type=1) with correct financial signs."""
+        if nper <= 0 or rate <= 0:
+            return 0.0
+        interest_factor = (1 + rate) ** nper
+        denominator = ((interest_factor - 1) / rate) * (1 + rate)
+        val = (fv - pv * interest_factor) / denominator if denominator > 0 else 0.0
+        return max(0.0, val)
+
+    @staticmethod
     def get_current_simulation():
         """
         Runs the entire retirement simulation using DB parameters (Single Source of Truth).
@@ -116,23 +126,14 @@ class SimulationService:
         df_pos = AssetService.calculate_positions()
         total_invested = float(df_pos['invested_amount'].sum()) if not df_pos.empty else 0.0
 
-        def pmt_annuity_due(rate, nper, pv, fv):
-            """Helper function to calculate PMT Annuity Due (Excel type=1) with correct financial signs."""
-            if nper <= 0 or rate <= 0:
-                return 0.0
-            interest_factor = (1 + rate) ** nper
-            denominator = ((interest_factor - 1) / rate) * (1 + rate)
-            val = (fv - pv * interest_factor) / denominator if denominator > 0 else 0.0
-            return max(0.0, val)
-
-        required_monthly_contribution = pmt_annuity_due(
+        required_monthly_contribution = SimulationService.pmt_annuity_due(
             monthly_interest_rate, 
             total_time_months, 
             0.0, 
             target_equity
         )
 
-        updated_monthly_contribution = pmt_annuity_due(
+        updated_monthly_contribution = SimulationService.pmt_annuity_due(
             monthly_interest_rate, 
             remaining_time_months, 
             total_invested, 

@@ -7,12 +7,12 @@ from core.utils import SessionManager
 db.init_personal_db()
 
 # Base Page Configuration
-st.set_page_config(page_title="Minha Carteira", page_icon="💼", layout="wide")
+st.set_page_config(page_title="RendaPerene", page_icon="💼", layout="wide")
 
 # Initialize global session state (must occur before rendering any View)
 SessionManager.initialize()
 
-st.title("💼 Carteira de Investimentos")
+st.title("💼 RendaPerene")
 
 # Import Views from Domains (SOLID compliant imports)
 from views.dashboard_view import DashboardView

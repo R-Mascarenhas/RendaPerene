@@ -1,18 +1,14 @@
 import streamlit as st
 import pandas as pd
-from core.utils import Formatter, MarketData
+from core.utils import Formatter
+from services.assets_service import AssetService
 from core.constants import (
-    TICKER, NAME, SECTOR, QUANTITY, AVERAGE_PRICE,
-    INVESTED_AMOUNT, TOTAL_DIVIDENDS, L12M_DIVIDENDS, YTD_DIVIDENDS,
-    CURRENT_PRICE, CURRENT_VALUE, PROFIT_LOSS,
-    ADJUSTED_PRICE, RETURN_PCT_CUSTOM, YOC_CUSTOM, YOC_12_CUSTOM,
-    WEIGHT_PCT, CEILING_PRICE_GRID
+    TICKER, CURRENT_PRICE, RETURN_PCT_CUSTOM, PROFIT_LOSS
 )
 from core.strings import (
-    DISPLAY_CODE, DISPLAY_NAME, DISPLAY_QTY, DISPLAY_AVG_PRICE, DISPLAY_ADJ_PRICE,
-    DISPLAY_INVESTED, DISPLAY_CURRENT, DISPLAY_QUOTE_TODAY, DISPLAY_RETURN_PCT,
-    DISPLAY_RESULT, DISPLAY_YOC, DISPLAY_YOC_12, DISPLAY_EARNINGS, DISPLAY_SECTOR,
-    MSG_CUSTODY_ASSETS_TITLE, DISPLAY_WEIGHT, DISPLAY_CEILING,
+    DISPLAY_AVG_PRICE, DISPLAY_ADJ_PRICE, DISPLAY_CEILING, DISPLAY_RETURN_PCT,
+    DISPLAY_RESULT, DISPLAY_YOC, DISPLAY_YOC_12, DISPLAY_EARNINGS,
+    MSG_CUSTODY_ASSETS_TITLE, DISPLAY_WEIGHT, DISPLAY_QUOTE_TODAY,
     HELP_ADJ_PRICE, HELP_AVG_PRICE, HELP_YOC, HELP_YOC_12, HELP_RETURN_PCT,
     HELP_RESULT, HELP_EARNINGS, HELP_WEIGHT_PCT, HELP_CEILING
 )
@@ -24,45 +20,15 @@ class DetailedHoldingsWidget:
         st.markdown("---")
         st.subheader(MSG_CUSTODY_ASSETS_TITLE)
 
-        total_equity = df_positions[CURRENT_VALUE].sum()
-
-        # 1. Compute customized financial columns using compiler-checked constants
-        df_positions[ADJUSTED_PRICE] = (df_positions[INVESTED_AMOUNT] - df_positions[TOTAL_DIVIDENDS]) / df_positions[QUANTITY]
-        df_positions[RETURN_PCT_CUSTOM] = (df_positions[PROFIT_LOSS] / df_positions[INVESTED_AMOUNT] * 100)
-        df_positions[YOC_CUSTOM] = (df_positions[TOTAL_DIVIDENDS] / df_positions[INVESTED_AMOUNT] * 100)
-        df_positions[YOC_12_CUSTOM] = (df_positions[L12M_DIVIDENDS] / df_positions[INVESTED_AMOUNT] * 100)
-        df_positions[WEIGHT_PCT] = (df_positions[CURRENT_VALUE] / total_equity * 100) if total_equity > 0 else 0.0
-
-        ceilings = {}
         target_yield = st.session_state.get("target_bazin_yield_pct", 6.0)
 
-        # Load Bazin ceiling prices for each active ticker
-        for t in df_positions[TICKER]:
-            details = MarketData.get_ticker_market_analysis(t, target_yield_pct=target_yield)
-            ceilings[t] = details.get("ceiling_price", 0.0) if details else 0.0
+        with st.spinner("Buscando informações do catálogo e preço teto..."):
+            df_display, ceilings = AssetService.get_detailed_holdings_dataframe(df_positions, target_yield)
 
-        df_positions[CEILING_PRICE_GRID] = df_positions[TICKER].map(lambda t: ceilings.get(t, 0.0))
+        if df_display.empty:
+            return
 
-        # 2. Assemble display dataframe using display constants
-        df_display = pd.DataFrame()
-        df_display[DISPLAY_CODE] = df_positions[TICKER]
-        df_display[DISPLAY_NAME] = df_positions[NAME]
-        df_display[DISPLAY_SECTOR] = df_positions[SECTOR]
-        df_display[DISPLAY_WEIGHT] = df_positions[WEIGHT_PCT].map(lambda x: f"{x:.2f}%")
-        df_display[DISPLAY_QTY] = df_positions[QUANTITY]
-        df_display[DISPLAY_AVG_PRICE] = df_positions[AVERAGE_PRICE].map(Formatter.format_currency)
-        df_display[DISPLAY_ADJ_PRICE] = df_positions[ADJUSTED_PRICE].map(Formatter.format_currency)
-        df_display[DISPLAY_CEILING] = df_positions[CEILING_PRICE_GRID].map(Formatter.format_currency)
-        df_display[DISPLAY_QUOTE_TODAY] = df_positions[CURRENT_PRICE].map(Formatter.format_currency)
-        df_display[DISPLAY_INVESTED] = df_positions[INVESTED_AMOUNT].map(Formatter.format_currency)
-        df_display[DISPLAY_CURRENT] = df_positions[CURRENT_VALUE].map(Formatter.format_currency)
-        df_display[DISPLAY_RETURN_PCT] = df_positions[RETURN_PCT_CUSTOM].map(lambda x: f"{x:.2f}%")
-        df_display[DISPLAY_RESULT] = df_positions[PROFIT_LOSS].map(Formatter.format_currency)
-        df_display[DISPLAY_EARNINGS] = df_positions[TOTAL_DIVIDENDS].map(Formatter.format_currency)
-        df_display[DISPLAY_YOC] = df_positions[YOC_CUSTOM].map(lambda x: f"{x:.2f}%")
-        df_display[DISPLAY_YOC_12] = df_positions[YOC_12_CUSTOM].map(lambda x: f"{x:.2f}%")
-
-        # 3. DRY-compliant Bazin and trend cell coloring
+        # DRY-compliant Bazin and trend cell coloring
         def style_detailed_dataframe(df):
             style_df = pd.DataFrame('', index=df.index, columns=df.columns)
             for idx in df.index:

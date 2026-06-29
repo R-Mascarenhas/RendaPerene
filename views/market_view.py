@@ -129,60 +129,15 @@ class MarketView:
         st.markdown("---")
         st.subheader(MSG_MONITORED_ASSETS_PANEL)
 
-        market_rows = []
         with st.spinner("Buscando indicadores em tempo real no Yahoo Finance..."):
-            for t in tracked_tickers:
-                details = MarketData.get_ticker_market_analysis(t, target_yield_pct=target_yield)
-                metadata = AssetService.get_asset_metadata(t)
+            df_display, df_market = AssetService.get_market_analysis_data(tracked_tickers, target_yield)
 
-                if details:
-                    current_year = datetime.date.today().year
-                    last_5_years = [current_year - i for i in range(1, 6)]
-
-                    row_data = {
-                        DISPLAY_TICKER: t,
-                        DISPLAY_COMPANY: details.get(MARKET_NAME, metadata.get(NAME, t)),
-                        DISPLAY_QUOTE: details.get(CURRENT_PRICE, 0.0),
-                        DISPLAY_CEILING: details.get(CEILING_PRICE, 0.0),
-                        DISPLAY_P_VP: details.get(MARKET_PB, 0.0),
-                        DISPLAY_P_L: details.get(MARKET_PE, 0.0),
-                        DISPLAY_DY_CURRENT: details.get(CURRENT_DY, 0.0),
-                        DISPLAY_ROE: details.get(MARKET_ROE, 0.0),
-                        MARKET_LOW_52W: details.get(MARKET_LOW_52W, 0.0),
-                        MARKET_HIGH_52W: details.get(MARKET_HIGH_52W, 0.0),
-                        MARKET_AVG_DIV_5Y: details.get(MARKET_AVG_DIV_5Y, 0.0),
-                        MARKET_AVG_DY_5Y: details.get(MARKET_AVG_DY_5Y, 0.0)
-                    }
-
-                    for yr in last_5_years:
-                        row_data[f"Div {yr}"] = details.get(MARKET_DIVIDENDS_5Y, {}).get(yr, 0.0)
-
-                    market_rows.append(row_data)
-
-        if not market_rows:
+        if df_display.empty:
             st.warning(MSG_YF_FETCH_ERROR)
             return
 
-        df_market = pd.DataFrame(market_rows)
-
-        df_display = pd.DataFrame()
-        df_display[DISPLAY_TICKER] = df_market[DISPLAY_TICKER]
-        df_display[DISPLAY_COMPANY] = df_market[DISPLAY_COMPANY]
-
-        df_display[DISPLAY_QUOTE] = df_market[DISPLAY_QUOTE]
-        df_display[DISPLAY_CEILING] = df_market[DISPLAY_CEILING]
-
         current_year = datetime.date.today().year
         last_5_years = [current_year - i for i in range(1, 6)]
-        for yr in last_5_years:
-            df_display[f"Div {yr}"] = df_market[f"Div {yr}"]
-
-        df_display[DISPLAY_AVG_5Y] = df_market[MARKET_AVG_DIV_5Y]
-        df_display[DISPLAY_DY_AVG_5Y] = df_market[MARKET_AVG_DY_5Y]
-        df_display[DISPLAY_P_VP] = df_market[DISPLAY_P_VP]
-        df_display[DISPLAY_P_L] = df_market[DISPLAY_P_L]
-        df_display[DISPLAY_DY_CURRENT] = df_market[DISPLAY_DY_CURRENT]
-        df_display[DISPLAY_ROE] = df_market[DISPLAY_ROE]
 
         def format_range_52w(row):
             low = row[MARKET_LOW_52W]

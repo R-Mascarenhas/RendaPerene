@@ -1,7 +1,7 @@
 import datetime
 import numpy as np
 import pandas as pd
-from core.database import db
+from core.daos.planning_dao import PlanningDAO
 from core.constants import (
     BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
     MW_VALUE, INITIAL_EQUITY_INPUT, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED,
@@ -15,64 +15,20 @@ class SimulationService:
     @staticmethod
     def get_configuration():
         """Fetches the planning configuration from the database."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(f"SELECT {BIRTH_DATE}, {RETIREMENT_AGE}, {DESIRED_INCOME_MW}, {ANNUAL_INTEREST_RATE}, {MW_VALUE}, {INITIAL_EQUITY_INPUT}, {DESIRED_INCOME_TYPE}, {DESIRED_INCOME_FIXED}, {CEILING_MODEL_SELECTION}, {BAZIN_TARGET_YIELD}, {BAZIN_TARGET_SPREAD} FROM planning_configuration WHERE id = 1")
-            row = cursor.fetchone()
-            if row:
-                config = {
-                    BIRTH_DATE: row[0],
-                    RETIREMENT_AGE: row[1],
-                    DESIRED_INCOME_MW: row[2],
-                    ANNUAL_INTEREST_RATE: row[3],
-                    MW_VALUE: row[4],
-                    INITIAL_EQUITY_INPUT: row[5],
-                    DESIRED_INCOME_TYPE: row[6] if row[6] else INCOME_TYPE_MULTIPLIER,
-                    DESIRED_INCOME_FIXED: row[7] if row[7] is not None else 10000.0,
-                    CEILING_MODEL_SELECTION: row[8] if row[8] else MODEL_CLASSIC,
-                    BAZIN_TARGET_YIELD: row[9] if row[9] is not None else 6.0,
-                    BAZIN_TARGET_SPREAD: row[10] if row[10] is not None else 3.0
-                }
-                return config
-            return None
-        except Exception:
-            return None
-        finally:
-            conn.close()
+        return PlanningDAO.get_configuration()
 
     @staticmethod
     def save_configuration(birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type="MULTIPLIER", desired_income_fixed=10000.0, ceiling_model_selection="Bazin Clássico", bazin_target_yield=6.0, bazin_target_spread=3.0):
         """Saves or updates the planning configuration in the database."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT id FROM planning_configuration WHERE id = 1")
-            if cursor.fetchone():
-                cursor.execute(f'''
-                    UPDATE planning_configuration
-                    SET {BIRTH_DATE} = ?, {RETIREMENT_AGE} = ?, {DESIRED_INCOME_MW} = ?, {ANNUAL_INTEREST_RATE} = ?, {MW_VALUE} = ?, {INITIAL_EQUITY_INPUT} = ?, {DESIRED_INCOME_TYPE} = ?, {DESIRED_INCOME_FIXED} = ?, {CEILING_MODEL_SELECTION} = ?, {BAZIN_TARGET_YIELD} = ?, {BAZIN_TARGET_SPREAD} = ?
-                    WHERE id = 1
-                ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread))
-            else:
-                cursor.execute(f'''
-                    INSERT INTO planning_configuration (id, {BIRTH_DATE}, {RETIREMENT_AGE}, {DESIRED_INCOME_MW}, {ANNUAL_INTEREST_RATE}, {MW_VALUE}, {INITIAL_EQUITY_INPUT}, {DESIRED_INCOME_TYPE}, {DESIRED_INCOME_FIXED}, {CEILING_MODEL_SELECTION}, {BAZIN_TARGET_YIELD}, {BAZIN_TARGET_SPREAD})
-                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread))
-            conn.commit()
-        finally:
-            conn.close()
+        PlanningDAO.save_configuration(
+            birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input,
+            desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread
+        )
 
     @staticmethod
     def get_initial_investment_age(birth_date):
         """Returns the exact age in months when the first investment was made."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT MIN(date) FROM transactions")
-        min_date_res = cursor.fetchone()
-        min_date_str = min_date_res[0] if min_date_res and min_date_res[0] is not None else "2021-04-30"
-        conn.close()
-
+        min_date_str = PlanningDAO.get_min_transaction_date()
         start_date = datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
         
         start_months_age = (start_date.year - birth_date.year) * 12 + start_date.month - birth_date.month - (start_date.day < start_date.day)
@@ -255,3 +211,59 @@ class SimulationService:
         df_evolution['planned_invested'] = planned_invested
         df_evolution['planned_dividends'] = planned_dividends
         return df_evolution
+
+    @staticmethod
+    def get_projection_chart_dataset(extrapolation_months: int = 12) -> pd.DataFrame:
+        """
+        Fetches historical portfolio evolution and prepares future extrapolation (trendlines,
+        planned curves, etc.) for the comparative charts, returning a single display DataFrame.
+        """
+        from services.assets_service import AssetService
+        from core.utils.formatter import Formatter
+        from core.constants import MONTH_STR, CUMULATIVE_INVESTED, CUMULATIVE_DIVIDENDS, MONTH_DISPLAY
+        from core.utils.trendlines import TrendlineCalculator, PolynomialTrendlineStrategy, LinearMomentumTrendlineStrategy
+
+        df_evolution = AssetService.calculate_historical_evolution()
+        if df_evolution.empty:
+            return pd.DataFrame()
+
+        df_evolution = df_evolution.sort_values(by=MONTH_STR).reset_index(drop=True)
+        start_date_str = df_evolution.loc[0, MONTH_STR] + "-01"
+        start_date = pd.to_datetime(start_date_str).replace(day=1)
+
+        end_date = datetime.date.today() + datetime.timedelta(days=365)
+
+        date_range_extrap = pd.date_range(start=start_date, end=end_date, freq='MS')
+        all_months_extrap = date_range_extrap.strftime('%Y-%m').tolist()
+        df_extrap = pd.DataFrame({MONTH_STR: all_months_extrap})
+
+        df_extrap = df_extrap.merge(
+            df_evolution[[MONTH_STR, CUMULATIVE_INVESTED, CUMULATIVE_DIVIDENDS]],
+            on=MONTH_STR,
+            how='left'
+        )
+
+        df_extrap[MONTH_DISPLAY] = df_extrap[MONTH_STR].apply(Formatter.format_month_year)
+
+        # 2. GENERATE CONTINUOUS PLANNED CURVES
+        config = SimulationService.get_configuration()
+        from core.constants import ANNUAL_INTEREST_RATE
+        if config:
+            annual_interest_rate_val = float(config[ANNUAL_INTEREST_RATE])
+            monthly_interest_rate = (1 + annual_interest_rate_val / 100) ** (1 / 12) - 1
+        else:
+            monthly_interest_rate = (1 + 6.0 / 100) ** (1 / 12) - 1
+
+        monthly_contribution = SimulationService.get_required_contribution()
+
+        df_extrap = SimulationService.calculate_planned_historical_evolution(df_extrap, monthly_contribution, monthly_interest_rate)
+
+        # 3. COMPUTE EXTRAPOLATION TRENDLINES
+        df_extrap['trend_dividends'] = TrendlineCalculator.calculate_trend(
+            df_extrap, CUMULATIVE_DIVIDENDS, PolynomialTrendlineStrategy(deg=2), extrapolate_periods=extrapolation_months
+        )
+        df_extrap['trend_invested'] = TrendlineCalculator.calculate_trend(
+            df_extrap, CUMULATIVE_INVESTED, LinearMomentumTrendlineStrategy(window_months=extrapolation_months), extrapolate_periods=extrapolation_months
+        )
+
+        return df_extrap

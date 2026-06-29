@@ -7,7 +7,6 @@ import plotly.graph_objects as go
 from services.planning_service import SimulationService
 from services.assets_service import AssetService
 from core.utils.formatter import Formatter
-from core.utils.trendlines import TrendlineCalculator, PolynomialTrendlineStrategy, LinearMomentumTrendlineStrategy
 from core.strings import (
     MSG_LONG_TERM_PROJECTION_TITLE, MSG_CONSTANT_CONTRIB_VS_INTEREST_TITLE,
     MSG_REAL_VS_PLANNED_TITLE, MSG_REAL_VS_PLANNED_DESC
@@ -201,55 +200,13 @@ class ProjectionChartWidget:
 
     def _render_historical_comparisons(self, extrapolation=12):
         """Fetches and prepares the 12-month future extrapolation data, then renders both comparative charts."""
-        df_evolution = AssetService.calculate_historical_evolution()
-        if df_evolution.empty:
+        df_extrap = SimulationService.get_projection_chart_dataset(extrapolation_months=extrapolation)
+        if df_extrap.empty:
             return
 
         st.markdown("---")
         st.subheader(MSG_REAL_VS_PLANNED_TITLE.format(months=extrapolation))
         st.write(MSG_REAL_VS_PLANNED_DESC.format(months=extrapolation))
-
-        # 1. EXPAND TIMELINE BY 12 MONTHS
-        df_evolution = df_evolution.sort_values(by=MONTH_STR).reset_index(drop=True)
-        start_date_str = df_evolution.loc[0, MONTH_STR] + "-01"
-        start_date = pd.to_datetime(start_date_str).replace(day=1)
-
-        end_date = datetime.date.today() + datetime.timedelta(days=365)
-
-        date_range_extrap = pd.date_range(start=start_date, end=end_date, freq='MS')
-        all_months_extrap = date_range_extrap.strftime('%Y-%m').tolist()
-        df_extrap = pd.DataFrame({MONTH_STR: all_months_extrap})
-
-        df_extrap = df_extrap.merge(
-            df_evolution[[MONTH_STR, CUMULATIVE_INVESTED, CUMULATIVE_DIVIDENDS]],
-            on=MONTH_STR,
-            how='left'
-        )
-
-        df_extrap[MONTH_DISPLAY] = df_extrap[MONTH_STR].apply(Formatter.format_month_year)
-
-        # 2. GENERATE CONTINUOUS PLANNED CURVES (DRY Compliant)
-        config = SimulationService.get_configuration()
-        if config:
-            annual_interest_rate_val = float(config[ANNUAL_INTEREST_RATE])
-            monthly_interest_rate = (1 + annual_interest_rate_val / 100) ** (1 / 12) - 1
-        else:
-            monthly_interest_rate = (1 + 6.0 / 100) ** (1 / 12) - 1
-
-        monthly_contribution = SimulationService.get_required_contribution()
-
-        # Call our centralized, DRY-compliant mathematical projection service method!
-        df_extrap = SimulationService.calculate_planned_historical_evolution(df_extrap, monthly_contribution, monthly_interest_rate)
-
-        # 3. COMPUTE EXTRAPOLATION TRENDLINES USING CENTRALIZED UTILITY STRATEGIES (OCP Compliant!)
-        # - Dividends: 2nd degree Polynomial Strategy
-        # - Invested: 12-month Linear Momentum Strategy (Highly realistic, goes flat if you stop contributing!)
-        df_extrap['trend_dividends'] = TrendlineCalculator.calculate_trend(
-            df_extrap, CUMULATIVE_DIVIDENDS, PolynomialTrendlineStrategy(deg=2), extrapolate_periods=extrapolation
-        )
-        df_extrap['trend_invested'] = TrendlineCalculator.calculate_trend(
-            df_extrap, CUMULATIVE_INVESTED, LinearMomentumTrendlineStrategy(window_months=12), extrapolate_periods=extrapolation
-        )
 
         current_month_str = datetime.date.today().strftime("%Y-%m")
         current_month_display = Formatter.format_month_year(current_month_str)

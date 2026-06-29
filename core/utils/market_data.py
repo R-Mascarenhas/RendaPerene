@@ -153,9 +153,8 @@ class MarketData:
     @st.cache_data
     def load_assets_catalog():
         """Loads the B3 assets static catalog from assets.csv into memory RAM (Vastly faster!)."""
-        if os.path.exists("assets.csv"):
-            return pd.read_csv("assets.csv", dtype=str, encoding="utf-8-sig").set_index("CÓDIGO")
-        return pd.DataFrame()
+        from core.daos.assets_catalog_dao import AssetsCatalogDAO
+        return AssetsCatalogDAO.load_catalog()
 
     @staticmethod
     @st.cache_data(ttl=2592000)

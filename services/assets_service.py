@@ -1,75 +1,53 @@
 import pandas as pd
 import datetime
-from core.database import db
+from core.ports import PortfolioPort, AssetsCatalogPort, MarketDataPort
+from core.daos.portfolio_dao import PortfolioDAO
+from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.utils.market_data import MarketData
 
 class AssetService:
     """Domain Service for managing assets, transactions, dividends, and positions (Single Source of Truth)."""
 
-    @staticmethod
-    def register_fallback_asset(ticker: str):
+    # Concrete Outbound Adapters injected by default (Dependency Inversion Principle compliance)
+    _portfolio_repo: PortfolioPort = PortfolioDAO
+    _catalog_repo: AssetsCatalogPort = AssetsCatalogDAO
+    _market_data_api: MarketDataPort = MarketData
+
+    @classmethod
+    def set_adapters(cls, portfolio_repo: PortfolioPort = None, catalog_repo: AssetsCatalogPort = None, market_data_api: MarketDataPort = None):
+        """Dynamic dependency injection mechanism for testing and custom environment mocks."""
+        if portfolio_repo:
+            cls._portfolio_repo = portfolio_repo
+        if catalog_repo:
+            cls._catalog_repo = catalog_repo
+        if market_data_api:
+            cls._market_data_api = market_data_api
+
+    @classmethod
+    def register_fallback_asset(cls, ticker: str):
         """Appends a fallback asset to assets.csv if not found in the catalog."""
-        import os
-        import streamlit as st
+        cls._catalog_repo.add_fallback_asset(ticker)
 
-        if os.path.exists("assets.csv"):
-            df = pd.read_csv("assets.csv", dtype=str, encoding="utf-8-sig")
-            df.columns = df.columns.str.strip()
-            if ticker not in df['CÓDIGO'].values:
-                new_row = pd.DataFrame([{
-                    "CÓDIGO": ticker,
-                    "NOME": f"Asset {ticker}",
-                    "IMAGEM": "",
-                    "CNPJ": "",
-                    "SETOR ECONÔMICO": "Outros",
-                    "SUBSETOR": "",
-                    "SEGMENTO / ADM / PAÍS": "",
-                    "TIPO": "Ação",
-                    "SEGMENTO": ""
-                }])
-                df = pd.concat([df, new_row], ignore_index=True)
-                df.to_csv("assets.csv", index=False, encoding="utf-8-sig")
-                st.cache_data.clear()
-
-    @staticmethod
-    def add_transaction(ticker: str, date: str, transaction_type: str, quantity: int, unit_price: float, fees: float = 0.0) -> bool:
+    @classmethod
+    def add_transaction(cls, ticker: str, date: str, transaction_type: str, quantity: int, unit_price: float, fees: float = 0.0) -> bool:
         """Inserts a Buy (BUY) or Sell (SELL) asset transaction into the personal database, avoiding duplicates."""
-        conn_pers = db.get_personal_connection()
-        cursor_pers = conn_pers.cursor()
-
         if transaction_type in ('Compra', 'BUY'):
             transaction_type = "BUY"
         elif transaction_type in ('Venda', 'SELL'):
             transaction_type = "SELL"
 
-        cursor_pers.execute('''
-            SELECT id FROM transactions
-            WHERE date = ? AND ticker = ? AND transaction_type = ? AND quantity = ? AND unit_price = ? AND fees = ?
-        ''', (date, ticker, transaction_type, quantity, unit_price, fees))
-
-        if cursor_pers.fetchone():
-            conn_pers.close()
+        if cls._portfolio_repo.find_transaction(date, ticker, transaction_type, quantity, unit_price, fees):
             return False # Skipped duplicate
 
-        catalog = MarketData.load_assets_catalog()
+        catalog = cls._market_data_api.load_assets_catalog()
         if catalog.empty or ticker not in catalog.index:
-            AssetService.register_fallback_asset(ticker)
+            cls.register_fallback_asset(ticker)
 
-        cursor_pers.execute('''
-            INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (date, ticker, transaction_type, quantity, unit_price, fees))
+        return cls._portfolio_repo.insert_transaction(date, ticker, transaction_type, quantity, unit_price, fees)
 
-        conn_pers.commit()
-        conn_pers.close()
-        return True
-
-    @staticmethod
-    def add_dividend(ticker: str, date: str, dividend_type: str, total_value: float) -> bool:
+    @classmethod
+    def add_dividend(cls, ticker: str, date: str, dividend_type: str, total_value: float) -> bool:
         """Inserts a Dividend, JCP, or Yield receipt into the database, avoiding duplicates."""
-        conn_pers = db.get_personal_connection()
-        cursor_pers = conn_pers.cursor()
-
         if dividend_type in ('Dividendo', 'DIVIDEND'):
             dividend_type = "DIVIDEND"
         elif dividend_type in ('JCP', 'JCP'):
@@ -77,30 +55,17 @@ class AssetService:
         elif dividend_type in ('Rendimento', 'YIELD'):
             dividend_type = "YIELD"
 
-        cursor_pers.execute('''
-            SELECT id FROM dividends
-            WHERE date = ? AND ticker = ? AND dividend_type = ? AND total_value = ?
-        ''', (date, ticker, dividend_type, total_value))
-
-        if cursor_pers.fetchone():
-            conn_pers.close()
+        if cls._portfolio_repo.find_dividend(date, ticker, dividend_type, total_value):
             return False
 
-        catalog = MarketData.load_assets_catalog()
+        catalog = cls._market_data_api.load_assets_catalog()
         if catalog.empty or ticker not in catalog.index:
-            AssetService.register_fallback_asset(ticker)
+            cls.register_fallback_asset(ticker)
 
-        cursor_pers.execute('''
-            INSERT INTO dividends (date, ticker, dividend_type, total_value)
-            VALUES (?, ?, ?, ?)
-        ''', (date, ticker, dividend_type, total_value))
+        return cls._portfolio_repo.insert_dividend(date, ticker, dividend_type, total_value)
 
-        conn_pers.commit()
-        conn_pers.close()
-        return True
-
-    @staticmethod
-    def process_b3_import(df: pd.DataFrame) -> tuple[int, int]:
+    @classmethod
+    def process_b3_import(cls, df: pd.DataFrame) -> tuple[int, int]:
         """Processes a DataFrame imported from B3, routing and translating row categories to English."""
         df.columns = df.columns.str.strip()
 
@@ -152,19 +117,19 @@ class AssetService:
                     transaction_type = "SELL"
 
                 if transaction_type == "BUY":
-                    success = AssetService.add_transaction(ticker, date, "BUY", quantity, price)
+                    success = cls.add_transaction(ticker, date, "BUY", quantity, price)
                     if success: processed_transactions += 1
                 elif transaction_type == "SELL":
-                    success = AssetService.add_transaction(ticker, date, "SELL", quantity, price)
+                    success = cls.add_transaction(ticker, date, "SELL", quantity, price)
                     if success: processed_transactions += 1
                 elif transaction_type == "SPLIT":
-                    success = AssetService.add_transaction(ticker, date, "BUY", quantity, 0.0)
+                    success = cls.add_transaction(ticker, date, "BUY", quantity, 0.0)
                     if success: processed_transactions += 1
                 elif any(term in movement for term in ["Dividendo", "Juros", "Rendimento"]):
                     dividend_type = "DIVIDEND" if "Dividendo" in movement else "JCP"
                     if "Rendimento" in movement:
                         dividend_type = "YIELD"
-                    success = AssetService.add_dividend(ticker, date, dividend_type, total_value)
+                    success = cls.add_dividend(ticker, date, dividend_type, total_value)
                     if success: processed_dividends += 1
 
             except Exception:
@@ -172,53 +137,87 @@ class AssetService:
 
         return processed_transactions, processed_dividends
 
-    @staticmethod
-    def get_quantity_on_date(ticker: str, date_str: str, conn=None) -> int:
+    @classmethod
+    def get_quantity_on_date(cls, ticker: str, date_str: str, conn=None) -> int:
         """Returns the accumulated quantity owned of a specific ticker on a given date."""
-        local_conn = conn if conn is not None else db.get_personal_connection()
-        cursor = local_conn.cursor()
-        try:
-            cursor.execute("""
-                SELECT SUM(CASE WHEN transaction_type='BUY' THEN quantity ELSE -quantity END)
-                FROM transactions
-                WHERE ticker = ? AND date <= ?
-            """, (ticker, date_str))
-            res = cursor.fetchone()
-            return res[0] if res and res[0] is not None else 0
-        finally:
-            if conn is None:
-                local_conn.close()
+        return cls._portfolio_repo.get_quantity_on_date(ticker, date_str, conn=conn)
 
-    @staticmethod
-    def get_asset_transactions(ticker: str) -> pd.DataFrame:
+    @classmethod
+    def get_asset_transactions(cls, ticker: str) -> pd.DataFrame:
         """Returns all transactions for a specific asset ordered by date descending."""
-        conn = db.get_personal_connection()
-        try:
-            df = pd.read_sql_query(
-                "SELECT date as Data, CASE WHEN transaction_type='BUY' THEN 'Compra' ELSE 'Venda' END as Operação, quantity as Quantidade, unit_price as [Valor Unitário], (quantity * unit_price + fees) as [Valor Total] FROM transactions WHERE ticker = ? ORDER BY date DESC",
-                conn, params=(ticker,)
-            )
-            return df
-        finally:
-            conn.close()
+        return cls._portfolio_repo.get_transactions_by_ticker_desc(ticker)
 
-    @staticmethod
-    def get_asset_dividends(ticker: str) -> pd.DataFrame:
+    @classmethod
+    def get_asset_dividends(cls, ticker: str) -> pd.DataFrame:
         """Returns all dividend receipts for a specific asset."""
-        conn = db.get_personal_connection()
-        try:
-            df = pd.read_sql_query(
-                "SELECT date as Data, CASE WHEN dividend_type='DIVIDEND' THEN 'Dividendo' WHEN dividend_type='JCP' THEN 'JCP' ELSE 'Rendimento' END as Tipo, total_value as Total FROM dividends WHERE ticker = ? ORDER BY date DESC",
-                conn, params=(ticker,)
-            )
-            return df
-        finally:
-            conn.close()
+        return cls._portfolio_repo.get_dividends_by_ticker(ticker)
 
-    @staticmethod
-    def get_asset_metadata(ticker: str) -> dict:
+    @classmethod
+    def get_asset_dividends_detailed(cls, ticker: str) -> pd.DataFrame:
+        """
+        Returns all dividend receipts for a specific asset, pre-calculating the 
+        exact unit value owned on each receipt date.
+        """
+        df_div = cls._portfolio_repo.get_dividends_by_ticker(ticker)
+        if df_div.empty:
+            return df_div
+
+        unit_vals = []
+        conn_shared = cls._portfolio_repo.get_personal_connection()
+        try:
+            for _, row in df_div.iterrows():
+                dt = row['Data']
+                total = row['Total']
+                qty_owned = cls._portfolio_repo.get_quantity_on_date(ticker, dt, conn=conn_shared)
+                unit_vals.append(total / qty_owned if qty_owned > 0 else 0.0)
+        finally:
+            conn_shared.close()
+
+        df_div_display = df_div.copy()
+        df_div_display['Unitário'] = unit_vals
+        df_div_display = df_div_display[['Data', 'Tipo', 'Unitário', 'Total']]
+        return df_div_display
+
+    @classmethod
+    def get_annual_dividends_metrics(cls, ticker: str, chosen_year: str, df_div: pd.DataFrame) -> dict:
+        """
+        Calculates annual dividend metrics including total paid per share and 
+        end of year/previous year quantities for comparison.
+        """
+        total_paid_per_share = 0.0
+        conn_shared = cls._portfolio_repo.get_personal_connection()
+        try:
+            if not df_div.empty:
+                df_div_year = df_div[df_div['Data'].str.startswith(chosen_year)]
+                for _, row in df_div_year.iterrows():
+                    dt = row['Data']
+                    tot = row['Total']
+                    qty_on_date = cls._portfolio_repo.get_quantity_on_date(ticker, dt, conn=conn_shared)
+                    if qty_on_date > 0:
+                        total_paid_per_share += (tot / qty_on_date)
+
+            qty_end_of_year = cls._portfolio_repo.get_quantity_on_date(ticker, f"{chosen_year}-12-31", conn=conn_shared)
+            prev_year = str(int(chosen_year) - 1)
+            qty_prev_year = cls._portfolio_repo.get_quantity_on_date(ticker, f"{prev_year}-12-31", conn=conn_shared)
+        finally:
+            conn_shared.close()
+
+        return {
+            "total_paid_per_share": total_paid_per_share,
+            "qty_end_of_year": qty_end_of_year,
+            "qty_prev_year": qty_prev_year,
+            "prev_year": prev_year
+        }
+
+    @classmethod
+    def get_raw_transactions_for_chart(cls, ticker: str) -> pd.DataFrame:
+        """Returns raw historical transactions sorted by date ascending for charts."""
+        return cls._portfolio_repo.get_transactions_by_ticker(ticker)
+
+    @classmethod
+    def get_asset_metadata(cls, ticker: str) -> dict:
         """Returns static metadata for a specific ticker from the local assets.csv catalog."""
-        catalog = MarketData.load_assets_catalog()
+        catalog = cls._market_data_api.load_assets_catalog()
         if not catalog.empty and ticker in catalog.index:
             row = catalog.loc[ticker]
             if isinstance(row, pd.DataFrame):
@@ -242,32 +241,18 @@ class AssetService:
             "asset_type": "Ação"
         }
 
-    @staticmethod
-    def get_years_with_dividends() -> list:
+    @classmethod
+    def get_years_with_dividends(cls) -> list:
         """Returns a sorted list of all unique years available in the dividends database."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT DISTINCT strftime('%Y', date) as yr FROM dividends WHERE date IS NOT NULL ORDER BY yr DESC")
-            years = [row[0] for row in cursor.fetchall() if row[0] is not None]
-            return sorted(years, reverse=True)
-        finally:
-            conn.close()
+        return cls._portfolio_repo.get_years_with_dividends()
 
-    @staticmethod
-    def get_asset_years_with_dividends(ticker: str) -> list:
+    @classmethod
+    def get_asset_years_with_dividends(cls, ticker: str) -> list:
         """Returns a sorted list of unique years in which a specific asset paid dividends."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT DISTINCT strftime('%Y', date) as yr FROM dividends WHERE ticker = ? AND date IS NOT NULL ORDER BY yr DESC", (ticker,))
-            years = [row[0] for row in cursor.fetchall() if row[0] is not None]
-            return sorted(years, reverse=True)
-        finally:
-            conn.close()
+        return cls._portfolio_repo.get_asset_years_with_dividends(ticker)
 
-    @staticmethod
-    def _build_dividends_pivot_dataframe(rows) -> pd.DataFrame:
+    @classmethod
+    def _build_dividends_pivot_dataframe(cls, rows) -> pd.DataFrame:
         """Converts raw database rows into a structured PT-BR dividends pivot DataFrame (DRY helper)."""
         data = {"DIVIDEND": 0.0, "JCP": 0.0, "YIELD": 0.0}
         for row in rows:
@@ -287,119 +272,50 @@ class AssetService:
         ])
         return df
 
-    @staticmethod
-    def get_annual_dividends_pivot(year: str) -> pd.DataFrame:
+    @classmethod
+    def get_annual_dividends_pivot(cls, year: str) -> pd.DataFrame:
         """Returns aggregated totals for dividends, JCP, and rendimentos for a specific year."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                SELECT dividend_type, SUM(total_value)
-                FROM dividends
-                WHERE strftime('%Y', date) = ?
-                GROUP BY dividend_type
-            ''', (year,))
+        rows = cls._portfolio_repo.get_annual_dividend_types_sum(year)
+        return cls._build_dividends_pivot_dataframe(rows)
 
-            rows = cursor.fetchall()
-            return AssetService._build_dividends_pivot_dataframe(rows)
-        finally:
-            conn.close()
-
-    @staticmethod
-    def get_asset_annual_dividends_pivot(ticker: str, year: str) -> pd.DataFrame:
+    @classmethod
+    def get_asset_annual_dividends_pivot(cls, ticker: str, year: str) -> pd.DataFrame:
         """Returns aggregated totals for dividends, JCP, and rendimentos for a specific asset and year."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                SELECT dividend_type, SUM(total_value)
-                FROM dividends
-                WHERE ticker = ? AND strftime('%Y', date) = ?
-                GROUP BY dividend_type
-            ''', (ticker, year))
+        rows = cls._portfolio_repo.get_asset_annual_dividend_types_sum(ticker, year)
+        return cls._build_dividends_pivot_dataframe(rows)
 
-            rows = cursor.fetchall()
-            return AssetService._build_dividends_pivot_dataframe(rows)
-        finally:
-            conn.close()
-
-    @staticmethod
-    def get_tracked_market_assets() -> list:
+    @classmethod
+    def get_tracked_market_assets(cls) -> list:
         """Returns the list of tracked tickers from the database."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT ticker FROM tracked_market_assets ORDER BY ticker ASC")
-            return [row[0] for row in cursor.fetchall()]
-        finally:
-            conn.close()
+        return cls._portfolio_repo.get_tracked_assets()
 
-    @staticmethod
-    def add_tracked_market_asset(ticker: str) -> bool:
+    @classmethod
+    def add_tracked_market_asset(cls, ticker: str) -> bool:
         """Adds a ticker to the watchlist in the database."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("INSERT OR REPLACE INTO tracked_market_assets (ticker) VALUES (?)", (ticker.upper().strip(),))
-            conn.commit()
-            return True
-        except Exception:
-            return False
-        finally:
-            conn.close()
+        return cls._portfolio_repo.insert_tracked_asset(ticker)
 
-    @staticmethod
-    def remove_tracked_market_asset(ticker: str) -> bool:
+    @classmethod
+    def remove_tracked_market_asset(cls, ticker: str) -> bool:
         """Removes a ticker from the watchlist in the database."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("DELETE FROM tracked_market_assets WHERE ticker = ?", (ticker.upper().strip(),))
-            conn.commit()
-            return True
-        except Exception:
-            return False
-        finally:
-            conn.close()
+        return cls._portfolio_repo.delete_tracked_asset(ticker)
 
-    @staticmethod
-    def save_dividend_correction(ticker: str, year: int, total_value: float) -> bool:
+    @classmethod
+    def save_dividend_correction(cls, ticker: str, year: int, total_value: float) -> bool:
         """Saves or updates a manual dividend correction inside the SQLite database."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                "INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES (?, ?, ?)",
-                (ticker.upper().strip(), int(year), float(total_value))
-            )
-            conn.commit()
-            return True
-        except Exception:
-            return False
-        finally:
-            conn.close()
+        return cls._portfolio_repo.insert_dividend_correction(ticker, year, total_value)
 
-    @staticmethod
-    def get_dividend_corrections(ticker: str) -> dict:
+    @classmethod
+    def get_dividend_corrections(cls, ticker: str) -> dict:
         """Returns all custom dividend corrections registered for a specific ticker."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT year, total_value FROM dividend_corrections WHERE ticker = ? ORDER BY year DESC", (ticker.upper().strip(),))
-            return {row[0]: row[1] for row in cursor.fetchall()}
-        except Exception:
-            return {}
-        finally:
-            conn.close()
+        return cls._portfolio_repo.get_dividend_corrections(ticker)
 
-    @staticmethod
-    def calculate_positions(today_date=None) -> pd.DataFrame:
+    @classmethod
+    def calculate_positions(cls, today_date=None) -> pd.DataFrame:
         """
         Consolidates active portfolio holdings, calculating average price (PM),
         invested totals, and received dividends.
         """
-        conn_pers = db.get_personal_connection()
-        catalog = MarketData.load_assets_catalog()
+        catalog = cls._market_data_api.load_assets_catalog()
 
         if today_date is None:
             today_date = datetime.date.today()
@@ -407,11 +323,7 @@ class AssetService:
         l12m_limit = (today_date - datetime.timedelta(days=365)).strftime("%Y-%m-%d")
         ytd_limit = f"{today_date.year}-01-01"
 
-        df_transactions = pd.read_sql_query(
-            "SELECT date, ticker, transaction_type, quantity, unit_price, fees FROM transactions ORDER BY date ASC, id ASC",
-            conn_pers
-        )
-
+        df_transactions = cls._portfolio_repo.get_all_transactions()
         portfolio_state = {}
 
         from core.constants import (
@@ -464,18 +376,9 @@ class AssetService:
                 else:
                     name, asset_type, display_sector = f"Asset {ticker}", "Ação", "Outros"
 
-                cursor_pers = conn_pers.cursor()
-                cursor_pers.execute("SELECT SUM(total_value) FROM dividends WHERE ticker = ?", (ticker,))
-                div_res = cursor_pers.fetchone()
-                total_dividends = div_res[0] if div_res and div_res[0] is not None else 0.0
-
-                cursor_pers.execute("SELECT SUM(total_value) FROM dividends WHERE ticker = ? AND date >= ?", (ticker, l12m_limit))
-                l12m_res = cursor_pers.fetchone()
-                l12m_dividends = l12m_res[0] if l12m_res and l12m_res[0] is not None else 0.0
-
-                cursor_pers.execute("SELECT SUM(total_value) FROM dividends WHERE ticker = ? AND date >= ?", (ticker, ytd_limit))
-                ytd_res = cursor_pers.fetchone()
-                ytd_dividends = ytd_res[0] if ytd_res and ytd_res[0] is not None else 0.0
+                total_dividends = cls._portfolio_repo.get_total_dividends_by_ticker(ticker)
+                l12m_dividends = cls._portfolio_repo.get_dividends_by_ticker_since_date(ticker, l12m_limit)
+                ytd_dividends = cls._portfolio_repo.get_dividends_by_ticker_since_date(ticker, ytd_limit)
 
                 active_assets.append({
                     TICKER: ticker,
@@ -490,19 +393,16 @@ class AssetService:
                     YTD_DIVIDENDS: ytd_dividends
                 })
 
-        conn_pers.close()
         return pd.DataFrame(active_assets)
 
-    @staticmethod
-    def calculate_historical_evolution() -> pd.DataFrame:
+    @classmethod
+    def calculate_historical_evolution(cls) -> pd.DataFrame:
         """
         Consolidates a month-by-month chronological sequence of your portfolio evolution.
         Ensures a seamless monthly series without gaps since the first transaction.
         """
-        conn = db.get_personal_connection()
-        df_transactions = pd.read_sql_query("SELECT date, transaction_type, quantity, unit_price, fees FROM transactions", conn)
-        df_dividends = pd.read_sql_query("SELECT date, dividend_type, total_value FROM dividends", conn)
-        conn.close()
+        df_transactions = cls._portfolio_repo.get_all_transactions()
+        df_dividends = cls._portfolio_repo.get_all_dividends()
 
         if df_transactions.empty and df_dividends.empty:
             return pd.DataFrame()
@@ -550,27 +450,16 @@ class AssetService:
 
         return timeline
 
-    @staticmethod
-    def get_ytd_contributions(current_year: int) -> float:
+    @classmethod
+    def get_ytd_contributions(cls, current_year: int) -> float:
         """Calculates total net contributions made in the current year."""
-        conn = db.get_personal_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT SUM(quantity * unit_price + fees) FROM transactions WHERE transaction_type = 'BUY' AND date >= ?",
-            (f"{current_year}-01-01",)
-        )
-        res_ytd = cursor.fetchone()
-        ytd_contribution = res_ytd[0] if res_ytd and res_ytd[0] is not None else 0.0
-        conn.close()
-        return ytd_contribution
+        limit_date = f"{current_year}-01-01"
+        return cls._portfolio_repo.get_ytd_contributions_sum(limit_date)
 
-    @staticmethod
-    def get_monthly_contributions_by_year() -> pd.DataFrame:
+    @classmethod
+    def get_monthly_contributions_by_year(cls) -> pd.DataFrame:
         """Returns monthly contributions grouped by year for the bar chart."""
-        conn = db.get_personal_connection()
-        df_transactions = pd.read_sql_query("SELECT date, quantity, unit_price, fees FROM transactions WHERE transaction_type = 'BUY'", conn)
-        conn.close()
-
+        df_transactions = cls._portfolio_repo.get_all_buy_transactions()
         if df_transactions.empty:
             return pd.DataFrame()
 
@@ -580,3 +469,187 @@ class AssetService:
 
         grouped = df_transactions.groupby(['year', 'month'])['amount'].sum().reset_index()
         return grouped
+
+    @classmethod
+    def get_market_analysis_data(cls, tracked_tickers: list[str], target_yield: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Aggregates real-time Yahoo Finance indicators and local metadata
+        for tracked watchlist tickers, returning a tuple of (df_display, df_market).
+        """
+        from core.constants import (
+            CURRENT_PRICE, CEILING_PRICE, MARKET_PB, MARKET_PE, CURRENT_DY, MARKET_ROE,
+            MARKET_LOW_52W, MARKET_HIGH_52W, MARKET_AVG_DIV_5Y, MARKET_AVG_DY_5Y,
+            MARKET_DIVIDENDS_5Y, MARKET_NAME, NAME
+        )
+        from core.strings import (
+            DISPLAY_TICKER, DISPLAY_COMPANY, DISPLAY_QUOTE, DISPLAY_CEILING,
+            DISPLAY_AVG_5Y, DISPLAY_DY_AVG_5Y, DISPLAY_P_VP, DISPLAY_P_L,
+            DISPLAY_DY_CURRENT, DISPLAY_ROE
+        )
+
+        market_rows = []
+        for t in tracked_tickers:
+            details = cls._market_data_api.get_ticker_market_analysis(t, target_yield_pct=target_yield)
+            metadata = cls.get_asset_metadata(t)
+
+            if details:
+                current_year = datetime.date.today().year
+                last_5_years = [current_year - i for i in range(1, 6)]
+
+                row_data = {
+                    DISPLAY_TICKER: t,
+                    DISPLAY_COMPANY: details.get(MARKET_NAME, metadata.get(NAME, t)),
+                    DISPLAY_QUOTE: details.get(CURRENT_PRICE, 0.0),
+                    DISPLAY_CEILING: details.get(CEILING_PRICE, 0.0),
+                    DISPLAY_P_VP: details.get(MARKET_PB, 0.0),
+                    DISPLAY_P_L: details.get(MARKET_PE, 0.0),
+                    DISPLAY_DY_CURRENT: details.get(CURRENT_DY, 0.0),
+                    DISPLAY_ROE: details.get(MARKET_ROE, 0.0),
+                    MARKET_LOW_52W: details.get(MARKET_LOW_52W, 0.0),
+                    MARKET_HIGH_52W: details.get(MARKET_HIGH_52W, 0.0),
+                    MARKET_AVG_DIV_5Y: details.get(MARKET_AVG_DIV_5Y, 0.0),
+                    MARKET_AVG_DY_5Y: details.get(MARKET_AVG_DY_5Y, 0.0)
+                }
+
+                for yr in last_5_years:
+                    row_data[f"Div {yr}"] = details.get(MARKET_DIVIDENDS_5Y, {}).get(yr, 0.0)
+
+                market_rows.append(row_data)
+
+        if not market_rows:
+            return pd.DataFrame(), pd.DataFrame()
+
+        df_market = pd.DataFrame(market_rows)
+
+        df_display = pd.DataFrame()
+        df_display[DISPLAY_TICKER] = df_market[DISPLAY_TICKER]
+        df_display[DISPLAY_COMPANY] = df_market[DISPLAY_COMPANY]
+        df_display[DISPLAY_QUOTE] = df_market[DISPLAY_QUOTE]
+        df_display[DISPLAY_CEILING] = df_market[DISPLAY_CEILING]
+
+        current_year = datetime.date.today().year
+        last_5_years = [current_year - i for i in range(1, 6)]
+        for yr in last_5_years:
+            df_display[f"Div {yr}"] = df_market[f"Div {yr}"]
+
+        df_display[DISPLAY_AVG_5Y] = df_market[MARKET_AVG_DIV_5Y]
+        df_display[DISPLAY_DY_AVG_5Y] = df_market[MARKET_AVG_DY_5Y]
+        df_display[DISPLAY_P_VP] = df_market[DISPLAY_P_VP]
+        df_display[DISPLAY_P_L] = df_market[DISPLAY_P_L]
+        df_display[DISPLAY_DY_CURRENT] = df_market[DISPLAY_DY_CURRENT]
+        df_display[DISPLAY_ROE] = df_market[DISPLAY_ROE]
+
+        return df_display, df_market
+
+    @classmethod
+    def get_portfolio_summary_metrics(cls, df_positions: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+        """
+        Calculates all portfolio-wide KPI summary metrics, returning the updated
+        df_positions and a dictionary of ready-to-render formatted metrics.
+        """
+        from core.constants import (
+            TICKER, QUANTITY, INVESTED_AMOUNT, TOTAL_DIVIDENDS, L12M_DIVIDENDS, YTD_DIVIDENDS,
+            CURRENT_PRICE, CURRENT_VALUE, PROFIT_LOSS
+        )
+        from services.planning_service import SimulationService
+
+        if df_positions.empty:
+            return df_positions, {}
+
+        tickers = df_positions[TICKER].tolist()
+        quote_map = cls._market_data_api.get_batch_quotes(tickers)
+
+        df_positions[CURRENT_PRICE] = df_positions[TICKER].map(quote_map)
+        df_positions[CURRENT_VALUE] = df_positions[QUANTITY] * df_positions[CURRENT_PRICE]
+        df_positions[PROFIT_LOSS] = df_positions[CURRENT_VALUE] - df_positions[INVESTED_AMOUNT]
+
+        df_positions['return_pct'] = (df_positions[PROFIT_LOSS] / df_positions[INVESTED_AMOUNT]) * 100
+        df_positions['total_yoc'] = (df_positions[TOTAL_DIVIDENDS] / df_positions[INVESTED_AMOUNT]) * 100
+        df_positions['l12m_yoc'] = (df_positions[L12M_DIVIDENDS] / df_positions[INVESTED_AMOUNT]) * 100
+
+        total_invested_init = df_positions[INVESTED_AMOUNT].sum()
+        total_equity = df_positions[CURRENT_VALUE].sum()
+
+        total_dividends = df_positions[TOTAL_DIVIDENDS].sum()
+        l12m_dividends = df_positions[L12M_DIVIDENDS].sum()
+        ytd_dividends = df_positions[YTD_DIVIDENDS].sum()
+
+        total_profit = total_equity - total_invested_init
+        overall_return = (total_profit / total_invested_init * 100) if total_invested_init > 0 else 0.0
+
+        overall_yoc = (total_dividends / total_invested_init * 100) if total_invested_init > 0 else 0.0
+        overall_l12m_yoc = (l12m_dividends / total_invested_init * 100) if total_invested_init > 0 else 0.0
+
+        # Pull the invested capital parameter used in PMT calculations from the planning service
+        sim = SimulationService.get_current_simulation()
+        total_invested_sim = sim["total_invested"] if sim else 0.0
+
+        return df_positions, {
+            "total_equity": total_equity,
+            "total_invested": total_invested_sim,
+            "total_dividends": total_dividends,
+            "l12m_dividends": l12m_dividends,
+            "ytd_dividends": ytd_dividends,
+            "overall_return": overall_return,
+            "overall_yoc": overall_yoc,
+            "overall_l12m_yoc": overall_l12m_yoc
+        }
+
+    @classmethod
+    def get_detailed_holdings_dataframe(cls, df_positions: pd.DataFrame, target_yield: float) -> tuple[pd.DataFrame, dict]:
+        """
+        Calculates detailed holding metrics, retrieves Bazin ceilings, 
+        and compiles a structured, pre-formatted display DataFrame ready for the view.
+        """
+        from core.constants import (
+            TICKER, NAME, SECTOR, QUANTITY, AVERAGE_PRICE,
+            INVESTED_AMOUNT, TOTAL_DIVIDENDS, L12M_DIVIDENDS, YTD_DIVIDENDS,
+            CURRENT_PRICE, CURRENT_VALUE, PROFIT_LOSS,
+            ADJUSTED_PRICE, RETURN_PCT_CUSTOM, YOC_CUSTOM, YOC_12_CUSTOM,
+            WEIGHT_PCT, CEILING_PRICE_GRID
+        )
+        from core.strings import (
+            DISPLAY_CODE, DISPLAY_NAME, DISPLAY_QTY, DISPLAY_AVG_PRICE, DISPLAY_ADJ_PRICE,
+            DISPLAY_INVESTED, DISPLAY_CURRENT, DISPLAY_QUOTE_TODAY, DISPLAY_RETURN_PCT,
+            DISPLAY_RESULT, DISPLAY_YOC, DISPLAY_YOC_12, DISPLAY_EARNINGS, DISPLAY_SECTOR,
+            DISPLAY_WEIGHT, DISPLAY_CEILING
+        )
+        from core.utils.formatter import Formatter
+
+        if df_positions.empty:
+            return pd.DataFrame(), {}
+
+        total_equity = df_positions[CURRENT_VALUE].sum()
+
+        df_positions[ADJUSTED_PRICE] = (df_positions[INVESTED_AMOUNT] - df_positions[TOTAL_DIVIDENDS]) / df_positions[QUANTITY]
+        df_positions[RETURN_PCT_CUSTOM] = (df_positions[PROFIT_LOSS] / df_positions[INVESTED_AMOUNT] * 100)
+        df_positions[YOC_CUSTOM] = (df_positions[TOTAL_DIVIDENDS] / df_positions[INVESTED_AMOUNT] * 100)
+        df_positions[YOC_12_CUSTOM] = (df_positions[L12M_DIVIDENDS] / df_positions[INVESTED_AMOUNT] * 100)
+        df_positions[WEIGHT_PCT] = (df_positions[CURRENT_VALUE] / total_equity * 100) if total_equity > 0 else 0.0
+
+        ceilings = {}
+        for t in df_positions[TICKER]:
+            details = cls._market_data_api.get_ticker_market_analysis(t, target_yield_pct=target_yield)
+            ceilings[t] = details.get("ceiling_price", 0.0) if details else 0.0
+
+        df_positions[CEILING_PRICE_GRID] = df_positions[TICKER].map(lambda t: ceilings.get(t, 0.0))
+
+        df_display = pd.DataFrame()
+        df_display[DISPLAY_CODE] = df_positions[TICKER]
+        df_display[DISPLAY_NAME] = df_positions[NAME]
+        df_display[DISPLAY_SECTOR] = df_positions[SECTOR]
+        df_display[DISPLAY_WEIGHT] = df_positions[WEIGHT_PCT].map(lambda x: f"{x:.2f}%")
+        df_display[DISPLAY_QTY] = df_positions[QUANTITY]
+        df_display[DISPLAY_AVG_PRICE] = df_positions[AVERAGE_PRICE].map(Formatter.format_currency)
+        df_display[DISPLAY_ADJ_PRICE] = df_positions[ADJUSTED_PRICE].map(Formatter.format_currency)
+        df_display[DISPLAY_CEILING] = df_positions[CEILING_PRICE_GRID].map(Formatter.format_currency)
+        df_display[DISPLAY_QUOTE_TODAY] = df_positions[CURRENT_PRICE].map(Formatter.format_currency)
+        df_display[DISPLAY_INVESTED] = df_positions[INVESTED_AMOUNT].map(Formatter.format_currency)
+        df_display[DISPLAY_CURRENT] = df_positions[CURRENT_VALUE].map(Formatter.format_currency)
+        df_display[DISPLAY_RETURN_PCT] = df_positions[RETURN_PCT_CUSTOM].map(lambda x: f"{x:.2f}%")
+        df_display[DISPLAY_RESULT] = df_positions[PROFIT_LOSS].map(Formatter.format_currency)
+        df_display[DISPLAY_EARNINGS] = df_positions[TOTAL_DIVIDENDS].map(Formatter.format_currency)
+        df_display[DISPLAY_YOC] = df_positions[YOC_CUSTOM].map(lambda x: f"{x:.2f}%")
+        df_display[DISPLAY_YOC_12] = df_positions[YOC_12_CUSTOM].map(lambda x: f"{x:.2f}%")
+
+        return df_display, ceilings

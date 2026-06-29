@@ -194,23 +194,23 @@ class MarketView:
         df_display[DISPLAY_RANGE_52W] = df_market.apply(format_range_52w, axis=1)
 
         col_configs = {
-            DISPLAY_TICKER: st.column_config.TextColumn("Ticker", width="small"),
-            DISPLAY_COMPANY: st.column_config.TextColumn("Empresa", width="medium"),
-            DISPLAY_QUOTE: st.column_config.NumberColumn("Cotação", format="R$ %.2f", width="small"),
-            DISPLAY_CEILING: st.column_config.NumberColumn("Preço Teto (Bazin)", format="R$ %.2f", width="small"),
+            DISPLAY_TICKER: st.column_config.TextColumn(width="small"),
+            DISPLAY_COMPANY: st.column_config.TextColumn(width="medium"),
+            DISPLAY_QUOTE: st.column_config.NumberColumn(format="R$ %.2f", width="small"),
+            DISPLAY_CEILING: st.column_config.NumberColumn(format="R$ %.2f", width="small"),
         }
 
         for yr in last_5_years:
-            col_configs[f"Div {yr}"] = st.column_config.NumberColumn(f"Div {yr}", format="R$ %.2f", width="small")
+            col_configs[f"Div {yr}"] = st.column_config.NumberColumn(format="R$ %.2f", width="small")
 
         col_configs.update({
-            DISPLAY_AVG_5Y: st.column_config.NumberColumn("Média 5a", format="R$ %.2f", width="small"),
-            DISPLAY_DY_AVG_5Y: st.column_config.NumberColumn("DY Médio 5a", format="%.2f%%", width="small"),
-            DISPLAY_P_VP: st.column_config.NumberColumn("P/VP", format="%.2f", width="small"),
-            DISPLAY_P_L: st.column_config.NumberColumn("P/L", format="%.2f", width="small"),
-            DISPLAY_DY_CURRENT: st.column_config.NumberColumn("DY Atual", format="%.2f%%", width="small"),
-            DISPLAY_ROE: st.column_config.NumberColumn("ROE", format="%.2f%%", width="small"),
-            DISPLAY_RANGE_52W: st.column_config.TextColumn("Faixa 52s (Mín-Máx)", width="medium")
+            DISPLAY_AVG_5Y: st.column_config.NumberColumn(format="R$ %.2f", width="small"),
+            DISPLAY_DY_AVG_5Y: st.column_config.NumberColumn(format="%.2f%%", width="small"),
+            DISPLAY_P_VP: st.column_config.NumberColumn(format="%.2f", width="small"),
+            DISPLAY_P_L: st.column_config.NumberColumn(format="%.2f", width="small"),
+            DISPLAY_DY_CURRENT: st.column_config.NumberColumn(format="%.2f%%", width="small"),
+            DISPLAY_ROE: st.column_config.NumberColumn(format="%.2f%%", width="small"),
+            DISPLAY_RANGE_52W: st.column_config.TextColumn(width="medium")
         })
 
         def style_market_dataframe(df):

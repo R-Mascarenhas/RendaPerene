@@ -26,3 +26,9 @@ out/
 GEMINI.md
 git_commit_features.py
 docs/reports/
+
+# PyInstaller & Dist Packaging
+build/
+dist/
+venv_dist/
+*.spec

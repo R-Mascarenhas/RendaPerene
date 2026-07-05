@@ -72,13 +72,14 @@ class MarketData:
 
     @staticmethod
     @st.cache_data(ttl=600)
-    def get_ticker_market_analysis(ticker: str, target_yield_pct=6.0) -> dict:
+    def _get_raw_ticker_market_analysis(ticker: str) -> dict:
         """
-        Fetches core B3 valuation metrics and 5-year historical dividends from Yahoo Finance.
-        All calculations are fully agnostic, letting the view/caller pass any target yield percentage.
+        Fetches raw core B3 valuation metrics and 5-year historical dividends from Yahoo Finance and database corrections.
+        Cached on ticker only, making it completely independent of dynamic target yield mathematical calculations.
         """
+        ticker = ticker.strip().upper()
         try:
-            ticker_sa = f"{ticker.strip().upper()}.SA"
+            ticker_sa = f"{ticker}.SA"
             yt = yf.Ticker(ticker_sa)
             info = yt.info
 
@@ -125,13 +126,6 @@ class MarketData:
 
             avg_dividend_5y = sum(div_by_year.values()) / 5 if div_by_year else 0.0
 
-            # Calculate dynamic Bazin ceiling price using the customized caller's yield divisor
-            target_yield = target_yield_pct / 100
-            ceiling_price = (avg_dividend_5y / target_yield) if target_yield > 0 else 0.0
-
-            # Calculate dynamic real 5-year average dividend yield
-            avg_dy_5y = (avg_dividend_5y / current_price * 100) if current_price > 0 else 0.0
-
             return {
                 "name": info.get("longName", f"Asset {ticker}"),
                 "current_price": current_price,
@@ -142,12 +136,39 @@ class MarketData:
                 "high_52w": high_52w,
                 "low_52w": low_52w,
                 "dividends_5y": div_by_year,
-                "avg_dividend_5y": avg_dividend_5y,
-                "ceiling_price": ceiling_price,
-                "avg_dy_5y": avg_dy_5y
+                "avg_dividend_5y": avg_dividend_5y
             }
         except Exception:
             return {}
+
+    @staticmethod
+    def get_ticker_market_analysis(ticker: str, target_yield_pct=6.0) -> dict:
+        """
+        Fetches core B3 valuation metrics and 5-year historical dividends, and performs Bazin ceiling calculations.
+        The underlying fetching is cached on ticker only, preventing redundant web API reloads when target yield model changes.
+        """
+        ticker = ticker.strip().upper()
+        raw_data = MarketData._get_raw_ticker_market_analysis(ticker)
+        if not raw_data:
+            return {}
+
+        # Copy dict to avoid mutating cached object directly
+        data = raw_data.copy()
+
+        avg_dividend_5y = data["avg_dividend_5y"]
+        current_price = data["current_price"]
+
+        # Calculate dynamic Bazin ceiling price using the customized caller's yield divisor
+        target_yield = target_yield_pct / 100
+        ceiling_price = (avg_dividend_5y / target_yield) if target_yield > 0 else 0.0
+
+        # Calculate dynamic real 5-year average dividend yield
+        avg_dy_5y = (avg_dividend_5y / current_price * 100) if current_price > 0 else 0.0
+
+        data["ceiling_price"] = ceiling_price
+        data["avg_dy_5y"] = avg_dy_5y
+
+        return data
 
     @staticmethod
     @st.cache_data
@@ -200,3 +221,7 @@ class MarketData:
         except Exception:
             pass
         return 1621.0
+
+# Attach direct clear delegate function attribute for compatibility with existing tests/handlers
+MarketData.get_ticker_market_analysis.clear = MarketData._get_raw_ticker_market_analysis.clear
+

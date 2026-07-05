@@ -39,7 +39,22 @@ class OperationsView:
 
         # Load the assets catalog dynamically to construct the autocompleting ticker + name options
         catalog = MarketData.load_assets_catalog()
-        available_tickers = sorted(catalog.index.tolist()) if not catalog.empty else []
+
+        is_earning = "Dividendo" in entry_type or "JCP" in entry_type or "Rendimento" in entry_type
+
+        if is_earning:
+            try:
+                df_positions = AssetService.calculate_positions()
+                if not df_positions.empty and "ticker" in df_positions.columns:
+                    owned_tickers = df_positions["ticker"].tolist()
+                    available_tickers = sorted([t for t in owned_tickers if t in catalog.index])
+                else:
+                    available_tickers = []
+            except Exception:
+                available_tickers = []
+        else:
+            available_tickers = sorted(catalog.index.tolist()) if not catalog.empty else []
+
         options = ["--- Selecione ---"] + [f"{t} - {catalog.loc[t, 'NOME']}" for t in available_tickers if t in catalog.index]
 
         with st.form("form_unified_entry", clear_on_submit=True):
@@ -52,6 +67,9 @@ class OperationsView:
                 index=0,
                 help=HELP_OPS_SEARCH
             )
+
+            if is_earning and not available_tickers:
+                st.warning("⚠️ Você não possui nenhum ativo em carteira para receber proventos.")
 
             if "Compra" in entry_type or "Venda" in entry_type:
                 qty = st.number_input("Quantidade", min_value=1, value=100, step=1)

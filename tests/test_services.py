@@ -509,6 +509,56 @@ def test_get_ticker_market_analysis(monkeypatch):
     assert analysis["roe"] == 9.224  # Should be multiplied by 100 since ROE is a decimal fraction
     assert analysis["dy"] == 1.2      # Should be exactly 1.2, NOT 120.0
 
+def test_get_ticker_market_analysis_normalization(monkeypatch):
+    """
+    Verifies that get_ticker_market_analysis correctly normalizes the ticker parameter
+    (converting to uppercase and stripping whitespace) before performing any database queries.
+    """
+    import pandas as pd
+    from core.utils.market_data import MarketData
+    from core.database import db
+
+    class MockTicker:
+        def __init__(self, ticker_name):
+            assert "BBAS3.SA" in ticker_name
+            self.info = {
+                "longName": "Banco do Brasil S.A.",
+                "priceToBook": 0.85,
+                "trailingPE": 4.5,
+                "dividendYield": 1.2,
+                "returnOnEquity": 0.09224
+            }
+            self.fast_info = {
+                "yearLow": 15.0,
+                "yearHigh": 30.0,
+                "lastPrice": 19.86
+            }
+            s = pd.Series({
+                pd.Timestamp("2024-01-01"): 1.50
+            })
+            s.index.name = "Date"
+            s.name = "Dividends"
+            self.dividends = s
+
+    import yfinance as yf
+    monkeypatch.setattr(yf, "Ticker", MockTicker)
+
+    # Pre-seed a specific correction for BBAS3 in the database
+    conn = db.get_personal_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES ('BBAS3', 2024, 2.50)")
+    conn.commit()
+    conn.close()
+
+    # Clear cache to avoid hits from previous tests
+    MarketData.get_ticker_market_analysis.clear()
+
+    # Call with unnormalized ticker: lowercase and with spaces
+    analysis = MarketData.get_ticker_market_analysis("  bbas3   ")
+
+    # Assertions
+    assert analysis["dividends_5y"][2024] == 2.50  # Should be the corrected value, not the yfinance one (1.50)
+
 def test_market_data_bcb_indicators_sanity():
     """
     Verifies that MarketData SGS API integration methods (for IPCA and SELIC)

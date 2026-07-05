@@ -31,6 +31,7 @@ class AssetService:
     @classmethod
     def add_transaction(cls, ticker: str, date: str, transaction_type: str, quantity: int, unit_price: float, fees: float = 0.0) -> bool:
         """Inserts a Buy (BUY) or Sell (SELL) asset transaction into the personal database, avoiding duplicates."""
+        ticker = ticker.strip().upper()
         if transaction_type in ('Compra', 'BUY'):
             transaction_type = "BUY"
         elif transaction_type in ('Venda', 'SELL'):
@@ -48,6 +49,7 @@ class AssetService:
     @classmethod
     def add_dividend(cls, ticker: str, date: str, dividend_type: str, total_value: float) -> bool:
         """Inserts a Dividend, JCP, or Yield receipt into the database, avoiding duplicates."""
+        ticker = ticker.strip().upper()
         if dividend_type in ('Dividendo', 'DIVIDEND'):
             dividend_type = "DIVIDEND"
         elif dividend_type in ('JCP', 'JCP'):

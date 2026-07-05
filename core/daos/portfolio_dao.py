@@ -75,6 +75,7 @@ class PortfolioDAO:
     @staticmethod
     def get_quantity_on_date(ticker: str, date_str: str, conn=None) -> int:
         """Returns the sum of quantities owned of a specific ticker on or before a given date."""
+        ticker = ticker.upper().strip()
         local_conn = conn if conn is not None else db.get_personal_connection()
         cursor = local_conn.cursor()
         try:
@@ -92,6 +93,7 @@ class PortfolioDAO:
     @staticmethod
     def get_transactions_by_ticker(ticker: str) -> pd.DataFrame:
         """Returns all transactions for a ticker as a DataFrame."""
+        ticker = ticker.upper().strip()
         conn = db.get_personal_connection()
         try:
             return pd.read_sql_query(
@@ -104,6 +106,7 @@ class PortfolioDAO:
     @staticmethod
     def get_transactions_by_ticker_desc(ticker: str) -> pd.DataFrame:
         """Returns all transactions for a specific asset ordered by date descending."""
+        ticker = ticker.upper().strip()
         conn = db.get_personal_connection()
         try:
             return pd.read_sql_query(
@@ -116,6 +119,7 @@ class PortfolioDAO:
     @staticmethod
     def get_dividends_by_ticker(ticker: str) -> pd.DataFrame:
         """Returns all dividends for a ticker as a DataFrame."""
+        ticker = ticker.upper().strip()
         conn = db.get_personal_connection()
         try:
             return pd.read_sql_query(
@@ -139,6 +143,7 @@ class PortfolioDAO:
     @staticmethod
     def get_asset_years_with_dividends(ticker: str) -> list:
         """Returns unique dividend years for a specific ticker."""
+        ticker = ticker.upper().strip()
         conn = db.get_personal_connection()
         cursor = conn.cursor()
         try:
@@ -166,6 +171,7 @@ class PortfolioDAO:
     @staticmethod
     def get_asset_annual_dividend_types_sum(ticker: str, year: str) -> list:
         """Returns aggregated SUM of dividend types for a specific ticker and year."""
+        ticker = ticker.upper().strip()
         conn = db.get_personal_connection()
         cursor = conn.cursor()
         try:
@@ -263,6 +269,7 @@ class PortfolioDAO:
     @staticmethod
     def get_total_dividends_by_ticker(ticker: str) -> float:
         """Returns total dividends sum for a specific ticker."""
+        ticker = ticker.upper().strip()
         conn = db.get_personal_connection()
         cursor = conn.cursor()
         try:
@@ -275,6 +282,7 @@ class PortfolioDAO:
     @staticmethod
     def get_dividends_by_ticker_since_date(ticker: str, limit_date: str) -> float:
         """Returns dividends sum since a specific date for a ticker."""
+        ticker = ticker.upper().strip()
         conn = db.get_personal_connection()
         cursor = conn.cursor()
         try:

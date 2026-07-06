@@ -40,8 +40,36 @@ if errorlevel 1 (
     goto :error
 )
 
+echo [INFO] Lendo a versao atual do aplicativo de version.txt...
+if not exist version.txt (
+    echo [ERRO] O arquivo version.txt nao foi encontrado!
+    goto :error
+)
+set /p APP_VERSION=<version.txt
+echo [INFO] Versao detectada: %APP_VERSION%
+
 echo [INFO] Finalizando instancias anteriores do RendaPerene (evita bloqueio de arquivos)...
-taskkill /f /im RendaPerene.exe >nul 2>&1
+taskkill /f /fi "IMAGENAME eq RendaPerene*" >nul 2>&1
+
+:: Proactive cleanup of the output directory before PyInstaller begins, preventing locked .pyd issues
+if exist "dist\RendaPerene-v%APP_VERSION%" (
+    echo [INFO] Limpando diretorio de build anterior para evitar bloqueios de arquivo...
+    rmdir /s /q "dist\RendaPerene-v%APP_VERSION%" >nul 2>&1
+    if exist "dist\RendaPerene-v%APP_VERSION%" (
+        echo.
+        echo =====================================================================
+        echo [ERRO] Nao foi possivel remover a pasta 'dist\RendaPerene-v%APP_VERSION%'.
+        echo Ela esta sendo usada por outro processo como navegador ou prompt.
+        echo.
+        echo Por favor:
+        echo   1. Feche o navegador ou aplicativo RendaPerene.
+        echo   2. Verifique se nao ha terminais abertos dentro da pasta 'dist'.
+        echo   3. Se o erro persistir, reinicie o computador para liberar as travas.
+        echo =====================================================================
+        echo.
+        goto :error
+    )
+)
 
 echo [INFO] Compilando aplicativo com PyInstaller...
 :: Flags explicadas:
@@ -50,7 +78,7 @@ echo [INFO] Compilando aplicativo com PyInstaller...
 :: --copy-metadata/--collect-all: Coleta metadados essenciais e assets estaticos do Streamlit e Plotly.
 :: --add-data: Embuti os codigos-fonte, visualizacoes, servicos e o catalogo de ativos padrão no executavel.
 pyinstaller --noconfirm --onedir --windowed ^
-    --name "RendaPerene" ^
+    --name "RendaPerene-v%APP_VERSION%" ^
     --copy-metadata streamlit ^
     --collect-all streamlit ^
     --collect-all plotly ^
@@ -59,6 +87,7 @@ pyinstaller --noconfirm --onedir --windowed ^
     --add-data "views;views" ^
     --add-data "services;services" ^
     --add-data "assets.csv;." ^
+    --add-data "version.txt;." ^
     run_app.py
 
 if errorlevel 1 (
@@ -72,14 +101,14 @@ echo    PROCESSO CONCLUIDO COM SUCESSO!
 echo =====================================================================
 echo.
 echo O seu aplicativo compilado foi gerado na pasta:
-echo   =^>  dist\RendaPerene\
+echo   =^>  dist\RendaPerene-v%APP_VERSION%\
 echo.
 echo Para executar o aplicativo:
-echo   1. Abra a pasta 'dist\RendaPerene\'
-echo   2. Execute o arquivo 'RendaPerene.exe'
+echo   1. Abra a pasta 'dist\RendaPerene-v%APP_VERSION%\'
+echo   2. Execute o arquivo 'RendaPerene-v%APP_VERSION%.exe'
 echo.
 echo Para enviar para outras pessoas:
-echo   - Compacte (ZIP) a pasta 'RendaPerene' inteira dentro de 'dist' e envie.
+echo   - Compacte (ZIP) a pasta 'RendaPerene-v%APP_VERSION%' inteira dentro de 'dist' e envie.
 echo     (As outras pessoas NAO precisam ter Python instalado para rodar!)
 echo.
 echo =====================================================================

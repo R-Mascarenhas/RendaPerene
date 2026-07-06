@@ -50,7 +50,7 @@ Security and data sovereignty are at the core of this project: **Zero cloud data
 ### 1. Clone and Setup Environment
 Clone the repository and create an isolated virtual environment:
 ```bash
-git clone https://github.com/your-username/rendaperene.git
+git clone https://github.com/R-Mascarenhas/RendaPerene.git
 cd rendaperene
 
 # Create and activate a virtual environment

@@ -58,37 +58,7 @@ class DatabaseManager:
             )
         ''')
 
-        # Backward compatibility migrations: safely add English planning fields if missing using core constants
-        try:
-            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {DESIRED_INCOME_TYPE} TEXT DEFAULT '{INCOME_TYPE_MULTIPLIER}'")
-            conn.commit()
-        except Exception:
-            pass # Column already exists, safe to ignore
-
-        try:
-            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {DESIRED_INCOME_FIXED} REAL DEFAULT 10000.0")
-            conn.commit()
-        except Exception:
-            pass # Column already exists, safe to ignore
-
-        try:
-            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {CEILING_MODEL_SELECTION} TEXT DEFAULT '{MODEL_CLASSIC}'")
-            conn.commit()
-        except Exception:
-            pass
-
-        try:
-            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {BAZIN_TARGET_YIELD} REAL DEFAULT 6.0")
-            conn.commit()
-        except Exception:
-            pass
-
-        try:
-            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {BAZIN_TARGET_SPREAD} REAL DEFAULT 3.0")
-            conn.commit()
-        except Exception:
-            pass
-
+        # Create other transactional and market reference tables
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS tracked_market_assets (
                 ticker TEXT PRIMARY KEY
@@ -104,11 +74,13 @@ class DatabaseManager:
             )
         ''')
 
-        # Pre-seed BBAS3 values if empty to keep out-of-the-box accuracy without Python hardcoding
+        # Pre-seed BBAS3 and BBDC3 values if empty to keep out-of-the-box accuracy without Python hardcoding
         cursor.execute("SELECT COUNT(*) FROM dividend_corrections")
         if cursor.fetchone()[0] == 0:
             cursor.execute("INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES ('BBAS3', 2023, 2.29)")
             cursor.execute("INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES ('BBAS3', 2024, 2.61)")
+            cursor.execute("INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES ('BBDC3', 2023, 1.54)")
+            cursor.execute("INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES ('BBDC3', 2024, 1.01)")
 
         conn.commit()
         conn.close()

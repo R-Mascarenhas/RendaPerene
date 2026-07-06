@@ -21,6 +21,11 @@ class SessionManager:
 
         # Load from Database on first run
         if 'db_loaded' not in st.session_state:
+            import sys
+            if getattr(sys, "frozen", False):
+                import threading
+                threading.Thread(target=monitor_active_sessions, daemon=True).start()
+
             config = SimulationService.get_configuration()
             if config:
                 try:
@@ -76,3 +81,107 @@ class SessionManager:
             st.session_state[SESSION_REQUIRED_CONTRIBUTION_CACHE] = 0.0
         if SESSION_CALCULATED_EQUITY_CACHE not in st.session_state:
             st.session_state[SESSION_CALCULATED_EQUITY_CACHE] = 0.0
+
+
+def monitor_active_sessions():
+    """Monitors active browser tab connections and cleanly stops the server runtime when all close."""
+    import time
+    import sys
+    import os
+    from streamlit.runtime import get_instance
+
+    try:
+        with open("session_debug.log", "a", encoding="utf-8") as log_file:
+            log_file.write(f"[{time.ctime()}] Monitor thread started.\n")
+    except Exception:
+        pass
+
+    # Grace period for the initial browser tab to load and connect
+    time.sleep(15)
+
+    has_had_session = False
+    zero_session_count = 0
+    while True:
+        time.sleep(5)
+        runtime = get_instance()
+        if runtime is None:
+            try:
+                with open("session_debug.log", "a", encoding="utf-8") as log_file:
+                    log_file.write(f"[{time.ctime()}] Runtime is None.\n")
+            except Exception:
+                pass
+            continue
+
+        session_count = 0
+        session_details = []
+        try:
+            # list_active_sessions() returns ActiveSessionInfo (Streamlit 1.18.0+)
+            sessions = runtime._session_mgr.list_active_sessions()
+            session_count = len(sessions)
+            try:
+                session_details = [s.session.id for s in sessions]
+            except Exception:
+                session_details = [str(s) for s in sessions]
+        except Exception as e:
+            try:
+                # list_sessions() is the older session info list (pre-1.18.0)
+                sessions = runtime._session_mgr.list_sessions()
+                session_count = len(sessions)
+                try:
+                    session_details = [s.id for s in sessions]
+                except Exception:
+                    session_details = [str(s) for s in sessions]
+            except Exception as e2:
+                try:
+                    with open("session_debug.log", "a", encoding="utf-8") as log_file:
+                        log_file.write(f"[{time.ctime()}] Exception listing sessions: {e} | {e2}\n")
+                except Exception:
+                    pass
+                continue
+
+        try:
+            with open("session_debug.log", "a", encoding="utf-8") as log_file:
+                log_file.write(f"[{time.ctime()}] Active sessions count: {session_count} | Sessions: {session_details} | Has had session: {has_had_session} | Zero count: {zero_session_count}\n")
+        except Exception:
+            pass
+
+        if session_count > 0:
+            has_had_session = True
+            zero_session_count = 0
+        else:
+            if has_had_session:
+                zero_session_count += 1
+
+        # Terminate cleanly after 2 consecutive checks with 0 active sessions (10s)
+        if has_had_session and zero_session_count >= 2:
+            try:
+                with open("session_debug.log", "a", encoding="utf-8") as log_file:
+                    log_file.write(f"[{time.ctime()}] Shutdown trigger fired! Exiting process.\n")
+            except Exception:
+                pass
+            if "pytest" in sys.modules:
+                runtime.stop()
+                break
+            else:
+                import os
+                os._exit(0)
+
+
+def get_app_version() -> str:
+    """Reads current application version from version.txt, supporting both dev and PyInstaller."""
+    import sys
+    import os
+    try:
+        # PyInstaller extracts resources to sys._MEIPASS at runtime
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.abspath(".")
+
+    version_path = os.path.join(base_path, "version.txt")
+    if os.path.exists(version_path):
+        try:
+            with open(version_path, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except Exception:
+            pass
+    return "0.0.0"

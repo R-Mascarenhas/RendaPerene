@@ -4,7 +4,7 @@ import sys
 import shutil
 import sqlite3
 
-# Força o PyInstaller a rastrear e embutir todo o grafo de dependências das bibliotecas do projeto
+# Force PyInstaller to index library dependencies in the executable bundle
 import streamlit as st
 import pandas as pd
 import yfinance as yf
@@ -14,22 +14,16 @@ import plotly
 import streamlit.web.cli as stcli
 
 def resolve_path(relative_path: str) -> str:
-    """
-    Resolve o caminho absoluto para recursos embutidos.
-    Funciona tanto em modo de desenvolvimento quanto congelado (PyInstaller).
-    """
+    """Resolves absolute path for packaged assets under PyInstaller or dev mode."""
     try:
-        # Quando executado de dentro de um binário PyInstaller,
-        # sys._MEIPASS aponta para a pasta temporária de descompactação.
+        # PyInstaller unpacks bundled resources to sys._MEIPASS at runtime
         base_path = sys._MEIPASS
     except AttributeError:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
 if __name__ == "__main__":
-    # Define o diretório de trabalho para onde o executável principal está localizado.
-    # ISSO É CRÍTICO para persistência local dos dados (database/portfolio.db e assets.csv).
-    # Caso contrário, arquivos seriam gravados na pasta temporária e deletados ao fechar.
+    # Ensure database and assets are persisted locally on the host, not in temporary unpacked paths
     if getattr(sys, "frozen", False):
         exe_dir = os.path.dirname(sys.executable)
     else:
@@ -37,11 +31,9 @@ if __name__ == "__main__":
     
     os.chdir(exe_dir)
     
-    # Cria a estrutura de pastas necessária para o banco de dados SQLite local
     os.makedirs("database", exist_ok=True)
     
-    # Auto-seeding: Se o arquivo assets.csv não existir localmente no PC do usuário,
-    # copia o catálogo padrão de +6000 ativos embutido dentro do executável para a pasta de uso dele.
+    # Copy fallback catalog assets.csv if not present locally
     local_assets_csv = "assets.csv"
     if not os.path.exists(local_assets_csv):
         try:
@@ -49,21 +41,20 @@ if __name__ == "__main__":
             if os.path.exists(bundled_assets_csv):
                 shutil.copy(bundled_assets_csv, local_assets_csv)
         except Exception as e:
-            sys.stderr.write(f"Erro ao inicializar arquivo assets.csv: {e}\n")
+            sys.stderr.write(f"Error initializing assets.csv: {e}\n")
 
-    # Resolve o caminho do script Streamlit principal (app.py) que está dentro do executável
     script_path = resolve_path("app.py")
 
-    # Configura os argumentos de linha de comando para inicializar o Streamlit programaticamente
+    # Configure command line arguments to run Streamlit in quiet offline mode
     sys.argv = [
         "streamlit",
         "run",
         script_path,
         "--global.developmentMode=false",
         "--server.port=8501",
-        "--server.headless=false",  # Abre automaticamente o navegador do usuário
-        "--server.showEmailPrompt=false",  # Ignora a pergunta de e-mail na primeira execução!
-        "--browser.gatherUsageStats=false"  # Desativa a coleta de telemetria
+        "--server.headless=false",
+        "--server.showEmailPrompt=false",
+        "--browser.gatherUsageStats=false"
     ]
     
     sys.exit(stcli.main())

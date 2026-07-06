@@ -1,26 +1,22 @@
 import streamlit as st
 import importlib
 from core.database import db
-from core.utils import SessionManager
+from core.utils import SessionManager, get_app_version
 
-# Initialize both local databases at root level
 db.init_personal_db()
 
-# Base Page Configuration
-st.set_page_config(page_title="Renda Perene", page_icon="💼", layout="wide")
+st.set_page_config(page_title=f"Renda Perene v{get_app_version()}", page_icon="💼", layout="wide")
 
-# Initialize global session state (must occur before rendering any View)
+# Session state must be initialized before rendering any view
 SessionManager.initialize()
 
-st.title("💼 Renda Perene")
+st.title(f"💼 Renda Perene v{get_app_version()}")
 
-# Import Views from Domains (SOLID compliant imports)
 from views.dashboard_view import DashboardView
 from views.assets_view import AssetsView
 from views.planning_view import PlanningView
 from core.strings import TAB_DASHBOARD, TAB_ASSETS, TAB_PLANNING
 
-# Create 3 main tabs using a premium native segmented control for isolated, lazy-loaded rendering (blazing fast and beautiful!)
 selected_tab = st.segmented_control(
     "Navegação Principal",
     options=[
@@ -35,7 +31,6 @@ selected_tab = st.segmented_control(
 if not selected_tab:
     selected_tab = TAB_DASHBOARD
 
-# Clean MVC Routing with strict isolation
 if selected_tab == TAB_DASHBOARD:
     DashboardView().render()
 elif selected_tab == TAB_ASSETS:

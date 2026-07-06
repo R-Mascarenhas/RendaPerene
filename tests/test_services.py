@@ -608,3 +608,71 @@ def test_views_static_market_data_methods_sanity():
                         f"FALHA: O arquivo {file_path} tenta chamar 'MarketData.{called_method}()', "
                         f"mas esse método não existe na classe MarketData! Métodos válidos: {valid_methods}"
                     )
+
+
+def test_get_app_version_sanity(monkeypatch, tmp_path):
+    """
+    Verifies that get_app_version() correctly reads version.txt from either
+    the standard folder or the PyInstaller sys._MEIPASS temporary directory.
+    """
+    from core.utils.session import get_app_version
+    import sys
+    import os
+
+    # Test 1: Standard environment (dev)
+    # Ensure it reads 'version.txt' from current directory
+    assert get_app_version() == "1.0.0"
+
+    # Test 2: PyInstaller environment (sys._MEIPASS mocked)
+    mock_meipass = str(tmp_path)
+    version_file = tmp_path / "version.txt"
+    version_file.write_text("2.3.4.5", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "_MEIPASS", mock_meipass, raising=False)
+    assert get_app_version() == "2.3.4.5"
+
+
+def test_monitor_active_sessions_stop_trigger(monkeypatch):
+    """
+    Verifies that monitor_active_sessions() cleanly stops the Streamlit runtime
+    when the active session count drops from positive to zero.
+    """
+    from core.utils.session import monitor_active_sessions
+    import time
+
+    # Mock time.sleep to return immediately so the test runs instantly
+    monkeypatch.setattr(time, "sleep", lambda x: None)
+
+    # Mock Streamlit Runtime and session manager
+    class MockSession:
+        def __init__(self, session_id):
+            self.id = session_id
+
+    class MockSessionManager:
+        def __init__(self):
+            # Start with 1 session, then drop to 0 on the second call
+            self.call_count = 0
+
+        def list_sessions(self):
+            self.call_count += 1
+            if self.call_count == 1:
+                return [MockSession("session_1")]
+            return [] # 0 sessions
+
+    class MockRuntime:
+        def __init__(self):
+            self._session_mgr = MockSessionManager()
+            self.stopped = False
+
+        def stop(self):
+            self.stopped = True
+
+    mock_runtime = MockRuntime()
+
+    # Mock get_instance to return our mocked Runtime
+    monkeypatch.setattr("streamlit.runtime.get_instance", lambda: mock_runtime)
+
+    # Run the monitor loop (it will terminate because runtime.stop() is called, breaking the loop)
+    monitor_active_sessions()
+
+    assert mock_runtime.stopped is True

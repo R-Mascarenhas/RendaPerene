@@ -766,3 +766,107 @@ def test_wagner_discrepancies_parser():
     assert df_positions.loc["IRBR3", "quantity"] == 200
     # Cost basis remains 19400 + 2000 = 21400. Average price adjusts to 21400 / 200 = 107.00
     assert round(df_positions.loc["IRBR3", "average_price"], 2) == 107.00
+
+
+def test_planning_custom_start_date(mock_db):
+    """
+    TDD Test to verify that when a planning_start_date is defined in the configuration,
+    the simulation disregards transactions before that date for total_invested and start_age_years.
+    """
+    # 1. Seed two transactions: one before and one after the custom start date
+    # BBAS3 buy before: 100 @ 30.00 on 2021-01-01 -> Invested: 3000
+    AssetService.add_transaction("BBAS3", "2021-01-01", "BUY", 100, 30.00)
+    # BBAS3 buy after: 50 @ 40.00 on 2024-05-15 -> Invested: 2000
+    AssetService.add_transaction("BBAS3", "2024-05-15", "BUY", 50, 40.00)
+
+    birth_date = datetime.date(1990, 1, 1)
+
+    # 2. Case A: Default simulation (no custom planning_start_date, planning_start_date is None)
+    # Should consider the earliest transaction: 2021-01-01.
+    # Total invested should be 3000 + 2000 = 5000.
+    SimulationService.save_configuration(
+        birth_date=birth_date.strftime("%Y-%m-%d"),
+        retirement_age=65,
+        desired_income_mw=10.0,
+        annual_interest_rate=6.0,
+        mw_value=1412.00,
+        initial_equity_input=0.0,
+        desired_income_type="MULTIPLIER",
+        desired_income_fixed=10000.0,
+        planning_start_date=None
+    )
+
+    sim_default = SimulationService.get_current_simulation()
+    assert sim_default is not None
+    assert sim_default["total_invested"] == 5000.0
+    # First investment age: from Jan 1990 to Jan 2021 is exactly 31 years (372 months)
+    assert sim_default["start_age_years"] == 31.0
+
+    # Assert historical evolution start month for default case (should be Jan 2021)
+    df_ev_default = AssetService.calculate_historical_evolution()
+    assert not df_ev_default.empty
+    assert df_ev_default.sort_values("month_str").iloc[0]["month_str"] == "2021-01"
+
+    # Assert get_monthly_contributions_by_year includes both years in default
+    df_contribs_default = AssetService.get_monthly_contributions_by_year()
+    assert "2021" in df_contribs_default["year"].values
+    assert "2024" in df_contribs_default["year"].values
+
+    # 3. Case B: Custom start date simulation (planning_start_date = "2024-01-01")
+    # Should disregard the 2021 transaction.
+    # Total invested should be only the 2024 transaction: 2000.0.
+    SimulationService.save_configuration(
+        birth_date=birth_date.strftime("%Y-%m-%d"),
+        retirement_age=65,
+        desired_income_mw=10.0,
+        annual_interest_rate=6.0,
+        mw_value=1412.00,
+        initial_equity_input=0.0,
+        desired_income_type="MULTIPLIER",
+        desired_income_fixed=10000.0,
+        planning_start_date="2024-01-01"
+    )
+
+    sim_custom = SimulationService.get_current_simulation()
+    assert sim_custom is not None
+    assert sim_custom["total_invested"] == 2000.0
+    # First investment age with custom start date: Jan 1990 to Jan 2024 is exactly 34 years
+    assert sim_custom["start_age_years"] == 34.0
+
+    # Assert historical evolution start month for custom start date case (should be Jan 2024)
+    df_ev_custom = AssetService.calculate_historical_evolution(start_date="2024-01-01")
+    assert not df_ev_custom.empty
+    assert df_ev_custom.sort_values("month_str").iloc[0]["month_str"] == "2024-01"
+
+    # Assert get_monthly_contributions_by_year only includes 2024
+    df_contribs_custom = AssetService.get_monthly_contributions_by_year(start_date="2024-01-01")
+    assert "2021" not in df_contribs_custom["year"].values
+    assert "2024" in df_contribs_custom["year"].values
+
+
+def test_views_and_widgets_import_integrity():
+    """
+    Quality gate test to verify that all major Streamlit view and widget classes
+    can be imported and parsed by the Python interpreter cleanly, avoiding NameError
+    or syntax regressions on constants/imports.
+    """
+    from views.components.projection_chart import ProjectionChartWidget
+    from views.components.charts import DashboardCharts
+    from views.components.annual_planning import AnnualPlanningWidget
+    from views.components.detailed_holdings import DetailedHoldingsWidget
+    from views.components.patrimony_summary import PatrimonySummaryWidget
+    from views.components.simulation_results import SimulationResultsWidget
+    from views.components.time_metrics import TimeMetricsWidget
+
+    from views.planning_view import PlanningView
+    from views.dashboard_view import DashboardView
+    from views.portfolio_view import PortfolioView
+    from views.operations_view import OperationsView
+    from views.assets_view import AssetsView
+    from views.market_view import MarketView
+
+    # Verify instantiations don't raise syntax/import-time failures
+    assert ProjectionChartWidget is not None
+    assert DashboardCharts is not None
+    assert PlanningView is not None
+    assert DashboardView is not None

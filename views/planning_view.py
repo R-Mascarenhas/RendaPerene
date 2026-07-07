@@ -17,7 +17,9 @@ from core.constants import (
     WIDGET_INCOME_FIXED,
     SIM_CURRENT_AGE, SIM_START_AGE_YEARS, SIM_TOTAL_TIME_MONTHS, SIM_REMAINING_TIME_MONTHS,
     SIM_TARGET_MONTHLY_INCOME, SIM_MONTHLY_INTEREST_RATE, SIM_TARGET_EQUITY,
-    SIM_REQUIRED_CONTRIBUTION, SIM_UPDATED_CONTRIBUTION, SIM_TOTAL_INVESTED
+    SIM_REQUIRED_CONTRIBUTION, SIM_UPDATED_CONTRIBUTION, SIM_TOTAL_INVESTED,
+    SESSION_PLANNING_START_DATE, SESSION_PLANNING_START_DATE_ENABLED,
+    WIDGET_PLANNING_START_DATE, WIDGET_PLANNING_START_DATE_ENABLED
 )
 from core.strings import (
     MSG_PLANNING_DESC, MSG_PLANNING_LOAD_ERROR, MSG_PLANNING_INVESTED_CAPITAL,
@@ -100,6 +102,16 @@ class PlanningView:
         st.session_state[SESSION_DESIRED_INCOME_TYPE] = "MULTIPLIER" if ui_type == "Multiplicador" else "FIXED"
         self._save_params()
 
+    def _on_planning_start_date_enabled_change(self):
+        """Syncs custom start date toggle back to core state and saves it."""
+        st.session_state[SESSION_PLANNING_START_DATE_ENABLED] = st.session_state[WIDGET_PLANNING_START_DATE_ENABLED]
+        self._save_params()
+
+    def _on_planning_start_date_change(self):
+        """Syncs custom start date back to core state and saves it."""
+        st.session_state[SESSION_PLANNING_START_DATE] = st.session_state[WIDGET_PLANNING_START_DATE]
+        self._save_params()
+
     def _save_params(self):
         """Callback to save the current session state parameters to the database."""
         core_birth_date = st.session_state[SESSION_BIRTH_DATE]
@@ -109,6 +121,12 @@ class PlanningView:
         desired_mw = float(st.session_state[SESSION_DESIRED_INCOME_MW])
         desired_fixed = float(st.session_state[SESSION_DESIRED_INCOME_FIXED])
 
+        start_date_str = None
+        if st.session_state.get(SESSION_PLANNING_START_DATE_ENABLED, False):
+            start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
+            if start_date_val:
+                start_date_str = start_date_val.strftime("%Y-%m-%d") if hasattr(start_date_val, 'strftime') else str(start_date_val)
+
         SimulationService.save_configuration(
             birth_str,
             st.session_state[SESSION_RETIREMENT_AGE],
@@ -117,7 +135,8 @@ class PlanningView:
             st.session_state[SESSION_MW_VALUE],
             0.0,
             desired_income_type=db_type,
-            desired_income_fixed=desired_fixed
+            desired_income_fixed=desired_fixed,
+            planning_start_date=start_date_str
         )
 
     def _render_life_parameters(self):
@@ -238,6 +257,30 @@ class PlanningView:
                                 st.error(MSG_BCB_FETCH_ERROR)
                         except Exception as e:
                             st.error(MSG_BCB_CONN_ERROR.format(e=e))
+
+        # Renders the custom start date parameters on a small second row
+        st.write("") # Spacer row
+        col_chk, col_date, _ = st.columns([2.0, 1.5, 2.5])
+        with col_chk:
+            st.write("") # Downward spacing
+            st.checkbox(
+                "Ignorar aportes anteriores a uma data específica",
+                value=st.session_state[SESSION_PLANNING_START_DATE_ENABLED],
+                key=WIDGET_PLANNING_START_DATE_ENABLED,
+                on_change=self._on_planning_start_date_enabled_change,
+                help="Útil se você deseja desconsiderar transações antigas (como day-trade antigo) e iniciar o planejamento a partir de uma data limpa."
+            )
+        with col_date:
+            if st.session_state.get(SESSION_PLANNING_START_DATE_ENABLED, False):
+                st.date_input(
+                    "Data de Início do Planejamento",
+                    value=st.session_state[SESSION_PLANNING_START_DATE],
+                    min_value=datetime.date(1990, 1, 1),
+                    max_value=datetime.date.today(),
+                    key=WIDGET_PLANNING_START_DATE,
+                    format="DD/MM/YYYY",
+                    on_change=self._on_planning_start_date_change
+                )
 
         return current_age, months_age
 

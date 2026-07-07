@@ -12,9 +12,11 @@ from core.strings import (
     MSG_REAL_VS_PLANNED_TITLE, MSG_REAL_VS_PLANNED_DESC
 )
 from core.constants import (
-    SIM_START_AGE_YEARS, SIM_REMAINING_TIME_MONTHS, PLANNED_DIVIDENDS, CUMULATIVE_DIVIDENDS,
-    SIM_UPDATED_CONTRIBUTION, SIM_TOTAL_INVESTED, SIM_MONTHLY_INTEREST_RATE, SIM_TARGET_EQUITY,
-    ANNUAL_INTEREST_RATE, MONTH_STR, MONTH_DISPLAY, CUMULATIVE_INVESTED, PLANNED_INVESTED
+    SIM_CURRENT_AGE, SIM_START_AGE_YEARS, SIM_TOTAL_TIME_MONTHS, SIM_REMAINING_TIME_MONTHS,
+    SIM_REQUIRED_CONTRIBUTION, SIM_UPDATED_CONTRIBUTION, SIM_TOTAL_INVESTED,
+    SIM_MONTHLY_INTEREST_RATE, SIM_TARGET_EQUITY,
+    ANNUAL_INTEREST_RATE, MONTH_STR, MONTH_DISPLAY, CUMULATIVE_INVESTED, PLANNED_INVESTED,
+    CUMULATIVE_DIVIDENDS, PLANNED_DIVIDENDS
 )
 
 class ProjectionChartWidget:
@@ -35,9 +37,9 @@ class ProjectionChartWidget:
         """Renders the cumulative long-term projection area chart with crossover markers."""
         df_projection = SimulationService.build_projection_dataframe(
             sim[SIM_START_AGE_YEARS],
-            sim[SIM_REMAINING_TIME_MONTHS],
-            sim[SIM_TOTAL_INVESTED],
-            sim[SIM_UPDATED_CONTRIBUTION],
+            sim[SIM_TOTAL_TIME_MONTHS],
+            0.0,
+            sim[SIM_REQUIRED_CONTRIBUTION],
             sim[SIM_MONTHLY_INTEREST_RATE],
             sim[SIM_TARGET_EQUITY]
         )
@@ -132,9 +134,9 @@ class ProjectionChartWidget:
         """Renders the constant out-of-pocket contribution vs growing passive interest monthly comparison chart."""
         df_cashflow = SimulationService.build_monthly_cashflow_dataframe(
             sim[SIM_START_AGE_YEARS],
-            sim[SIM_REMAINING_TIME_MONTHS],
-            sim[SIM_TOTAL_INVESTED],
-            sim[SIM_UPDATED_CONTRIBUTION],
+            sim[SIM_TOTAL_TIME_MONTHS],
+            0.0,
+            sim[SIM_REQUIRED_CONTRIBUTION],
             sim[SIM_MONTHLY_INTEREST_RATE]
         )
 

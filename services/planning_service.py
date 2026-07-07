@@ -5,7 +5,8 @@ from core.daos.planning_dao import PlanningDAO
 from core.constants import (
     BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
     MW_VALUE, INITIAL_EQUITY_INPUT, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED,
-    INCOME_TYPE_MULTIPLIER, BAZIN_TARGET_YIELD, BAZIN_TARGET_SPREAD, CEILING_MODEL_SELECTION
+    INCOME_TYPE_MULTIPLIER, BAZIN_TARGET_YIELD, BAZIN_TARGET_SPREAD, CEILING_MODEL_SELECTION,
+    PLANNING_START_DATE
 )
 from core.strings import MODEL_CLASSIC
 
@@ -18,20 +19,25 @@ class SimulationService:
         return PlanningDAO.get_configuration()
 
     @staticmethod
-    def save_configuration(birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type="MULTIPLIER", desired_income_fixed=10000.0, ceiling_model_selection="Bazin Clássico", bazin_target_yield=6.0, bazin_target_spread=3.0):
+    def save_configuration(birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type="MULTIPLIER", desired_income_fixed=10000.0, ceiling_model_selection="Bazin Clássico", bazin_target_yield=6.0, bazin_target_spread=3.0, planning_start_date=None):
         """Saves or updates the planning configuration in the database."""
         PlanningDAO.save_configuration(
             birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input,
-            desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread
+            desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread,
+            planning_start_date
         )
 
     @staticmethod
-    def get_initial_investment_age(birth_date):
+    def get_initial_investment_age(birth_date, config=None):
         """Returns the exact age in months when the first investment was made."""
-        min_date_str = PlanningDAO.get_min_transaction_date()
+        if config is not None and config.get(PLANNING_START_DATE) is not None:
+            min_date_str = config[PLANNING_START_DATE]
+        else:
+            min_date_str = PlanningDAO.get_min_transaction_date()
+
         start_date = datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
         
-        start_months_age = (start_date.year - birth_date.year) * 12 + start_date.month - birth_date.month - (start_date.day < start_date.day)
+        start_months_age = (start_date.year - birth_date.year) * 12 + start_date.month - birth_date.month - (start_date.day < birth_date.day)
         return start_months_age
 
     @staticmethod
@@ -62,7 +68,7 @@ class SimulationService:
         months_age = (today.year - birth_date.year) * 12 + today.month - birth_date.month - (today.day < birth_date.day)
         current_age = months_age / 12
         
-        start_months_age = SimulationService.get_initial_investment_age(birth_date)
+        start_months_age = SimulationService.get_initial_investment_age(birth_date, config)
         start_age_years = start_months_age / 12
         
         total_time_months = max(0, config[RETIREMENT_AGE] * 12 - start_months_age)
@@ -79,7 +85,7 @@ class SimulationService:
         target_equity = target_monthly_income / monthly_interest_rate if monthly_interest_rate > 0 else 0.0
         
         from services.assets_service import AssetService
-        df_pos = AssetService.calculate_positions()
+        df_pos = AssetService.calculate_positions(start_date=config.get(PLANNING_START_DATE))
         total_invested = float(df_pos['invested_amount'].sum()) if not df_pos.empty else 0.0
 
         required_monthly_contribution = SimulationService.pmt_annuity_due(
@@ -112,7 +118,8 @@ class SimulationService:
             "desired_income_mw": config[DESIRED_INCOME_MW],
             "desired_income_fixed": config[DESIRED_INCOME_FIXED],
             "desired_income_type": config[DESIRED_INCOME_TYPE],
-            "annual_interest_rate": config[ANNUAL_INTEREST_RATE]
+            "annual_interest_rate": config[ANNUAL_INTEREST_RATE],
+            "planning_start_date": config.get(PLANNING_START_DATE)
         }
 
     @staticmethod
@@ -215,7 +222,7 @@ class SimulationService:
     @staticmethod
     def get_projection_chart_dataset(extrapolation_months: int = 12) -> pd.DataFrame:
         """
-        Fetches historical portfolio evolution and prepares future extrapolation (trendlines,
+        Fetches historical portfolio portfolio evolution and prepares future extrapolation (trendlines,
         planned curves, etc.) for the comparative charts, returning a single display DataFrame.
         """
         from services.assets_service import AssetService
@@ -223,7 +230,9 @@ class SimulationService:
         from core.constants import MONTH_STR, CUMULATIVE_INVESTED, CUMULATIVE_DIVIDENDS, MONTH_DISPLAY
         from core.utils.trendlines import TrendlineCalculator, PolynomialTrendlineStrategy, LinearMomentumTrendlineStrategy
 
-        df_evolution = AssetService.calculate_historical_evolution()
+        config = SimulationService.get_configuration()
+        start_date_val = config.get(PLANNING_START_DATE) if config else None
+        df_evolution = AssetService.calculate_historical_evolution(start_date=start_date_val)
         if df_evolution.empty:
             return pd.DataFrame()
 

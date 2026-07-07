@@ -322,10 +322,10 @@ class AssetService:
         return cls._portfolio_repo.get_dividend_corrections(ticker)
 
     @classmethod
-    def calculate_positions(cls, today_date=None) -> pd.DataFrame:
+    def calculate_positions(cls, today_date=None, start_date=None) -> pd.DataFrame:
         """
         Consolidates active portfolio holdings, calculating average price (PM),
-        invested totals, and received dividends.
+        invested totals, and received dividends. Optional start_date filters out older transactions.
         """
         catalog = cls._market_data_api.load_assets_catalog()
 
@@ -336,6 +336,9 @@ class AssetService:
         ytd_limit = f"{today_date.year}-01-01"
 
         df_transactions = cls._portfolio_repo.get_all_transactions()
+        if start_date is not None:
+            df_transactions = df_transactions[df_transactions['date'] >= start_date]
+
         portfolio_state = {}
 
         from core.constants import (
@@ -392,7 +395,11 @@ class AssetService:
                 else:
                     name, asset_type, display_sector = f"Asset {ticker}", "Ação", "Outros"
 
-                total_dividends = cls._portfolio_repo.get_total_dividends_by_ticker(ticker)
+                if start_date is not None:
+                    total_dividends = cls._portfolio_repo.get_dividends_by_ticker_since_date(ticker, start_date)
+                else:
+                    total_dividends = cls._portfolio_repo.get_total_dividends_by_ticker(ticker)
+
                 l12m_dividends = cls._portfolio_repo.get_dividends_by_ticker_since_date(ticker, l12m_limit)
                 ytd_dividends = cls._portfolio_repo.get_dividends_by_ticker_since_date(ticker, ytd_limit)
 
@@ -412,21 +419,25 @@ class AssetService:
         return pd.DataFrame(active_assets)
 
     @classmethod
-    def calculate_historical_evolution(cls) -> pd.DataFrame:
+    def calculate_historical_evolution(cls, start_date=None) -> pd.DataFrame:
         """
         Consolidates a month-by-month chronological sequence of your portfolio evolution.
-        Ensures a seamless monthly series without gaps since the first transaction.
+        Ensures a seamless monthly series without gaps since the first transaction or custom start_date.
         """
         df_transactions = cls._portfolio_repo.get_all_transactions()
         df_dividends = cls._portfolio_repo.get_all_dividends()
-
-        if df_transactions.empty and df_dividends.empty:
-            return pd.DataFrame()
 
         from core.constants import (
             DATE, TRANSACTION_TYPE, QUANTITY, UNIT_PRICE, FEES, TOTAL_VALUE,
             MONTH_STR, NET_CASHFLOW, MONTHLY_DIVIDEND, CUMULATIVE_INVESTED, CUMULATIVE_DIVIDENDS
         )
+
+        if start_date is not None:
+            df_transactions = df_transactions[df_transactions[DATE] >= start_date]
+            df_dividends = df_dividends[df_dividends[DATE] >= start_date]
+
+        if df_transactions.empty and df_dividends.empty:
+            return pd.DataFrame()
 
         df_transactions[MONTH_STR] = df_transactions[DATE].str[:7]
         df_dividends[MONTH_STR] = df_dividends[DATE].str[:7]
@@ -441,22 +452,26 @@ class AssetService:
         monthly_t = df_transactions.groupby(MONTH_STR)[NET_CASHFLOW].sum().reset_index()
         monthly_d = df_dividends.groupby(MONTH_STR)[TOTAL_VALUE].sum().reset_index().rename(columns={TOTAL_VALUE: MONTHLY_DIVIDEND})
 
-        min_date_transactions = df_transactions[DATE].min() if not df_transactions.empty else None
-        min_date_dividends = df_dividends[DATE].min() if not df_dividends.empty else None
+        if start_date is not None:
+            start_date_str = start_date
+        else:
+            min_date_transactions = df_transactions[DATE].min() if not df_transactions.empty else None
+            min_date_dividends = df_dividends[DATE].min() if not df_dividends.empty else None
 
-        dates = [d for d in [min_date_transactions, min_date_dividends] if d is not None]
-        if not dates:
-            return pd.DataFrame()
+            dates = [d for d in [min_date_transactions, min_date_dividends] if d is not None]
+            if not dates:
+                return pd.DataFrame()
 
-        start_date_str = min(dates)
-        start_date = pd.to_datetime(start_date_str).replace(day=1)
+            start_date_str = min(dates)
+
+        start_date_dt = pd.to_datetime(start_date_str).replace(day=1)
         today = datetime.date.today()
 
-        date_range = pd.date_range(start=start_date, end=today, freq='MS')
+        date_range = pd.date_range(start=start_date_dt, end=today, freq='MS')
         all_months = date_range.strftime('%Y-%m').tolist()
 
         if not all_months:
-            all_months = [start_date.strftime('%Y-%m')]
+            all_months = [start_date_dt.strftime('%Y-%m')]
 
         timeline = pd.DataFrame({MONTH_STR: all_months})
         timeline = timeline.merge(monthly_t, on=MONTH_STR, how='left').fillna(0.0)
@@ -474,9 +489,11 @@ class AssetService:
         return cls._portfolio_repo.get_ytd_contributions_sum(limit_date)
 
     @classmethod
-    def get_monthly_contributions_by_year(cls) -> pd.DataFrame:
-        """Returns monthly contributions grouped by year for the bar chart."""
+    def get_monthly_contributions_by_year(cls, start_date=None) -> pd.DataFrame:
+        """Returns monthly contributions grouped by year for the bar chart. Optional start_date filters out older transactions."""
         df_transactions = cls._portfolio_repo.get_all_buy_transactions()
+        if start_date is not None:
+            df_transactions = df_transactions[df_transactions['date'] >= start_date]
         if df_transactions.empty:
             return pd.DataFrame()
 

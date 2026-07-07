@@ -37,6 +37,7 @@ MW_VALUE = "mw_value"
 INITIAL_EQUITY_INPUT = "initial_equity_input"
 DESIRED_INCOME_TYPE = "desired_income_type"
 DESIRED_INCOME_FIXED = "desired_income_fixed"
+PLANNING_START_DATE = "planning_start_date"
 
 # Planning Independence Income type enums
 INCOME_TYPE_MULTIPLIER = "MULTIPLIER"
@@ -107,6 +108,8 @@ SESSION_BAZIN_TARGET_YIELD = "bazin_target_yield"
 SESSION_BAZIN_TARGET_SPREAD = "bazin_target_spread"
 SESSION_REQUIRED_CONTRIBUTION_CACHE = "required_monthly_contribution_cache"
 SESSION_CALCULATED_EQUITY_CACHE = "calculated_equity_cache"
+SESSION_PLANNING_START_DATE = "planning_start_date"
+SESSION_PLANNING_START_DATE_ENABLED = "planning_start_date_enabled"
 
 # Streamlit Interactive Widget key constants (Safe Value-Binding Pattern keys)
 WIDGET_BIRTH_DATE = "birth_date_input"
@@ -118,6 +121,8 @@ WIDGET_INCOME_FIXED = "desired_income_fixed_input"
 WIDGET_CEILING_MODEL_SELECTOR = "ceiling_model_selection_selector"
 WIDGET_BAZIN_YIELD_INPUT = "bazin_target_yield_input"
 WIDGET_BAZIN_SPREAD_INPUT = "bazin_target_spread_input"
+WIDGET_PLANNING_START_DATE = "planning_start_date_input"
+WIDGET_PLANNING_START_DATE_ENABLED = "planning_start_date_enabled_input"
 
 WEIGHT_PCT = "weight_pct"
 CEILING_PRICE_GRID = "ceiling_price_grid"

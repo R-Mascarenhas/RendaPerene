@@ -7,7 +7,7 @@ from plotly.subplots import make_subplots
 from core.constants import (
     MONTHS_PT, TICKER, SECTOR, CURRENT_VALUE, INVESTED_AMOUNT, TOTAL_DIVIDENDS,
     MONTH_STR, MONTH_DISPLAY, CUMULATIVE_INVESTED, PLANNED_INVESTED, CUMULATIVE_DIVIDENDS,
-    PLANNED_DIVIDENDS, MONTHLY_DIVIDEND, ANNUAL_INTEREST_RATE
+    PLANNED_DIVIDENDS, MONTHLY_DIVIDEND, ANNUAL_INTEREST_RATE, PLANNING_START_DATE
 )
 from core.strings import (
     MSG_HISTORIC_EVOLUTION_TITLE, MSG_HISTORIC_CONTRIBUTIONS_TITLE,
@@ -74,7 +74,9 @@ class DashboardCharts:
 
     def _render_evolution_chart(self):
         st.markdown("---")
-        df_evolution = AssetService.calculate_historical_evolution()
+        config = SimulationService.get_configuration()
+        start_date = config.get(PLANNING_START_DATE) if config else None
+        df_evolution = AssetService.calculate_historical_evolution(start_date=start_date)
 
         if not df_evolution.empty:
             st.subheader(MSG_HISTORIC_EVOLUTION_TITLE)
@@ -83,7 +85,6 @@ class DashboardCharts:
             df_evolution[MONTH_DISPLAY] = df_evolution[MONTH_STR].apply(Formatter.format_month_year)
 
             # Pull dynamic values
-            config = SimulationService.get_configuration()
             if config:
                 annual_interest_rate_val = float(config[ANNUAL_INTEREST_RATE])
                 monthly_interest_rate = (1 + annual_interest_rate_val / 100) ** (1 / 12) - 1
@@ -184,7 +185,9 @@ class DashboardCharts:
 
     def _render_monthly_contributions_chart(self):
         st.markdown("---")
-        df_contribs = AssetService.get_monthly_contributions_by_year()
+        config = SimulationService.get_configuration()
+        start_date = config.get(PLANNING_START_DATE) if config else None
+        df_contribs = AssetService.get_monthly_contributions_by_year(start_date=start_date)
         if not df_contribs.empty:
             st.subheader(MSG_HISTORIC_CONTRIBUTIONS_TITLE)
 

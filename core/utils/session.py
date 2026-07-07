@@ -7,7 +7,8 @@ from core.constants import (
     SESSION_BIRTH_DATE, SESSION_RETIREMENT_AGE, SESSION_DESIRED_INCOME_MW, SESSION_ANNUAL_INTEREST_RATE,
     SESSION_MW_VALUE, SESSION_INITIAL_EQUITY, SESSION_DESIRED_INCOME_TYPE, SESSION_DESIRED_INCOME_FIXED,
     SESSION_CEILING_MODEL_SELECTION, SESSION_BAZIN_TARGET_YIELD, SESSION_BAZIN_TARGET_SPREAD,
-    SESSION_REQUIRED_CONTRIBUTION_CACHE, SESSION_CALCULATED_EQUITY_CACHE
+    SESSION_REQUIRED_CONTRIBUTION_CACHE, SESSION_CALCULATED_EQUITY_CACHE,
+    PLANNING_START_DATE, SESSION_PLANNING_START_DATE, SESSION_PLANNING_START_DATE_ENABLED
 )
 from core.strings import MODEL_CLASSIC
 
@@ -48,6 +49,22 @@ class SessionManager:
                 st.session_state[SESSION_CEILING_MODEL_SELECTION] = config.get(CEILING_MODEL_SELECTION, MODEL_CLASSIC)
                 st.session_state[SESSION_BAZIN_TARGET_YIELD] = float(config.get(BAZIN_TARGET_YIELD, 6.0))
                 st.session_state[SESSION_BAZIN_TARGET_SPREAD] = float(config.get(BAZIN_TARGET_SPREAD, 3.0))
+
+                # Load persistent Planning Start Date configuration
+                try:
+                    start_date_val = config.get(PLANNING_START_DATE)
+                    if start_date_val:
+                        if isinstance(start_date_val, str):
+                            st.session_state[SESSION_PLANNING_START_DATE] = datetime.datetime.strptime(start_date_val, "%Y-%m-%d").date()
+                        else:
+                            st.session_state[SESSION_PLANNING_START_DATE] = start_date_val
+                        st.session_state[SESSION_PLANNING_START_DATE_ENABLED] = True
+                    else:
+                        st.session_state[SESSION_PLANNING_START_DATE] = datetime.date.today()
+                        st.session_state[SESSION_PLANNING_START_DATE_ENABLED] = False
+                except Exception:
+                    st.session_state[SESSION_PLANNING_START_DATE] = datetime.date.today()
+                    st.session_state[SESSION_PLANNING_START_DATE_ENABLED] = False
             st.session_state.db_loaded = True
 
         # Fallback Defaults (Using protected constants to prevent Streamlit widget unmount deletions!)
@@ -75,6 +92,12 @@ class SessionManager:
             st.session_state[SESSION_BAZIN_TARGET_YIELD] = 6.0
         if SESSION_BAZIN_TARGET_SPREAD not in st.session_state:
             st.session_state[SESSION_BAZIN_TARGET_SPREAD] = 3.0
+
+        # Fallback Planning Start Date states
+        if SESSION_PLANNING_START_DATE not in st.session_state:
+            st.session_state[SESSION_PLANNING_START_DATE] = datetime.date.today()
+        if SESSION_PLANNING_START_DATE_ENABLED not in st.session_state:
+            st.session_state[SESSION_PLANNING_START_DATE_ENABLED] = False
 
         # UI Caches
         if SESSION_REQUIRED_CONTRIBUTION_CACHE not in st.session_state:

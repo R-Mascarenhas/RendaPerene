@@ -2,7 +2,8 @@ import sqlite3
 from core.constants import (
     BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
     MW_VALUE, INITIAL_EQUITY_INPUT, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED,
-    CEILING_MODEL_SELECTION, BAZIN_TARGET_YIELD, BAZIN_TARGET_SPREAD, INCOME_TYPE_MULTIPLIER
+    CEILING_MODEL_SELECTION, BAZIN_TARGET_YIELD, BAZIN_TARGET_SPREAD, INCOME_TYPE_MULTIPLIER,
+    PLANNING_START_DATE
 )
 
 from core.strings import MODEL_CLASSIC
@@ -54,9 +55,16 @@ class DatabaseManager:
                 {DESIRED_INCOME_FIXED} REAL DEFAULT 10000.0,
                 {CEILING_MODEL_SELECTION} TEXT DEFAULT '{MODEL_CLASSIC}',
                 {BAZIN_TARGET_YIELD} REAL DEFAULT 6.0,
-                {BAZIN_TARGET_SPREAD} REAL DEFAULT 3.0
+                {BAZIN_TARGET_SPREAD} REAL DEFAULT 3.0,
+                {PLANNING_START_DATE} TEXT DEFAULT NULL
             )
         ''')
+
+        # Run retrocompatibility schema migrations
+        try:
+            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {PLANNING_START_DATE} TEXT DEFAULT NULL")
+        except sqlite3.OperationalError:
+            pass
 
         # Create other transactional and market reference tables
         cursor.execute('''

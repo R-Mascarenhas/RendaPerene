@@ -2,7 +2,7 @@ from core.database import db
 from core.constants import (
     BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
     MW_VALUE, INITIAL_EQUITY_INPUT, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED,
-    CEILING_MODEL_SELECTION, BAZIN_TARGET_YIELD, BAZIN_TARGET_SPREAD
+    CEILING_MODEL_SELECTION, BAZIN_TARGET_YIELD, BAZIN_TARGET_SPREAD, PLANNING_START_DATE
 )
 
 class PlanningDAO:
@@ -17,7 +17,7 @@ class PlanningDAO:
             cursor.execute(f"""
                 SELECT {BIRTH_DATE}, {RETIREMENT_AGE}, {DESIRED_INCOME_MW}, {ANNUAL_INTEREST_RATE},
                        {MW_VALUE}, {INITIAL_EQUITY_INPUT}, {DESIRED_INCOME_TYPE}, {DESIRED_INCOME_FIXED},
-                       {CEILING_MODEL_SELECTION}, {BAZIN_TARGET_YIELD}, {BAZIN_TARGET_SPREAD}
+                       {CEILING_MODEL_SELECTION}, {BAZIN_TARGET_YIELD}, {BAZIN_TARGET_SPREAD}, {PLANNING_START_DATE}
                 FROM planning_configuration WHERE id = 1
             """)
             row = cursor.fetchone()
@@ -33,7 +33,8 @@ class PlanningDAO:
                     DESIRED_INCOME_FIXED: row[7] if row[7] is not None else 10000.0,
                     CEILING_MODEL_SELECTION: row[8] if row[8] else 'Bazin Clássico',
                     BAZIN_TARGET_YIELD: row[9] if row[9] is not None else 6.0,
-                    BAZIN_TARGET_SPREAD: row[10] if row[10] is not None else 3.0
+                    BAZIN_TARGET_SPREAD: row[10] if row[10] is not None else 3.0,
+                    PLANNING_START_DATE: row[11] if len(row) > 11 else None
                 }
             return None
         except Exception:
@@ -46,7 +47,7 @@ class PlanningDAO:
                            annual_interest_rate: float, mw_value: float, initial_equity_input: float,
                            desired_income_type: str = "MULTIPLIER", desired_income_fixed: float = 10000.0,
                            ceiling_model_selection: str = "Bazin Clássico", bazin_target_yield: float = 6.0,
-                           bazin_target_spread: float = 3.0) -> None:
+                           bazin_target_spread: float = 3.0, planning_start_date: str = None) -> None:
         """Saves or updates the planning configuration in the database."""
         conn = db.get_personal_connection()
         cursor = conn.cursor()
@@ -57,19 +58,22 @@ class PlanningDAO:
                     UPDATE planning_configuration
                     SET {BIRTH_DATE} = ?, {RETIREMENT_AGE} = ?, {DESIRED_INCOME_MW} = ?, {ANNUAL_INTEREST_RATE} = ?,
                         {MW_VALUE} = ?, {INITIAL_EQUITY_INPUT} = ?, {DESIRED_INCOME_TYPE} = ?, {DESIRED_INCOME_FIXED} = ?,
-                        {CEILING_MODEL_SELECTION} = ?, {BAZIN_TARGET_YIELD} = ?, {BAZIN_TARGET_SPREAD} = ?
+                        {CEILING_MODEL_SELECTION} = ?, {BAZIN_TARGET_YIELD} = ?, {BAZIN_TARGET_SPREAD} = ?,
+                        {PLANNING_START_DATE} = ?
                     WHERE id = 1
                 ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input,
-                      desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread))
+                      desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread,
+                      planning_start_date))
             else:
                 cursor.execute(f'''
                     INSERT INTO planning_configuration
                     (id, {BIRTH_DATE}, {RETIREMENT_AGE}, {DESIRED_INCOME_MW}, {ANNUAL_INTEREST_RATE},
                      {MW_VALUE}, {INITIAL_EQUITY_INPUT}, {DESIRED_INCOME_TYPE}, {DESIRED_INCOME_FIXED},
-                     {CEILING_MODEL_SELECTION}, {BAZIN_TARGET_YIELD}, {BAZIN_TARGET_SPREAD})
-                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     {CEILING_MODEL_SELECTION}, {BAZIN_TARGET_YIELD}, {BAZIN_TARGET_SPREAD}, {PLANNING_START_DATE})
+                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input,
-                      desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread))
+                      desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread,
+                      planning_start_date))
             conn.commit()
         finally:
             conn.close()

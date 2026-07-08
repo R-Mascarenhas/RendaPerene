@@ -123,6 +123,7 @@ WIDGET_BAZIN_YIELD_INPUT = "bazin_target_yield_input"
 WIDGET_BAZIN_SPREAD_INPUT = "bazin_target_spread_input"
 WIDGET_PLANNING_START_DATE = "planning_start_date_input"
 WIDGET_PLANNING_START_DATE_ENABLED = "planning_start_date_enabled_input"
+WIDGET_INITIAL_EQUITY = "initial_equity_input_widget"
 
 WEIGHT_PCT = "weight_pct"
 CEILING_PRICE_GRID = "ceiling_price_grid"

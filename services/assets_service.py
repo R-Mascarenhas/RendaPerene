@@ -167,7 +167,7 @@ class AssetService:
     @classmethod
     def get_asset_dividends_detailed(cls, ticker: str) -> pd.DataFrame:
         """
-        Returns all dividend receipts for a specific asset, pre-calculating the 
+        Returns all dividend receipts for a specific asset, pre-calculating the
         exact unit value owned on each receipt date.
         """
         df_div = cls._portfolio_repo.get_dividends_by_ticker(ticker)
@@ -193,7 +193,7 @@ class AssetService:
     @classmethod
     def get_annual_dividends_metrics(cls, ticker: str, chosen_year: str, df_div: pd.DataFrame) -> dict:
         """
-        Calculates annual dividend metrics including total paid per share and 
+        Calculates annual dividend metrics including total paid per share and
         end of year/previous year quantities for comparison.
         """
         total_paid_per_share = 0.0
@@ -320,6 +320,33 @@ class AssetService:
     def get_dividend_corrections(cls, ticker: str) -> dict:
         """Returns all custom dividend corrections registered for a specific ticker."""
         return cls._portfolio_repo.get_dividend_corrections(ticker)
+
+    @classmethod
+    def calculate_prior_invested_amount(cls, start_date) -> float:
+        """Calculates the net sum of all transactions prior to start_date, bounded to >= 0."""
+        if start_date is None:
+            return 0.0
+        df_all_tx = cls._portfolio_repo.get_all_transactions()
+        if df_all_tx.empty:
+            return 0.0
+
+        df_prev_tx = df_all_tx[df_all_tx['date'] < start_date]
+        if df_prev_tx.empty:
+            return 0.0
+
+        from core.constants import TRANSACTION_TYPE, QUANTITY, UNIT_PRICE, FEES
+        prior_amount = 0.0
+        for _, row in df_prev_tx.iterrows():
+            txn_type = row[TRANSACTION_TYPE]
+            qty = row[QUANTITY]
+            price = row[UNIT_PRICE]
+            fees = row[FEES]
+            if txn_type == 'BUY':
+                prior_amount += (qty * price + fees)
+            elif txn_type == 'SELL':
+                prior_amount -= (qty * price - fees)
+
+        return max(0.0, prior_amount)
 
     @classmethod
     def calculate_positions(cls, today_date=None, start_date=None) -> pd.DataFrame:
@@ -474,8 +501,10 @@ class AssetService:
             all_months = [start_date_dt.strftime('%Y-%m')]
 
         timeline = pd.DataFrame({MONTH_STR: all_months})
-        timeline = timeline.merge(monthly_t, on=MONTH_STR, how='left').fillna(0.0)
-        timeline = timeline.merge(monthly_d, on=MONTH_STR, how='left').fillna(0.0)
+        timeline = timeline.merge(monthly_t, on=MONTH_STR, how='left')
+        timeline[NET_CASHFLOW] = pd.to_numeric(timeline[NET_CASHFLOW], errors='coerce').fillna(0.0)
+        timeline = timeline.merge(monthly_d, on=MONTH_STR, how='left')
+        timeline[MONTHLY_DIVIDEND] = pd.to_numeric(timeline[MONTHLY_DIVIDEND], errors='coerce').fillna(0.0)
 
         timeline[CUMULATIVE_INVESTED] = timeline[NET_CASHFLOW].cumsum()
         timeline[CUMULATIVE_DIVIDENDS] = timeline[MONTHLY_DIVIDEND].cumsum()
@@ -632,7 +661,7 @@ class AssetService:
     @classmethod
     def get_detailed_holdings_dataframe(cls, df_positions: pd.DataFrame, target_yield: float) -> tuple[pd.DataFrame, dict]:
         """
-        Calculates detailed holding metrics, retrieves Bazin ceilings, 
+        Calculates detailed holding metrics, retrieves Bazin ceilings,
         and compiles a structured, pre-formatted display DataFrame ready for the view.
         """
         from core.constants import (

@@ -12,7 +12,7 @@ from views.components.projection_chart import ProjectionChartWidget
 from core.constants import (
     SESSION_BIRTH_DATE, SESSION_RETIREMENT_AGE, SESSION_DESIRED_INCOME_MW, SESSION_ANNUAL_INTEREST_RATE,
     SESSION_MW_VALUE, SESSION_DESIRED_INCOME_TYPE, SESSION_DESIRED_INCOME_FIXED,
-    SESSION_REQUIRED_CONTRIBUTION_CACHE,
+    SESSION_REQUIRED_CONTRIBUTION_CACHE, SESSION_INITIAL_EQUITY,
     WIDGET_BIRTH_DATE, WIDGET_RETIREMENT_AGE, WIDGET_INTEREST_RATE, WIDGET_INCOME_TYPE, WIDGET_INCOME_MW,
     WIDGET_INCOME_FIXED,
     SIM_CURRENT_AGE, SIM_START_AGE_YEARS, SIM_TOTAL_TIME_MONTHS, SIM_REMAINING_TIME_MONTHS,
@@ -24,7 +24,8 @@ from core.constants import (
 from core.strings import (
     MSG_PLANNING_DESC, MSG_PLANNING_LOAD_ERROR, MSG_PLANNING_INVESTED_CAPITAL,
     MSG_PLANNING_LIFE_PARAMS, MSG_UPDATE_MW_BTN, MSG_BCB_FETCH_ERROR, MSG_BCB_CONN_ERROR,
-    HELP_PLANNING_AUTOMATED, HELP_INCOME_MULTIPLIER, HELP_UPDATE_MW
+    HELP_PLANNING_AUTOMATED, HELP_INCOME_MULTIPLIER, HELP_UPDATE_MW,
+    HELP_PLANNING_START_DATE_ENABLED, HELP_INITIAL_EQUITY_INPUT_DYNAMIC
 )
 
 class PlanningView:
@@ -104,12 +105,38 @@ class PlanningView:
 
     def _on_planning_start_date_enabled_change(self):
         """Syncs custom start date toggle back to core state and saves it."""
-        st.session_state[SESSION_PLANNING_START_DATE_ENABLED] = st.session_state[WIDGET_PLANNING_START_DATE_ENABLED]
+        enabled = st.session_state[WIDGET_PLANNING_START_DATE_ENABLED]
+        st.session_state[SESSION_PLANNING_START_DATE_ENABLED] = enabled
+        if enabled:
+            current_initial = float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0))
+            if current_initial == 0.0:
+                from services.assets_service import AssetService
+                start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
+                start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
+                computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
+                st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
         self._save_params()
+        st.rerun()
 
     def _on_planning_start_date_change(self):
         """Syncs custom start date back to core state and saves it."""
-        st.session_state[SESSION_PLANNING_START_DATE] = st.session_state[WIDGET_PLANNING_START_DATE]
+        start_date_val = st.session_state[WIDGET_PLANNING_START_DATE]
+        st.session_state[SESSION_PLANNING_START_DATE] = start_date_val
+
+        current_initial = float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0))
+        if current_initial == 0.0:
+            from services.assets_service import AssetService
+            new_start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
+            computed_initial = AssetService.calculate_prior_invested_amount(new_start_date_str)
+            st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
+        self._save_params()
+        st.rerun()
+
+    def _on_initial_equity_change(self):
+        """Syncs the initial equity input back to core state and saves it."""
+        dynamic_key = f"initial_equity_widget_{st.session_state[SESSION_INITIAL_EQUITY]}"
+        if dynamic_key in st.session_state:
+            st.session_state[SESSION_INITIAL_EQUITY] = float(st.session_state[dynamic_key])
         self._save_params()
 
     def _save_params(self):
@@ -133,7 +160,7 @@ class PlanningView:
             desired_mw,
             st.session_state[SESSION_ANNUAL_INTEREST_RATE],
             st.session_state[SESSION_MW_VALUE],
-            0.0,
+            float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0)),
             desired_income_type=db_type,
             desired_income_fixed=desired_fixed,
             planning_start_date=start_date_str
@@ -260,7 +287,7 @@ class PlanningView:
 
         # Renders the custom start date parameters on a small second row
         st.write("") # Spacer row
-        col_chk, col_date, _ = st.columns([2.0, 1.5, 2.5])
+        col_chk, col_date, col_initial, _ = st.columns([2.0, 1.5, 1.5, 1.0])
         with col_chk:
             st.write("") # Downward spacing
             st.checkbox(
@@ -268,18 +295,34 @@ class PlanningView:
                 value=st.session_state[SESSION_PLANNING_START_DATE_ENABLED],
                 key=WIDGET_PLANNING_START_DATE_ENABLED,
                 on_change=self._on_planning_start_date_enabled_change,
-                help="Útil se você deseja desconsiderar transações antigas (como day-trade antigo) e iniciar o planejamento a partir de uma data limpa."
+                help=HELP_PLANNING_START_DATE_ENABLED
             )
         with col_date:
             if st.session_state.get(SESSION_PLANNING_START_DATE_ENABLED, False):
                 st.date_input(
                     "Data de Início do Planejamento",
                     value=st.session_state[SESSION_PLANNING_START_DATE],
-                    min_value=datetime.date(1990, 1, 1),
+                    min_value=datetime.date(1930, 1, 1),
                     max_value=datetime.date.today(),
                     key=WIDGET_PLANNING_START_DATE,
                     format="DD/MM/YYYY",
                     on_change=self._on_planning_start_date_change
+                )
+        with col_initial:
+            if st.session_state.get(SESSION_PLANNING_START_DATE_ENABLED, False):
+                from services.assets_service import AssetService
+                start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
+                start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
+                computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
+                st.number_input(
+                    "Patrimônio Inicial (R$)",
+                    min_value=0.0,
+                    max_value=10_000_000.0,
+                    value=float(st.session_state[SESSION_INITIAL_EQUITY]),
+                    key=f"initial_equity_widget_{st.session_state[SESSION_INITIAL_EQUITY]}",
+                    step=1000.0,
+                    on_change=self._on_initial_equity_change,
+                    help=HELP_INITIAL_EQUITY_INPUT_DYNAMIC.format(value=Formatter.format_currency(computed_initial))
                 )
 
         return current_age, months_age

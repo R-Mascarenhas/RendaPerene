@@ -565,7 +565,7 @@ def test_market_data_bcb_indicators_sanity():
     compile, handle cache clearings, and return valid positive financial indicators.
     """
     from core.utils.market_data import MarketData
-    
+
     MarketData.get_current_ipca_l12m.clear()
     ipca_val = MarketData.get_current_ipca_l12m()
     assert isinstance(ipca_val, float)
@@ -584,16 +584,16 @@ def test_views_static_market_data_methods_sanity():
     """
     import re
     from core.utils.market_data import MarketData
-    
+
     # 1. Dynamically retrieve all public/callable method names from MarketData
     valid_methods = {name for name in dir(MarketData) if not name.startswith("_")}
-    
+
     # 2. Setup regex to capture 'MarketData.some_method' calls
     call_pattern = re.compile(r"MarketData\.([a-zA-Z0-9_]+)")
-    
+
     views_dir = "views"
     assert os.path.exists(views_dir)
-    
+
     # Traverse views directory
     for root, dirs, files in os.walk(views_dir):
         for file_name in files:
@@ -601,7 +601,7 @@ def test_views_static_market_data_methods_sanity():
                 file_path = os.path.join(root, file_name)
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
-                    
+
                 matches = call_pattern.findall(content)
                 for called_method in matches:
                     assert called_method in valid_methods, (
@@ -829,6 +829,7 @@ def test_planning_custom_start_date(mock_db):
 
     sim_custom = SimulationService.get_current_simulation()
     assert sim_custom is not None
+    # total_invested represents transactions after start date (2000.0) + initial_equity_input (0.0) = 2000.0
     assert sim_custom["total_invested"] == 2000.0
     # First investment age with custom start date: Jan 1990 to Jan 2024 is exactly 34 years
     assert sim_custom["start_age_years"] == 34.0
@@ -870,3 +871,103 @@ def test_views_and_widgets_import_integrity():
     assert DashboardCharts is not None
     assert PlanningView is not None
     assert DashboardView is not None
+
+
+def test_planning_initial_equity_integration(mock_db):
+    """
+    TDD Test to verify that when a planning_start_date is defined,
+    the initial equity can be pre-populated from prior transactions and overridden manually.
+    """
+    birth_date = datetime.date(1990, 1, 1)
+
+    # BBAS3 buy before: 100 @ 30.00 on 2021-01-01 -> Invested: 3000
+    AssetService.add_transaction("BBAS3", "2021-01-01", "BUY", 100, 30.00)
+    # BBAS3 buy after: 50 @ 40.00 on 2024-05-15 -> Invested: 2000
+    AssetService.add_transaction("BBAS3", "2024-05-15", "BUY", 50, 40.00)
+
+    # 1. Verify that calculate_prior_invested_amount works correctly standalone
+    computed_prior = AssetService.calculate_prior_invested_amount("2024-01-01")
+    assert computed_prior == 3000.0
+
+    # 2. Save config with custom start date "2024-01-01" and the computed_prior (pre-population scenario)
+    SimulationService.save_configuration(
+        birth_date=birth_date.strftime("%Y-%m-%d"),
+        retirement_age=65,
+        desired_income_mw=10.0,
+        annual_interest_rate=6.0,
+        mw_value=1412.00,
+        initial_equity_input=computed_prior,
+        desired_income_type="MULTIPLIER",
+        desired_income_fixed=10000.0,
+        planning_start_date="2024-01-01"
+    )
+
+    sim = SimulationService.get_current_simulation()
+    assert sim is not None
+    assert sim["initial_equity_input"] == 3000.0
+    assert sim["total_invested"] == 5000.0 # 2000 + 3000
+
+    # 3. Save config with custom start date "2024-01-01" and a manual override (e.g., 10000.0)
+    SimulationService.save_configuration(
+        birth_date=birth_date.strftime("%Y-%m-%d"),
+        retirement_age=65,
+        desired_income_mw=10.0,
+        annual_interest_rate=6.0,
+        mw_value=1412.00,
+        initial_equity_input=10000.0,
+        desired_income_type="MULTIPLIER",
+        desired_income_fixed=10000.0,
+        planning_start_date="2024-01-01"
+    )
+
+    sim_override = SimulationService.get_current_simulation()
+    assert sim_override is not None
+    assert sim_override["initial_equity_input"] == 10000.0
+    assert sim_override["total_invested"] == 12000.0 # 2000 + 10000
+
+
+def test_planning_view_start_date_change_callback(mock_db, monkeypatch):
+    """
+    Verifies that PlanningView._on_planning_start_date_change correctly syncs state,
+    calculates prior invested amount, and runs without a NameError.
+    """
+    import streamlit as st
+    from views.planning_view import PlanningView
+    from core.constants import (
+        SESSION_BIRTH_DATE, SESSION_RETIREMENT_AGE, SESSION_DESIRED_INCOME_MW,
+        SESSION_ANNUAL_INTEREST_RATE, SESSION_MW_VALUE, SESSION_DESIRED_INCOME_TYPE,
+        SESSION_DESIRED_INCOME_FIXED, SESSION_INITIAL_EQUITY, SESSION_PLANNING_START_DATE,
+        WIDGET_PLANNING_START_DATE, SESSION_PLANNING_START_DATE_ENABLED
+    )
+
+    # Mock st.session_state as a standard dict with all required initial keys
+    mock_session = {
+        SESSION_BIRTH_DATE: datetime.date(1990, 1, 1),
+        SESSION_RETIREMENT_AGE: 65,
+        SESSION_DESIRED_INCOME_MW: 10.0,
+        SESSION_ANNUAL_INTEREST_RATE: 6.0,
+        SESSION_MW_VALUE: 1412.00,
+        SESSION_DESIRED_INCOME_TYPE: "MULTIPLIER",
+        SESSION_DESIRED_INCOME_FIXED: 10000.0,
+        SESSION_INITIAL_EQUITY: 0.0,
+        SESSION_PLANNING_START_DATE: datetime.date(2024, 1, 1),
+        SESSION_PLANNING_START_DATE_ENABLED: True,
+        WIDGET_PLANNING_START_DATE: datetime.date(2024, 1, 1),
+    }
+
+    monkeypatch.setattr(st, "session_state", mock_session)
+
+    # Mock st.rerun to be a no-op
+    monkeypatch.setattr(st, "rerun", lambda: None)
+
+    # Add transaction in database prior to custom start date to verify computed_initial calculation
+    from services.assets_service import AssetService
+    AssetService.add_transaction("BBAS3", "2021-01-01", "BUY", 100, 30.00)
+
+    # Instantiate view and trigger callback
+    view = PlanningView()
+    view._on_planning_start_date_change()
+
+    # Assertions
+    assert st.session_state[SESSION_PLANNING_START_DATE] == datetime.date(2024, 1, 1)
+    assert st.session_state[SESSION_INITIAL_EQUITY] == 3000.0

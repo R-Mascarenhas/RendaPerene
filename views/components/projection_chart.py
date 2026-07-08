@@ -35,10 +35,11 @@ class ProjectionChartWidget:
 
     def _render_cumulative_projection(self, sim, container):
         """Renders the cumulative long-term projection area chart with crossover markers."""
+        initial_equity = sim.get("initial_equity_input", 0.0) or sim.get(SIM_TOTAL_INVESTED, 0.0)
         df_projection = SimulationService.build_projection_dataframe(
             sim[SIM_START_AGE_YEARS],
             sim[SIM_TOTAL_TIME_MONTHS],
-            0.0,
+            initial_equity,
             sim[SIM_REQUIRED_CONTRIBUTION],
             sim[SIM_MONTHLY_INTEREST_RATE],
             sim[SIM_TARGET_EQUITY]
@@ -132,10 +133,11 @@ class ProjectionChartWidget:
 
     def _render_monthly_comparison(self, sim, container):
         """Renders the constant out-of-pocket contribution vs growing passive interest monthly comparison chart."""
+        initial_equity = sim.get("initial_equity_input", 0.0) or sim.get(SIM_TOTAL_INVESTED, 0.0)
         df_cashflow = SimulationService.build_monthly_cashflow_dataframe(
             sim[SIM_START_AGE_YEARS],
             sim[SIM_TOTAL_TIME_MONTHS],
-            0.0,
+            initial_equity,
             sim[SIM_REQUIRED_CONTRIBUTION],
             sim[SIM_MONTHLY_INTEREST_RATE]
         )

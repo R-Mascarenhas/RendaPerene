@@ -84,6 +84,8 @@ MSG_SIMULATION_RESULTS_TITLE = "🎯 Resultados da Simulação"
 MSG_INVESTMENT_TIMEFRAMES_TITLE = "⏳ Prazos de Investimentos"
 
 # Help Tooltips
+HELP_PLANNING_START_DATE_ENABLED = "Útil se você deseja desconsiderar transações antigas (como day-trade antigo) e iniciar o planejamento a partir de uma data limpa."
+HELP_INITIAL_EQUITY_INPUT_DYNAMIC = "Valor calculado das suas transações da B3 anteriores à data selecionada: **{value}**.\nVocê pode alterar esse campo se desejar ajustar manualmente (ex: para incluir renda fixa ou outros ativos)."
 HELP_MARKET_MONITOR_SEARCH = "Digite para buscar e autocompletar ativos válidos por ticker ou nome da empresa cadastrados no assets.csv"
 HELP_OPS_SEARCH = "Digite para buscar pelo ticker ou por qualquer parte do nome da empresa cadastrada no assets.csv"
 HELP_PLANNING_AUTOMATED = "Calculado de forma automatizada a partir do seu histórico de compras na B3"

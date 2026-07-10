@@ -971,3 +971,49 @@ def test_planning_view_start_date_change_callback(mock_db, monkeypatch):
     # Assertions
     assert st.session_state[SESSION_PLANNING_START_DATE] == datetime.date(2024, 1, 1)
     assert st.session_state[SESSION_INITIAL_EQUITY] == 3000.0
+
+
+def test_projection_chart_does_not_override_zero_initial_equity(mock_db):
+    """
+    Verifies that when initial_equity_input is exactly 0.0, but total_invested is greater than 0.0,
+    the projection and monthly cashflow dataframes are built using 0.0 and not overridden by total_invested.
+    """
+    from services.planning_service import SimulationService
+    from services.assets_service import AssetService
+
+    # 1. Add some active holdings so that total_invested > 0
+    AssetService.add_transaction("BBAS3", "2024-05-15", "BUY", 50, 40.00) # Invested: 2000.00
+
+    # 2. Save configuration with planning start date, but initial_equity_input as 0.0
+    SimulationService.save_configuration(
+        birth_date="1990-01-01",
+        retirement_age=65,
+        desired_income_mw=10.0,
+        annual_interest_rate=6.0,
+        mw_value=1412.00,
+        initial_equity_input=0.0,
+        desired_income_type="MULTIPLIER",
+        desired_income_fixed=10000.0,
+        planning_start_date="2024-01-01"
+    )
+
+    sim = SimulationService.get_current_simulation()
+    assert sim is not None
+    assert sim["initial_equity_input"] == 0.0
+    assert sim["total_invested"] == 2000.0 # 2000.0 from holdings + 0.0 initial_equity_input
+
+    # 3. Test that build_projection_dataframe correctly uses 0.0 as initial_equity
+    df_projection = SimulationService.build_projection_dataframe(
+        sim["current_age"],
+        sim["total_time_months"],
+        sim["initial_equity_input"],
+        sim["required_monthly_contribution"],
+        sim["monthly_interest_rate"],
+        sim["target_equity"]
+    )
+
+    assert not df_projection.empty
+    first_month_invested = df_projection.iloc[0]["Valor Aportado Acumulado"]
+    expected_first_month = 0.0 + sim["required_monthly_contribution"]
+    assert abs(first_month_invested - expected_first_month) < 1e-5
+

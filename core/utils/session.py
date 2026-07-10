@@ -95,7 +95,7 @@ class SessionManager:
 
         # Fallback Planning Start Date states
         if SESSION_PLANNING_START_DATE not in st.session_state:
-            st.session_state[SESSION_PLANNING_START_DATE] = datetime.date.today()
+            st.session_state[SESSION_PLANNING_START_DATE] = datetime.datetime.strptime(start_date_val, "%Y-%m-%d").date()
         if SESSION_PLANNING_START_DATE_ENABLED not in st.session_state:
             st.session_state[SESSION_PLANNING_START_DATE_ENABLED] = False
 

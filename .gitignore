@@ -9,6 +9,7 @@ __pycache__/
 
 # Databases (Sensitive / Local)
 *.db
+!database/portfolio_demo.db
 
 # Spreadsheets (Sensitive)
 *.ods

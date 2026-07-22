@@ -10,6 +10,16 @@ st.set_page_config(page_title=f"Renda Perene v{get_app_version()}", page_icon="�
 # Session state must be initialized before rendering any view
 SessionManager.initialize()
 
+import os
+# Detect if running in public shared cloud environments
+is_cloud = (
+    "STREAMLIT_SHARING_MODE" in os.environ or
+    os.path.abspath(".").startswith("/mount") or
+    "/mount/" in os.path.abspath(".")
+)
+if is_cloud:
+    st.warning("⚠️ **Ambiente de Demonstração Interativa:** Os dados financeiros exibidos são fictícios e criados para fins de testes. Sinta-se livre para alterar, simular e importar dados; suas alterações serão isoladas de outros usuários e redefinidas ao atualizar a página.")
+
 st.title(f"💼 Renda Perene v{get_app_version()}")
 
 from views.dashboard_view import DashboardView

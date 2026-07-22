@@ -97,6 +97,7 @@ class DatabaseManager:
         """Returns a new connection to the personal transactional database, isolating sessions in cloud demo mode."""
         import os
         import sqlite3
+        import shutil
 
         db_file = self.personal_db
         try:
@@ -112,6 +113,13 @@ class DatabaseManager:
                     import uuid
                     st.session_state["session_id"] = str(uuid.uuid4())
                 db_file = f"database/portfolio_{st.session_state['session_id']}.db"
+
+                # If the guest DB does not exist yet, clone the demo db
+                if not os.path.exists(db_file):
+                    os.makedirs(os.path.dirname(db_file), exist_ok=True)
+                    demo_template = "database/portfolio_demo.db"
+                    if os.path.exists(demo_template):
+                        shutil.copy(demo_template, db_file)
         except Exception:
             pass
 

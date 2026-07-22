@@ -95,6 +95,8 @@ class DatabaseManager:
 
     def get_personal_connection(self):
         """Returns a new connection to the personal transactional database."""
+        import os
+        os.makedirs(os.path.dirname(self.personal_db), exist_ok=True)
         return sqlite3.connect(self.personal_db)
 
 # Global Singleton instance for the app

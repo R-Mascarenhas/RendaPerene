@@ -1017,3 +1017,53 @@ def test_projection_chart_does_not_override_zero_initial_equity(mock_db):
     expected_first_month = 0.0 + sim["required_monthly_contribution"]
     assert abs(first_month_invested - expected_first_month) < 1e-5
 
+
+def test_session_manager_initialization_on_empty_database(mock_db, monkeypatch):
+    """
+    Ensures that SessionManager.initialize() can run on a completely fresh,
+    empty database without crashing due to NameErrors (such as uninitialized start_date_val).
+    """
+    import streamlit as st
+    from core.utils.session import SessionManager
+
+    # 1. Clear database configuration to simulate a fresh install/deploy
+    conn = db.get_personal_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM planning_configuration")
+    conn.commit()
+    conn.close()
+
+    # 2. Mock st.session_state using a dict that supports attribute access
+    class MockSessionState(dict):
+        def __getattr__(self, name):
+            try:
+                return self[name]
+            except KeyError:
+                raise AttributeError(name)
+        def __setattr__(self, name, value):
+            self[name] = value
+
+    mock_session = MockSessionState()
+    monkeypatch.setattr(st, "session_state", mock_session)
+
+    # 3. Call SessionManager.initialize() and ensure it doesn't crash
+    try:
+        SessionManager.initialize()
+    except NameError as e:
+        pytest.fail(f"SessionManager.initialize() crashed with NameError: {e}")
+    except Exception as e:
+        pytest.fail(f"SessionManager.initialize() crashed with unexpected exception: {e}")
+
+    # 4. Assert that defaults are correctly set in the mocked session state
+    from core.constants import (
+        SESSION_BIRTH_DATE, SESSION_RETIREMENT_AGE,
+        SESSION_ANNUAL_INTEREST_RATE, SESSION_MW_VALUE, SESSION_INITIAL_EQUITY,
+        SESSION_PLANNING_START_DATE, SESSION_PLANNING_START_DATE_ENABLED
+    )
+    assert mock_session[SESSION_BIRTH_DATE] == datetime.date(1992, 7, 9)
+    assert mock_session[SESSION_RETIREMENT_AGE] == 65
+    assert mock_session[SESSION_PLANNING_START_DATE] == datetime.date.today()
+    assert mock_session[SESSION_PLANNING_START_DATE_ENABLED] is False
+    assert mock_session.db_loaded is True
+
+

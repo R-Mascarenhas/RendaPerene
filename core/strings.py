@@ -37,8 +37,8 @@ MODEL_IPCA_SPREAD = "IPCA + Spread Alvo"
 
 # 4. View UI Labels and Messages
 MSG_PORTFOLIO_EMPTY = "Sua carteira está vazia. Vá até a aba 'Ativos' para inserir seus ativos ou importar seu extrato da B3!"
-MSG_MARKET_MONITOR_TITLE = "📈 Central de Monitoramento de Mercado (Bazin)"
-MSG_MARKET_MONITOR_DESC = "Acompanhe empresas da B3 em tempo real e identifique oportunidades de compra utilizando o modelo de Preço Teto de Décio Bazin."
+MSG_MARKET_MONITOR_TITLE = "📈 Central de Monitoramento de Mercado"
+MSG_MARKET_MONITOR_DESC = "Acompanhe empresas da B3 em tempo real e identifique oportunidades de compra utilizando diferentes modelos de Preço Teto."
 MSG_INVALID_ASSET_SELECTION = "Por favor, selecione um ativo válido da lista."
 MSG_NO_ASSETS_MONITOR = "Nenhuma empresa adicionada ao monitor. Digite um ticker no formulário acima para começar a acompanhar!"
 MSG_MONITORED_ASSETS_PANEL = "Painel de Ativos Monitorados"

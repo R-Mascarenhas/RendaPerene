@@ -1067,3 +1067,85 @@ def test_session_manager_initialization_on_empty_database(mock_db, monkeypatch):
     assert mock_session.db_loaded is True
 
 
+def test_get_tracked_market_assets_includes_owned_stocks(mock_db):
+    """
+    TDD Test - Phase 1: Red
+    Ensures get_tracked_market_assets() automatically merges manually tracked tickers
+    with tickers of owned stocks (quantity > 0 and asset_type is 'Ação'),
+    and supports retrieving only manually tracked assets with include_owned=False.
+    """
+    from services.assets_service import AssetService
+
+    # 1. Add a manually tracked asset: CXSE3
+    AssetService.add_tracked_market_asset("CXSE3")
+
+    # 2. Add an owned stock: BBAS3 (Buy 10 shares)
+    AssetService.add_transaction("BBAS3", "2021-12-15", "BUY", 10, 10.00)
+
+    # 3. Check positions to confirm quantity is > 0 and type is Ação
+    positions = AssetService.calculate_positions()
+    assert not positions.empty
+    bbas3_row = positions[positions["ticker"] == "BBAS3"]
+    assert not bbas3_row.empty
+    assert bbas3_row.iloc[0]["quantity"] == 10
+    assert bbas3_row.iloc[0]["asset_type"] == "Ação"
+
+    # 4. Get combined tracked assets (should have both BBAS3 and CXSE3, sorted)
+    combined = AssetService.get_tracked_market_assets(include_owned=True)
+    assert "BBAS3" in combined
+    assert "CXSE3" in combined
+    assert combined == ["BBAS3", "CXSE3"]
+
+    # 5. Get manually tracked assets only (should have only CXSE3)
+    manual_only = AssetService.get_tracked_market_assets(include_owned=False)
+    assert "CXSE3" in manual_only
+    assert "BBAS3" not in manual_only
+    assert manual_only == ["CXSE3"]
+
+    # 6. Add BBAS3 to manual tracking as well (so it is both manually tracked and owned)
+    AssetService.add_tracked_market_asset("BBAS3")
+
+    # With include_owned=True, it should still be listed
+    combined_both = AssetService.get_tracked_market_assets(include_owned=True)
+    assert "BBAS3" in combined_both
+    assert "CXSE3" in combined_both
+
+    # With include_owned=False, BBAS3 should be excluded because it is owned!
+    manual_both = AssetService.get_tracked_market_assets(include_owned=False)
+    assert "CXSE3" in manual_both
+    assert "BBAS3" not in manual_both # Must be excluded since it is currently owned
+    assert manual_both == ["CXSE3"]
+
+
+def test_sell_all_shares_retains_monitoring_but_allows_removal(mock_db):
+    """
+    TDD Test - Phase 1: Red
+    Verifies that when a stock is owned (and therefore automatically monitored),
+    selling it completely (bringing its position quantity to 0):
+    1. Keeps the stock monitored in get_tracked_market_assets(include_owned=True).
+    2. Allows the user to manually remove it (by listing it in get_tracked_market_assets(include_owned=False)).
+    """
+    from services.assets_service import AssetService
+
+    # 1. Buy 10 shares of BBAS3 (BBAS3 is now owned and auto-monitored, not in manual removal list)
+    AssetService.add_transaction("BBAS3", "2021-12-15", "BUY", 10, 10.00)
+
+    # Verify initially BBAS3 is NOT in manual removal list
+    assert "BBAS3" not in AssetService.get_tracked_market_assets(include_owned=False)
+
+    # 2. Sell all 10 shares of BBAS3
+    AssetService.add_transaction("BBAS3", "2021-12-16", "SELL", 10, 12.00)
+
+    # 3. Position must be 0
+    positions = AssetService.calculate_positions()
+    assert positions.empty or "BBAS3" not in positions["ticker"].values
+
+    # 4. It should STILL be monitored
+    combined = AssetService.get_tracked_market_assets(include_owned=True)
+    assert "BBAS3" in combined
+
+    # 5. But it should NOW be available in the manual removal list since it is no longer owned!
+    manual_only = AssetService.get_tracked_market_assets(include_owned=False)
+    assert "BBAS3" in manual_only
+
+

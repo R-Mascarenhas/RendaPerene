@@ -31,6 +31,7 @@ class MarketView:
     def render(self):
         st.subheader(MSG_MARKET_MONITOR_TITLE)
         st.write(MSG_MARKET_MONITOR_DESC)
+        st.info("💡 As ações que você possui em sua carteira são monitoradas automaticamente nesta central.")
 
         catalog = MarketData.load_assets_catalog()
         available_tickers = sorted(catalog.index.tolist()) if not catalog.empty else []
@@ -118,13 +119,17 @@ class MarketView:
 
         col_rem, _ = st.columns([2, 2])
         with col_rem:
-            remove_ticker = st.selectbox("Remover empresa do monitor", ["--- Selecione ---"] + tracked_tickers)
-            if remove_ticker != "--- Selecione ---":
-                if st.button(MSG_CONFIRM_REMOVE.format(ticker=remove_ticker)):
-                    AssetService.remove_tracked_market_asset(remove_ticker)
-                    st.success(MSG_ASSET_REMOVED_SUCCESS.format(ticker=remove_ticker))
-                    st.cache_data.clear()
-                    st.rerun()
+            db_only_tracked = AssetService.get_tracked_market_assets(include_owned=False)
+            if db_only_tracked:
+                remove_ticker = st.selectbox("Remover empresa do monitor", ["--- Selecione ---"] + db_only_tracked)
+                if remove_ticker != "--- Selecione ---":
+                    if st.button(MSG_CONFIRM_REMOVE.format(ticker=remove_ticker)):
+                        AssetService.remove_tracked_market_asset(remove_ticker)
+                        st.success(MSG_ASSET_REMOVED_SUCCESS.format(ticker=remove_ticker))
+                        st.cache_data.clear()
+                        st.rerun()
+            else:
+                st.caption("ℹ️ Apenas ativos adicionados manualmente podem ser removidos.")
 
         st.markdown("---")
         st.subheader(MSG_MONITORED_ASSETS_PANEL)

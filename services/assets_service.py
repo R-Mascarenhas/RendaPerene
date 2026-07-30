@@ -49,7 +49,16 @@ class AssetService:
         if catalog.empty or ticker not in catalog.index:
             cls.register_fallback_asset(ticker)
 
-        return cls._portfolio_repo.insert_transaction(date, ticker, transaction_type, quantity, unit_price, fees)
+        success = cls._portfolio_repo.insert_transaction(date, ticker, transaction_type, quantity, unit_price, fees)
+        if success and transaction_type == "SELL":
+            try:
+                df_positions = cls.calculate_positions()
+                if df_positions.empty or ticker not in df_positions['ticker'].values:
+                    # Seamlessly transition a zeroed out owned stock to manual tracking so it stays on radar but is removable
+                    cls.add_tracked_market_asset(ticker)
+            except Exception:
+                pass
+        return success
 
     @classmethod
     def add_dividend(cls, ticker: str, date: str, dividend_type: str, total_value: float) -> bool:
@@ -297,9 +306,29 @@ class AssetService:
         return cls._build_dividends_pivot_dataframe(rows)
 
     @classmethod
-    def get_tracked_market_assets(cls) -> list:
-        """Returns the list of tracked tickers from the database."""
-        return cls._portfolio_repo.get_tracked_assets()
+    def get_tracked_market_assets(cls, include_owned: bool = True) -> list:
+        """Returns the list of tracked tickers from the database, automatically merged with owned stocks."""
+        db_tracked = cls._portfolio_repo.get_tracked_assets()
+
+        try:
+            df_positions = cls.calculate_positions()
+            if not df_positions.empty:
+                # Filter positions that have positive quantity and are of type 'Ação'
+                owned_stocks = df_positions[
+                    df_positions['asset_type'].str.strip().str.lower().isin(['ação', 'acao', 'ações', 'acoes'])
+                ]['ticker'].tolist()
+            else:
+                owned_stocks = []
+        except Exception:
+            owned_stocks = []
+
+        if not include_owned:
+            # Return database tracked assets minus any currently owned stocks
+            return sorted(list(set(db_tracked) - set(owned_stocks)))
+
+        # Merge and deduplicate while keeping alphabetical order
+        all_tickers = sorted(list(set(db_tracked + owned_stocks)))
+        return all_tickers
 
     @classmethod
     def add_tracked_market_asset(cls, ticker: str) -> bool:

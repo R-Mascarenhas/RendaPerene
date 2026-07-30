@@ -80,12 +80,21 @@ class PortfolioDAO:
         cursor = local_conn.cursor()
         try:
             cursor.execute("""
-                SELECT SUM(CASE WHEN transaction_type='BUY' THEN quantity ELSE -quantity END)
+                SELECT transaction_type, quantity
                 FROM transactions
                 WHERE ticker = ? AND date <= ?
+                ORDER BY date ASC, id ASC
             """, (ticker, date_str))
-            res = cursor.fetchone()
-            return res[0] if res and res[0] is not None else 0
+            rows = cursor.fetchall()
+            qty = 0
+            for t_type, q in rows:
+                if t_type == 'BUY':
+                    qty += q
+                elif t_type == 'SELL':
+                    qty = max(0, qty - q)
+                elif t_type == 'GROUP':
+                    qty = q
+            return qty
         finally:
             if conn is None:
                 local_conn.close()
@@ -110,7 +119,13 @@ class PortfolioDAO:
         conn = db.get_personal_connection()
         try:
             return pd.read_sql_query(
-                "SELECT date as Data, CASE WHEN transaction_type='BUY' THEN 'Compra' ELSE 'Venda' END as Operação, quantity as Quantidade, unit_price as [Valor Unitário], (quantity * unit_price + fees) as [Valor Total] FROM transactions WHERE ticker = ? ORDER BY date DESC",
+                "SELECT date as Data, "
+                "CASE WHEN transaction_type='BUY' THEN 'Compra' "
+                "     WHEN transaction_type='SELL' THEN 'Venda' "
+                "     ELSE 'Grupamento' END as Operação, "
+                "quantity as Quantidade, unit_price as [Valor Unitário], "
+                "(quantity * unit_price + fees) as [Valor Total] "
+                "FROM transactions WHERE ticker = ? ORDER BY date DESC",
                 conn, params=(ticker,)
             )
         finally:

@@ -30,12 +30,17 @@ class AssetService:
 
     @classmethod
     def add_transaction(cls, ticker: str, date: str, transaction_type: str, quantity: int, unit_price: float, fees: float = 0.0) -> bool:
-        """Inserts a Buy (BUY) or Sell (SELL) asset transaction into the personal database, avoiding duplicates."""
+        """Inserts a Buy (BUY), Sell (SELL), or Group (GROUP) asset transaction into the personal database, avoiding duplicates."""
         ticker = ticker.strip().upper()
         if transaction_type in ('Compra', 'BUY'):
             transaction_type = "BUY"
         elif transaction_type in ('Venda', 'SELL'):
             transaction_type = "SELL"
+        elif transaction_type in ('Grupamento', 'GROUP'):
+            transaction_type = "GROUP"
+
+        if quantity <= 0:
+            return False # Quantity must be strictly positive
 
         if cls._portfolio_repo.find_transaction(date, ticker, transaction_type, quantity, unit_price, fees):
             return False # Skipped duplicate
@@ -107,14 +112,16 @@ class AssetService:
                     transaction_type = "BUY"
                 elif "Venda" in movement:
                     transaction_type = "SELL"
-                elif "Transferência - Liquidação" in movement:
+                elif "Desdobro" in movement or "Bonificação" in movement or "Bonificacao" in movement:
+                    if "credito" in entry_exit or "crédito" in entry_exit:
+                        transaction_type = "SPLIT"
+                elif "Grupamento" in movement:
+                    transaction_type = "GROUP"
+                elif "Transferência - Liquidação" in movement or "Transferência" in movement or "Transferencia" in movement or "Depósito" in movement or "Deposito" in movement:
                     if "credito" in entry_exit or "crédito" in entry_exit:
                         transaction_type = "BUY"
                     elif "debito" in entry_exit or "débito" in entry_exit:
                         transaction_type = "SELL"
-                elif "Desdobro" in movement:
-                    if "credito" in entry_exit or "crédito" in entry_exit:
-                        transaction_type = "SPLIT"
                 elif "Resgate" in movement:
                     transaction_type = "SELL"
 
@@ -126,6 +133,9 @@ class AssetService:
                     if success: processed_transactions += 1
                 elif transaction_type == "SPLIT":
                     success = cls.add_transaction(ticker, date, "BUY", quantity, 0.0)
+                    if success: processed_transactions += 1
+                elif transaction_type == "GROUP":
+                    success = cls.add_transaction(ticker, date, "GROUP", quantity, 0.0)
                     if success: processed_transactions += 1
                 elif any(term in movement for term in ["Dividendo", "Juros", "Rendimento"]):
                     dividend_type = "DIVIDEND" if "Dividendo" in movement else "JCP"
@@ -355,6 +365,10 @@ class AssetService:
             elif txn_type == 'SELL':
                 new_qty = max(0, old_qty - qty)
                 portfolio_state[ticker] = {QUANTITY: new_qty, AVERAGE_PRICE: old_avg_price if new_qty > 0 else 0.0}
+            elif txn_type == 'GROUP':
+                new_qty = qty
+                new_avg_price = (old_qty * old_avg_price) / qty if qty > 0 else 0.0
+                portfolio_state[ticker] = {QUANTITY: new_qty, AVERAGE_PRICE: new_avg_price}
 
         active_assets = []
         for ticker, info in portfolio_state.items():
@@ -419,7 +433,8 @@ class AssetService:
 
         df_transactions[NET_CASHFLOW] = df_transactions.apply(
             lambda r: (r[QUANTITY] * r[UNIT_PRICE] + r[FEES]) if r[TRANSACTION_TYPE] == 'BUY'
-            else -(r[QUANTITY] * r[UNIT_PRICE] - r[FEES]),
+            else -(r[QUANTITY] * r[UNIT_PRICE] - r[FEES]) if r[TRANSACTION_TYPE] == 'SELL'
+            else 0.0,
             axis=1
         )
 

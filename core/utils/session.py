@@ -182,6 +182,18 @@ def get_app_version() -> str:
         try:
             with open(version_path, "r", encoding="utf-8") as f:
                 return f.read().strip()
+        except Exception as e:
+            try:
+                with open("session_debug.log", "a", encoding="utf-8") as log_file:
+                    import time
+                    log_file.write(f"[{time.ctime()}] WARNING: Error reading version.txt: {e}\n")
+            except Exception:
+                pass
+    else:
+        try:
+            with open("session_debug.log", "a", encoding="utf-8") as log_file:
+                import time
+                log_file.write(f"[{time.ctime()}] WARNING: version.txt not found at path: {version_path}\n")
         except Exception:
             pass
     return "0.0.0"

@@ -621,7 +621,9 @@ def test_get_app_version_sanity(monkeypatch, tmp_path):
 
     # Test 1: Standard environment (dev)
     # Ensure it reads 'version.txt' from current directory
-    assert get_app_version() == "1.0.0"
+    with open("version.txt", "r", encoding="utf-8") as f:
+        expected_version = f.read().strip()
+    assert get_app_version() == expected_version
 
     # Test 2: PyInstaller environment (sys._MEIPASS mocked)
     mock_meipass = str(tmp_path)
@@ -676,3 +678,91 @@ def test_monitor_active_sessions_stop_trigger(monkeypatch):
     monitor_active_sessions()
 
     assert mock_runtime.stopped is True
+
+
+def test_wagner_discrepancies_parser():
+    """
+    TDD Test to verify the parser fixes for the 4 discrepancies reported by Wagner:
+    1. BBDC3 - 100 shares bonus (Bonificação em Ativos) -> quantity should increase from 1000 to 1100.
+    2. ITUB3 - 18 + 40 shares bonus (Bonificação em Ativos) -> quantity should increase from 500 to 558.
+    3. BBAS3 - 6 shares deposit (Depósito) + 6 shares transfer-out (Transferência Debito) + 6 shares transfer-in (Transferência Credito).
+       Net change is +6, quantity should increase from 100 to 106.
+    4. IRBR3 - 6000 shares reverse split (Grupamento) to 200 -> quantity should become 200 and PM should adjust to 107.00.
+    """
+    # Create the mock B3 dataframe
+    data = {
+        "Entrada/Saída": [
+            "Credito", "Credito",  # BBDC3
+            "Credito", "Credito", "Credito",  # ITUB3
+            "Credito", "Credito", "Debito", "Credito",  # BBAS3
+            "Credito", "Credito", "Credito"  # IRBR3
+        ],
+        "Movimentação": [
+            "Compra", "Bonificação em Ativos",  # BBDC3
+            "Compra", "Bonificação em Ativos", "Bonificação em Ativos",  # ITUB3
+            "Transferência - Liquidação", "Depósito", "Transferência", "Transferência",  # BBAS3
+            "Transferência - Liquidação", "Transferência - Liquidação", "Grupamento"  # IRBR3
+        ],
+        "Data": [
+            "01/01/2021", "20/04/2022",  # BBDC3
+            "01/01/2021", "19/03/2025", "29/12/2025",  # ITUB3
+            "10/07/2024", "30/04/2026", "04/05/2026", "04/05/2026",  # BBAS3
+            "11/10/2021", "06/09/2022", "26/01/2023"  # IRBR3
+        ],
+        "Produto": [
+            "BBDC3 - BANCO BRADESCO S/A", "BBDC3 - BANCO BRADESCO S/A",
+            "ITUB3 - ITAU UNIBANCO HOLDING S/A", "ITUB3 - ITAU UNIBANCO HOLDING S/A", "ITUB3 - ITAU UNIBANCO HOLDING S/A",
+            "BBAS3 - BANCO DO BRASIL S/A", "BBAS3 - BANCO DO BRASIL S/A", "BBAS3 - BANCO DO BRASIL S/A", "BBAS3 - BANCO DO BRASIL S/A",
+            "IRBR3 - IRB BRASIL RESSEGUROS S/A", "IRBR3 - IRB BRASIL RESSEGUROS S/A", "IRBR3 - IRB BRASIL RESSEGUROS S/A"
+        ],
+        "Quantidade": [
+            1000, 100,
+            500, 40, 18,
+            100, 6, 6, 6,
+            4000, 2000, 200
+        ],
+        "Preço unitário": [
+            15.00, "-",
+            25.00, "-", "-",
+            26.25, "-", "-", "-",
+            4.85, 1.00, "-"
+        ],
+        "Valor da Operação": [
+            15000.00, "-",
+            12500.00, "-", "-",
+            2625.00, "-", "-", "-",
+            19400.00, 2000.00, "-"
+        ]
+    }
+    df_excel = pd.DataFrame(data)
+
+    trans_count, prov_count = AssetService.process_b3_import(df_excel)
+
+    df_positions = AssetService.calculate_positions()
+    df_positions.set_index("ticker", inplace=True)
+
+    # 1. BBDC3 assertions
+    assert "BBDC3" in df_positions.index
+    assert df_positions.loc["BBDC3", "quantity"] == 1100
+    assert round(df_positions.loc["BBDC3", "average_price"], 2) == round(15000.00 / 1100, 2)
+
+    # 2. ITUB3 assertions
+    assert "ITUB3" in df_positions.index
+    assert df_positions.loc["ITUB3", "quantity"] == 558
+    assert round(df_positions.loc["ITUB3", "average_price"], 2) == round(12500.00 / 558, 2)
+
+    # 3. BBAS3 assertions
+    assert "BBAS3" in df_positions.index
+    assert df_positions.loc["BBAS3", "quantity"] == 106
+    # price of extra 6s is 0.0. Chronological PM math:
+    # 1. Buy 100 @ 26.25 -> PM = 26.25, Qty = 100
+    # 2. Deposit 6 @ 0.0 -> PM = (100 * 26.25) / 106 = 24.764, Qty = 106
+    # 3. Transfer Out 6 -> PM remains 24.764, Qty = 100
+    # 4. Transfer In 6 @ 0.0 -> PM = (100 * 24.764) / 106 = 23.362, Qty = 106
+    assert round(df_positions.loc["BBAS3", "average_price"], 2) == 23.36
+
+    # 4. IRBR3 assertions
+    assert "IRBR3" in df_positions.index
+    assert df_positions.loc["IRBR3", "quantity"] == 200
+    # Cost basis remains 19400 + 2000 = 21400. Average price adjusts to 21400 / 200 = 107.00
+    assert round(df_positions.loc["IRBR3", "average_price"], 2) == 107.00

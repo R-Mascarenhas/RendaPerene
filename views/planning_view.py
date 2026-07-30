@@ -127,14 +127,16 @@ class PlanningView:
         col_birth, col_ret_age, col_interest, col_type, col_val, col_mw = st.columns([1, 1, 1, 1.2, 1.2, 1.6])
 
         with col_birth:
+            today = datetime.date.today()
             birth_date = st.date_input(
                 "Data de Nascimento",
                 value=st.session_state[SESSION_BIRTH_DATE],
+                min_value=datetime.date(today.year - 100, 1, 1),
+                max_value=today,
                 key=WIDGET_BIRTH_DATE,
                 format="DD/MM/YYYY",
                 on_change=self._on_birth_date_change
             )
-            today = datetime.date.today()
 
             # Calculate exact age in months
             months_age = (today.year - birth_date.year) * 12 + today.month - birth_date.month - (today.day < birth_date.day)

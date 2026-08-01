@@ -153,6 +153,20 @@ def test_b3_importer_deduplication():
     assert df_positions.loc[0, "quantity"] == 150
     assert df_positions.loc[0, "total_dividends"] == 80.00
 
+def test_b3_importer_progress_callback():
+    """Ensures progress callback is called during import process."""
+    df_excel = pd.read_excel("tests/b3-mock-transactions.xlsx")
+    calls = []
+
+    def mock_callback(current, total):
+        calls.append((current, total))
+
+    t, p = AssetService.process_b3_import(df_excel, progress_callback=mock_callback)
+    assert len(calls) == len(df_excel)
+    assert calls[-1][0] == len(df_excel)
+    assert calls[-1][1] == len(df_excel)
+
+
 def test_dividends_time_windows():
     """Ensures the engine calculates total, YTD, and L12M accumulated dividends properly."""
     AssetService.add_transaction("BBAS3", "2021-04-30", "BUY", 100, 20.00)

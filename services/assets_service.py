@@ -81,14 +81,17 @@ class AssetService:
         return cls._portfolio_repo.insert_dividend(date, ticker, dividend_type, total_value)
 
     @classmethod
-    def process_b3_import(cls, df: pd.DataFrame) -> tuple[int, int]:
+    def process_b3_import(cls, df: pd.DataFrame, progress_callback=None) -> tuple[int, int]:
         """Processes a DataFrame imported from B3, routing and translating row categories to English."""
         df.columns = df.columns.str.strip()
 
         processed_transactions = 0
         processed_dividends = 0
+        total_rows = len(df)
 
-        for _, row in df.iterrows():
+        for idx, (_, row) in enumerate(df.iterrows()):
+            if progress_callback and total_rows > 0:
+                progress_callback(idx + 1, total_rows)
             try:
                 movement = str(row.get('Tipo de Movimentação', row.get('Movimentação', ''))).strip()
                 entry_exit = str(row.get('Entrada/Saída', '')).strip().lower()

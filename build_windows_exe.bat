@@ -95,6 +95,17 @@ if errorlevel 1 (
     goto :error
 )
 
+echo [INFO] Criando arquivo compactado (ZIP) para distribuicao...
+if exist "dist\RendaPerene-v%APP_VERSION%.zip" (
+    del "dist\RendaPerene-v%APP_VERSION%.zip" >nul 2>&1
+)
+powershell -Command "Compress-Archive -Path 'dist\RendaPerene-v%APP_VERSION%' -DestinationPath 'dist\RendaPerene-v%APP_VERSION%.zip' -Force"
+if errorlevel 1 (
+    echo [AVISO] Falha ao criar o arquivo ZIP automaticamente.
+) else (
+    echo [INFO] Arquivo ZIP criado com sucesso: dist\RendaPerene-v%APP_VERSION%.zip
+)
+
 echo.
 echo =====================================================================
 echo    PROCESSO CONCLUIDO COM SUCESSO!
@@ -103,12 +114,15 @@ echo.
 echo O seu aplicativo compilado foi gerado na pasta:
 echo   =^>  dist\RendaPerene-v%APP_VERSION%\
 echo.
-echo Para executar o aplicativo:
+echo Arquivo ZIP pronto para distribuicao:
+echo   =^>  dist\RendaPerene-v%APP_VERSION%.zip
+echo.
+echo Para executar o aplicativo localmente:
 echo   1. Abra a pasta 'dist\RendaPerene-v%APP_VERSION%\'
 echo   2. Execute o arquivo 'RendaPerene-v%APP_VERSION%.exe'
 echo.
 echo Para enviar para outras pessoas:
-echo   - Compacte (ZIP) a pasta 'RendaPerene-v%APP_VERSION%' inteira dentro de 'dist' e envie.
+echo   - Envie diretamente o arquivo 'dist\RendaPerene-v%APP_VERSION%.zip' gerado.
 echo     (As outras pessoas NAO precisam ter Python instalado para rodar!)
 echo.
 echo =====================================================================

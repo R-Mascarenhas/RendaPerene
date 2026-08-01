@@ -130,6 +130,10 @@ class AssetService:
                 elif "Grupamento" in movement:
                     transaction_type = "GROUP"
                 elif "Transferência - Liquidação" in movement or "Transferência" in movement or "Transferencia" in movement or "Depósito" in movement or "Deposito" in movement:
+                    # Ignore custodian transfers at zero cost (typically labeled as 'Transferência' or 'Transferência - Liquidação' with zero price)
+                    is_transfer = "Transfer" in movement or "Transferência" in movement or "Transferencia" in movement
+                    if is_transfer and (price == 0.0 or raw_price == '-'):
+                        continue
                     if "credito" in entry_exit or "crédito" in entry_exit:
                         transaction_type = "BUY"
                     elif "debito" in entry_exit or "débito" in entry_exit:

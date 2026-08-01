@@ -244,6 +244,30 @@ def test_b3_resgate_logic():
     df_pos = AssetService.calculate_positions()
     assert len(df_pos) == 0
 
+def test_b3_custodian_transfer_ignored():
+    """Ensures custodian transfer and deposit events with zero price are ignored."""
+    AssetService.add_transaction("BBAS3", "2021-04-30", "BUY", 100, 20.00)
+
+    data_example = {
+        "Entrada/Saída": ["Debito", "Credito"],
+        "Movimentação": ["Transferência - Liquidação", "Transferência - Liquidação"],
+        "Data": ["12/05/2026", "12/05/2026"],
+        "Produto": ["BBAS3 - BANCO DO BRASIL S/A", "BBAS3 - BANCO DO BRASIL S/A"],
+        "Quantidade": [600, 600],
+        "Preço unitário": ["-", "-"],
+        "Valor da Operação": ["-", "-"]
+    }
+    df_excel = pd.DataFrame(data_example)
+
+    trans, prov = AssetService.process_b3_import(df_excel)
+    assert trans == 0  # Should ignore both transfers
+    assert prov == 0
+
+    df_pos = AssetService.calculate_positions()
+    assert len(df_pos) == 1
+    assert df_pos.loc[0, "quantity"] == 100
+    assert df_pos.loc[0, "average_price"] == 20.00
+
 def test_get_quantity_on_date():
     """Verifies retro-calculating the owned quantity of an asset at specific historical cut dates."""
     AssetService.add_transaction("BBAS3", "2025-01-01", "BUY", 100, 20.00)
@@ -694,9 +718,9 @@ def test_monitor_active_sessions_stop_trigger(monkeypatch):
     assert mock_runtime.stopped is True
 
 
-def test_wagner_discrepancies_parser():
+def test_discrepancies_parser():
     """
-    TDD Test to verify the parser fixes for the 4 discrepancies reported by Wagner:
+    TDD Test to verify the parser fixes for the 4 discrepancies reported:
     1. BBDC3 - 100 shares bonus (Bonificação em Ativos) -> quantity should increase from 1000 to 1100.
     2. ITUB3 - 18 + 40 shares bonus (Bonificação em Ativos) -> quantity should increase from 500 to 558.
     3. BBAS3 - 6 shares deposit (Depósito) + 6 shares transfer-out (Transferência Debito) + 6 shares transfer-in (Transferência Credito).
@@ -771,9 +795,9 @@ def test_wagner_discrepancies_parser():
     # price of extra 6s is 0.0. Chronological PM math:
     # 1. Buy 100 @ 26.25 -> PM = 26.25, Qty = 100
     # 2. Deposit 6 @ 0.0 -> PM = (100 * 26.25) / 106 = 24.764, Qty = 106
-    # 3. Transfer Out 6 -> PM remains 24.764, Qty = 100
-    # 4. Transfer In 6 @ 0.0 -> PM = (100 * 24.764) / 106 = 23.362, Qty = 106
-    assert round(df_positions.loc["BBAS3", "average_price"], 2) == 23.36
+    # 3. Transfer Out 6 (Zero-cost custodian transfer) -> Ignored!
+    # 4. Transfer In 6 (Zero-cost custodian transfer) -> Ignored!
+    assert round(df_positions.loc["BBAS3", "average_price"], 2) == 24.76
 
     # 4. IRBR3 assertions
     assert "IRBR3" in df_positions.index
@@ -1161,5 +1185,3 @@ def test_sell_all_shares_retains_monitoring_but_allows_removal(mock_db):
     # 5. But it should NOW be available in the manual removal list since it is no longer owned!
     manual_only = AssetService.get_tracked_market_assets(include_owned=False)
     assert "BBAS3" in manual_only
-
-

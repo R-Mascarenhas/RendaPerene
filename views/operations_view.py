@@ -154,7 +154,19 @@ class OperationsView:
         st.subheader(MSG_SMART_IMPORTER_TITLE)
         st.write(MSG_SMART_IMPORTER_DESC)
 
-        b3_file = st.file_uploader("Arraste o arquivo .xlsx da B3 aqui", type=["xlsx"])
+        if "b3_uploader_key" not in st.session_state:
+            st.session_state.b3_uploader_key = 0
+
+        b3_file = st.file_uploader(
+            "Arraste o arquivo .xlsx da B3 aqui",
+            type=["xlsx"],
+            key=f"b3_file_uploader_{st.session_state.b3_uploader_key}"
+        )
+
+        # Show persistent success message if present in session_state
+        if st.session_state.get("b3_import_success_msg"):
+            st.success(st.session_state.b3_import_success_msg)
+
         if b3_file is not None:
             file_key = f"{b3_file.name}_{b3_file.size}"
             if "processed_files" not in st.session_state:
@@ -162,14 +174,36 @@ class OperationsView:
 
             if file_key not in st.session_state.processed_files:
                 try:
-                    with st.spinner("Processando e importando planilha B3..."):
-                        df_excel = pd.read_excel(b3_file)
-                        processed_tx, processed_div = AssetService.process_b3_import(df_excel)
+                    st.session_state.b3_import_success_msg = None
+                    progress_bar = st.progress(0.0, text="Lendo arquivo Excel da B3...")
+                    df_excel = pd.read_excel(b3_file)
 
-                        st.success(MSG_SMART_IMPORTER_SUCCESS.format(tx_count=processed_tx, div_count=processed_div))
-                        st.session_state.processed_files.add(file_key)
-                        st.cache_data.clear()
-                        st.rerun()
+                    last_pct = -1.0
+
+                    def update_progress(current: int, total: int):
+                        nonlocal last_pct
+                        pct = current / total if total > 0 else 0.0
+                        clamped_pct = max(0.0, min(1.0, float(pct)))
+                        # Throttle updates: only update progress bar if percentage increases by >= 5% or it's the last row
+                        if (clamped_pct - last_pct) >= 0.05 or current == total:
+                            progress_bar.progress(
+                                clamped_pct,
+                                text=f"📊 Processando linha {current} de {total}... ({int(clamped_pct * 100)}%)"
+                            )
+                            last_pct = clamped_pct
+
+                    processed_tx, processed_div = AssetService.process_b3_import(
+                        df_excel,
+                        progress_callback=update_progress
+                    )
+
+                    progress_bar.progress(1.0, text="✅ Importação concluída!")
+                    success_text = MSG_SMART_IMPORTER_SUCCESS.format(tx_count=processed_tx, div_count=processed_div)
+                    st.session_state.b3_import_success_msg = success_text
+                    st.session_state.processed_files.add(file_key)
+                    st.session_state.b3_uploader_key += 1
+                    st.cache_data.clear()
+                    st.rerun()
                 except Exception as e:
                     st.error(MSG_SMART_IMPORTER_ERROR.format(e=e))
             else:

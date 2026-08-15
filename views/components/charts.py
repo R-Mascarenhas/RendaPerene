@@ -56,20 +56,23 @@ class DashboardCharts:
             st.plotly_chart(fig_evol, width="stretch")
 
         with chart_col3:
-            df_chart_prov = df_positions[df_positions[TOTAL_DIVIDENDS] > 0].sort_values(by=TOTAL_DIVIDENDS, ascending=True)
-            if not df_chart_prov.empty:
+            if 'total_yoc' not in df_positions.columns:
+                df_positions['total_yoc'] = (df_positions[TOTAL_DIVIDENDS] / df_positions[INVESTED_AMOUNT]) * 100
+
+            df_chart_yoc = df_positions[df_positions['total_yoc'] > 0].sort_values(by='total_yoc', ascending=True)
+            if not df_chart_yoc.empty:
                 fig_proventos = px.bar(
-                    df_chart_prov,
-                    x=TOTAL_DIVIDENDS,
+                    df_chart_yoc,
+                    x='total_yoc',
                     y=TICKER,
                     orientation="h",
-                    title="Resultado por Ativo (Proventos Recebidos)",
-                    labels={TOTAL_DIVIDENDS: "Proventos (R$)", TICKER: "Ticker"},
-                    color=TOTAL_DIVIDENDS,
+                    title="Eficiência por Ativo (Yield on Cost Total)",
+                    labels={'total_yoc': "Yield on Cost (%)", TICKER: "Ticker"},
+                    color='total_yoc',
                     color_continuous_scale="Viridis"
                 )
-                fig_proventos.update_traces(hovertemplate="<b>%{y}</b><br>Proventos: R$ %{x:,.2f}<extra></extra>")
-                fig_proventos.update_layout(xaxis_tickformat="R$ ,.2f")
+                fig_proventos.update_traces(hovertemplate="<b>%{y}</b><br>Yield on Cost: %{x:.2f}%<extra></extra>")
+                fig_proventos.update_layout(xaxis_tickformat=".2f")
                 st.plotly_chart(fig_proventos, width="stretch")
 
     def _render_evolution_chart(self):

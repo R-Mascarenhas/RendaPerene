@@ -151,3 +151,23 @@ class MarketDataPort(Protocol):
     @staticmethod
     def get_current_minimum_wage() -> float:
         ...
+
+
+class PlanningConfigPort(Protocol):
+    """Outbound Port interface defining planning configuration and persistence operations (DIP compliant)."""
+
+    @staticmethod
+    def get_configuration() -> dict | None:
+        ...
+
+    @staticmethod
+    def save_configuration(birth_date: str, retirement_age: int, desired_income_mw: float,
+                           annual_interest_rate: float, mw_value: float, initial_equity_input: float,
+                           desired_income_type: str = "MULTIPLIER", desired_income_fixed: float = 10000.0,
+                           ceiling_model_selection: str = "Bazin Clássico", bazin_target_yield: float = 6.0,
+                           bazin_target_spread: float = 3.0, planning_start_date: str = None) -> None:
+        ...
+
+    @staticmethod
+    def get_min_transaction_date() -> str:
+        ...

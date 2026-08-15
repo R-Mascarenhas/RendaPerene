@@ -1,6 +1,7 @@
 import datetime
 import numpy as np
 import pandas as pd
+from core.ports import PlanningConfigPort
 from core.daos.planning_dao import PlanningDAO
 from core.constants import (
     BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
@@ -13,27 +14,36 @@ from core.strings import MODEL_CLASSIC
 class SimulationService:
     """Domain Service for financial independence calculations and compound interest."""
 
-    @staticmethod
-    def get_configuration():
-        """Fetches the planning configuration from the database."""
-        return PlanningDAO.get_configuration()
+    # Concrete Outbound Adapter injected by default (Dependency Inversion Principle compliance)
+    _planning_repo: PlanningConfigPort = PlanningDAO
 
-    @staticmethod
-    def save_configuration(birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type="MULTIPLIER", desired_income_fixed=10000.0, ceiling_model_selection="Bazin Clássico", bazin_target_yield=6.0, bazin_target_spread=3.0, planning_start_date=None):
+    @classmethod
+    def set_adapters(cls, planning_repo: PlanningConfigPort = None):
+        """Dynamic dependency injection mechanism for testing and custom environment mocks."""
+        if planning_repo is not None:
+            cls._planning_repo = planning_repo
+
+    @classmethod
+    def get_configuration(cls):
+        """Fetches the planning configuration from the database."""
+        return cls._planning_repo.get_configuration()
+
+    @classmethod
+    def save_configuration(cls, birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type="MULTIPLIER", desired_income_fixed=10000.0, ceiling_model_selection="Bazin Clássico", bazin_target_yield=6.0, bazin_target_spread=3.0, planning_start_date=None):
         """Saves or updates the planning configuration in the database."""
-        PlanningDAO.save_configuration(
+        cls._planning_repo.save_configuration(
             birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input,
             desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread,
             planning_start_date
         )
 
-    @staticmethod
-    def get_initial_investment_age(birth_date, config=None):
+    @classmethod
+    def get_initial_investment_age(cls, birth_date, config=None):
         """Returns the exact age in months when the first investment was made."""
         if config is not None and config.get(PLANNING_START_DATE) is not None:
             min_date_str = config[PLANNING_START_DATE]
         else:
-            min_date_str = PlanningDAO.get_min_transaction_date()
+            min_date_str = cls._planning_repo.get_min_transaction_date()
 
         start_date = datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
 

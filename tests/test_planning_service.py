@@ -192,3 +192,58 @@ def test_projection_chart_does_not_override_zero_initial_equity(mock_db):
     first_month_invested = df_projection.iloc[0]["Valor Aportado Acumulado"]
     expected_first_month = 0.0 + sim["required_monthly_contribution"]
     assert abs(first_month_invested - expected_first_month) < 1e-5
+
+
+def test_decoupled_planning_config_seam(mock_db):
+    """
+    TDD Test to verify that SimulationService can utilize an in-memory custom
+    stub for configuration using the set_adapters seam, completely decoupling
+    the simulation from any database or file-system dependencies.
+    """
+    class StubPlanningConfig:
+        @staticmethod
+        def get_configuration() -> dict | None:
+            return {
+                "birth_date": "1995-10-10",
+                "retirement_age": 50,
+                "desired_income_mw": 10.0,
+                "annual_interest_rate": 8.0,
+                "mw_value": 1500.0,
+                "initial_equity_input": 10000.0,
+                "desired_income_type": "MULTIPLIER",
+                "desired_income_fixed": 15000.0,
+                "ceiling_model_selection": "Bazin Clássico",
+                "bazin_target_yield": 6.0,
+                "bazin_target_spread": 3.0,
+                "planning_start_date": "2024-01-01"
+            }
+
+        @staticmethod
+        def save_configuration(*args, **kwargs) -> None:
+            pass
+
+        @staticmethod
+        def get_min_transaction_date() -> str:
+            return "2024-01-01"
+
+    # Inject the stub adapter
+    SimulationService.set_adapters(planning_repo=StubPlanningConfig)
+
+    try:
+        # Verify that get_configuration fetches from the stub instead of the DB
+        config = SimulationService.get_configuration()
+        assert config is not None
+        assert config["birth_date"] == "1995-10-10"
+        assert config["retirement_age"] == 50
+        assert config["mw_value"] == 1500.0
+
+        # Verify that SimulationService calculations use the injected stub's values
+        sim = SimulationService.get_current_simulation()
+        assert sim is not None
+        assert sim["retirement_age"] == 50
+        assert sim["target_monthly_income"] == 15000.0 # 10.0 * 1500.0
+        assert sim["initial_equity_input"] == 10000.0
+    finally:
+        # Reset to default adapter (DIP restore hygiene)
+        from core.daos.planning_dao import PlanningDAO
+        SimulationService.set_adapters(planning_repo=PlanningDAO)

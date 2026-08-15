@@ -1185,3 +1185,97 @@ def test_sell_all_shares_retains_monitoring_but_allows_removal(mock_db):
     # 5. But it should NOW be available in the manual removal list since it is no longer owned!
     manual_only = AssetService.get_tracked_market_assets(include_owned=False)
     assert "BBAS3" in manual_only
+
+
+def test_sector_chart_hover_customdata(monkeypatch):
+    """
+    TDD Test - Phase 1: Red
+    Ensures that DashboardCharts._render_top_charts prepares custom hover data
+    containing ticker codes, values, and percentages for the Sector Allocation pie chart.
+    """
+    from views.components.charts import DashboardCharts
+    import pandas as pd
+
+    # Define columns needed for _render_top_charts
+    df_mock = pd.DataFrame([
+        {
+            "ticker": "BBAS3",
+            "sector": "Financeiro",
+            "current_value": 1000.00,
+            "invested_amount": 800.00,
+            "total_dividends": 50.00,
+            "total_yoc": 6.25
+        },
+        {
+            "ticker": "SANB11",
+            "sector": "Financeiro",
+            "current_value": 2000.00,
+            "invested_amount": 1600.00,
+            "total_dividends": 100.00,
+            "total_yoc": 6.25
+        },
+        {
+            "ticker": "CXSE3",
+            "sector": "Seguridade",
+            "current_value": 3000.00,
+            "invested_amount": 2500.00,
+            "total_dividends": 150.00,
+            "total_yoc": 6.00
+        }
+    ])
+
+    captured_charts = []
+    def mock_plotly_chart(fig, width=None):
+        captured_charts.append(fig)
+
+    class MockColumns:
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    def mock_columns(spec):
+        return [MockColumns(), MockColumns(), MockColumns()]
+
+    monkeypatch.setattr("streamlit.columns", mock_columns)
+    monkeypatch.setattr("streamlit.plotly_chart", mock_plotly_chart)
+
+    charts = DashboardCharts()
+    charts._render_top_charts(df_mock)
+
+    assert len(captured_charts) >= 1
+    fig_sectors = captured_charts[0]
+
+    # Verify that custom_data is passed
+    assert fig_sectors.data[0].customdata is not None
+    customdata_list = fig_sectors.data[0].customdata
+
+    # Find custom hover details for "Financeiro" and "Seguridade"
+    # Sector totals: Financeiro = 3000, Seguridade = 3000. Total = 6000.
+    # Financeiro should list BBAS3 (1000.00, 16.67% total, 33.33% sector) and SANB11 (2000.00, 33.33% total, 66.67% sector)
+    # Seguridade should list CXSE3 (3000.00, 50.00% total, 100.00% sector)
+
+    # Let's check that customdata has the formatted content
+    # Note that Plotly names could be mapped to indices, let's verify both hover templates exist
+    found_financeiro = False
+    found_seguridade = False
+
+    for details in customdata_list:
+        detail_str = details[0]
+        if "BBAS3" in detail_str and "SANB11" in detail_str:
+            found_financeiro = True
+            assert "R$\xa01.000,00" in detail_str or "R$ 1.000,00" in detail_str
+            assert "16.67%" in detail_str
+            assert "33.33%" in detail_str
+            assert "R$\xa02.000,00" in detail_str or "R$ 2.000,00" in detail_str
+            assert "33.33%" in detail_str
+            assert "66.67%" in detail_str
+        elif "CXSE3" in detail_str:
+            found_seguridade = True
+            assert "R$\xa03.000,00" in detail_str or "R$ 3.000,00" in detail_str
+            assert "50.00%" in detail_str
+            assert "100.00%" in detail_str
+
+    assert found_financeiro, "Hover data for Financeiro not found or incorrect"
+    assert found_seguridade, "Hover data for Seguridade not found or incorrect"
+

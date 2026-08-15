@@ -27,14 +27,53 @@ class DashboardCharts:
     def _render_top_charts(self, df_positions):
         chart_col1, chart_col2, chart_col3 = st.columns(3)
         with chart_col1:
+            # Group df_positions by SECTOR to calculate sector sum and build custom hover details
+            total_portfolio_equity = df_positions[CURRENT_VALUE].sum()
+            sector_groups = df_positions.groupby(SECTOR)
+            
+            sector_data = []
+            for sector_name, group in sector_groups:
+                sector_val = group[CURRENT_VALUE].sum()
+                sector_pct = (sector_val / total_portfolio_equity * 100) if total_portfolio_equity > 0 else 0.0
+                
+                # Sort tickers within sector by CURRENT_VALUE descending
+                group_sorted = group.sort_values(by=CURRENT_VALUE, ascending=False)
+                
+                # Build detail lines for each ticker
+                details = []
+                for _, row in group_sorted.iterrows():
+                    ticker = row[TICKER]
+                    ticker_val = row[CURRENT_VALUE]
+                    ticker_pct_portfolio = (ticker_val / total_portfolio_equity * 100) if total_portfolio_equity > 0 else 0.0
+                    ticker_pct_sector = (ticker_val / sector_val * 100) if sector_val > 0 else 0.0
+                    
+                    formatted_val = Formatter.format_currency(ticker_val)
+                    details.append(f"  • {ticker}: {formatted_val} ({ticker_pct_sector:.2f}% do setor / {ticker_pct_portfolio:.2f}% do total)")
+                
+                details_str = "<br>".join(details)
+                
+                sector_data.append({
+                    SECTOR: sector_name,
+                    CURRENT_VALUE: sector_val,
+                    'Percentual': sector_pct,
+                    'Detalhes': details_str
+                })
+                
+            df_sectors = pd.DataFrame(sector_data)
+
             fig_sectors = px.pie(
-                df_positions,
+                df_sectors,
                 names=SECTOR,
                 values=CURRENT_VALUE,
                 title="Divisão do Patrimônio por Setor",
-                hole=0.4
+                hole=0.4,
+                custom_data=['Detalhes']
             )
-            fig_sectors.update_traces(textposition='inside', textinfo='percent+label', hovertemplate="<b>%{label}</b><br>Valor: R$ %{value:,.2f} (%{percent})<extra></extra>")
+            fig_sectors.update_traces(
+                textposition='inside',
+                textinfo='percent+label',
+                hovertemplate="<b>%{label}</b><br>Valor Total: R$ %{value:,.2f} (%{percent})<br><br><b>Ativos:</b><br>%{customdata[0]}<extra></extra>"
+            )
             st.plotly_chart(fig_sectors, width="stretch")
 
         with chart_col2:

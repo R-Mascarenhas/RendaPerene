@@ -269,10 +269,10 @@ class PortfolioView:
             # non-trading hours, nights, and weekends gaps (categorical time axis).
             if chosen_period in ["1d", "5d"]:
                 x_vals = history.index.strftime('%d/%m %H:%M')
-                hover_fmt = "Tempo: %{x}<br>Preço: R$ %{y:,.2f}<extra></extra>"
+                hover_fmt = "Preço: R$ %{y:,.2f}<extra></extra>"
             else:
                 x_vals = history.index.strftime('%d/%m/%Y')
-                hover_fmt = "Data: %{x}<br>Fechamento: R$ %{y:,.2f}<extra></extra>"
+                hover_fmt = "Fechamento: R$ %{y:,.2f}<extra></extra>"
 
             # Fetch raw transactions for this ticker to plot Buy/Sell markers
             df_raw_tx = AssetService.get_raw_transactions_for_chart(ticker)
@@ -320,7 +320,6 @@ class PortfolioView:
                         op_label = "Aporte (Compra)" if t_type == "BUY" else "Resgate (Venda)"
                         hover_text = (
                             f"<b>{op_label}</b><br>"
-                            f"Data: {t_date.strftime('%d/%m/%Y')}<br>"
                             f"Quantidade: {qty}<br>"
                             f"Preço Unitário: {Formatter.format_currency(t_price)}"
                         )
@@ -398,7 +397,10 @@ class PortfolioView:
                 nticks=8
             )
 
-            fig.update_layout(yaxis_tickformat="R$ ,.2f")
+            fig.update_layout(
+                yaxis_tickformat="R$ ,.2f",
+                hovermode="x unified"
+            )
             st.plotly_chart(fig, width="stretch")
         else:
             st.info(MSG_NO_YF_CHART_DATA)

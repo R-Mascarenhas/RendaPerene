@@ -30,15 +30,15 @@ class DashboardCharts:
             # Group df_positions by SECTOR to calculate sector sum and build custom hover details
             total_portfolio_equity = df_positions[CURRENT_VALUE].sum()
             sector_groups = df_positions.groupby(SECTOR)
-            
+
             sector_data = []
             for sector_name, group in sector_groups:
                 sector_val = group[CURRENT_VALUE].sum()
                 sector_pct = (sector_val / total_portfolio_equity * 100) if total_portfolio_equity > 0 else 0.0
-                
+
                 # Sort tickers within sector by CURRENT_VALUE descending
                 group_sorted = group.sort_values(by=CURRENT_VALUE, ascending=False)
-                
+
                 # Build detail lines for each ticker
                 details = []
                 for _, row in group_sorted.iterrows():
@@ -46,19 +46,19 @@ class DashboardCharts:
                     ticker_val = row[CURRENT_VALUE]
                     ticker_pct_portfolio = (ticker_val / total_portfolio_equity * 100) if total_portfolio_equity > 0 else 0.0
                     ticker_pct_sector = (ticker_val / sector_val * 100) if sector_val > 0 else 0.0
-                    
+
                     formatted_val = Formatter.format_currency(ticker_val)
                     details.append(f"  • {ticker}: {formatted_val} ({ticker_pct_sector:.2f}% do setor / {ticker_pct_portfolio:.2f}% do total)")
-                
+
                 details_str = "<br>".join(details)
-                
+
                 sector_data.append({
                     SECTOR: sector_name,
                     CURRENT_VALUE: sector_val,
                     'Percentual': sector_pct,
                     'Detalhes': details_str
                 })
-                
+
             df_sectors = pd.DataFrame(sector_data)
 
             fig_sectors = px.pie(
@@ -91,7 +91,10 @@ class DashboardCharts:
                 color_discrete_sequence=["#1f77b4", "#2ca02c"]
             )
             fig_evol.update_traces(hovertemplate="<b>%{x}</b><br>Valor: R$ %{y:,.2f}<extra></extra>")
-            fig_evol.update_layout(yaxis_tickformat="R$ ,.2f")
+            fig_evol.update_layout(
+                yaxis_tickformat="R$ ,.2f",
+                hovermode="x unified"
+            )
             st.plotly_chart(fig_evol, width="stretch")
 
         with chart_col3:
@@ -111,7 +114,10 @@ class DashboardCharts:
                     color_continuous_scale="Viridis"
                 )
                 fig_proventos.update_traces(hovertemplate="<b>%{y}</b><br>Yield on Cost: %{x:.2f}%<extra></extra>")
-                fig_proventos.update_layout(xaxis_tickformat=".2f")
+                fig_proventos.update_layout(
+                    xaxis_tickformat=".2f",
+                    hovermode="y unified"
+                )
                 st.plotly_chart(fig_proventos, width="stretch")
 
     def _render_evolution_chart(self):
@@ -250,8 +256,11 @@ class DashboardCharts:
                 category_orders={"year": anos_ordenados}
             )
 
-            fig_contribs.update_traces(hovertemplate="Ano: %{data.name}<br>Mês: %{x}<br>Aporte: R$ %{y:,.2f}<extra></extra>")
+            fig_contribs.update_traces(hovertemplate="Ano: %{data.name}<br>Aporte: R$ %{y:,.2f}<extra></extra>")
             fig_contribs.update_xaxes(categoryorder='array', categoryarray=meses_completos)
-            fig_contribs.update_layout(yaxis_tickformat="R$ ,.2f")
+            fig_contribs.update_layout(
+                yaxis_tickformat="R$ ,.2f",
+                hovermode="x unified"
+            )
 
             st.plotly_chart(fig_contribs, width="stretch")

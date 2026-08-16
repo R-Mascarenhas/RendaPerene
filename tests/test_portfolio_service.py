@@ -121,3 +121,41 @@ def test_sell_all_shares_retains_monitoring_but_allows_removal():
     # But it should NOW be available in the manual removal list since it is no longer owned!
     manual_only = AssetService.get_tracked_market_assets(include_owned=False)
     assert "BBAS3" in manual_only
+
+
+def test_instantiable_portfolio_contexts_isolation(tmp_path):
+    """Proves that two independent AssetService instances are completely isolated physically and logically."""
+    from core.database import DatabaseManager
+    from core.daos.portfolio_dao import PortfolioDAO
+    from services.assets_service import AssetService
+
+    # 1. Create two independent database files using temporary paths
+    db_file1 = str(tmp_path / "portfolio1.db")
+    db_file2 = str(tmp_path / "portfolio2.db")
+
+    db_manager1 = DatabaseManager(personal_db=db_file1)
+    db_manager2 = DatabaseManager(personal_db=db_file2)
+
+    db_manager1.init_personal_db()
+    db_manager2.init_personal_db()
+
+    # 2. Instantiate two custom Portfolio DAOs
+    dao1 = PortfolioDAO(db_manager=db_manager1)
+    dao2 = PortfolioDAO(db_manager=db_manager2)
+
+    # 3. Instantiate two custom AssetServices
+    service1 = AssetService(portfolio_repo=dao1)
+    service2 = AssetService(portfolio_repo=dao2)
+
+    # 4. Perform actions on service1
+    service1.add_transaction("WEGE3", "2021-04-30", "BUY", 100, 30.00)
+
+    # 5. Verify service1 has the position, but service2 remains completely empty!
+    df1 = service1.calculate_positions()
+    df2 = service2.calculate_positions()
+
+    assert len(df1) == 1
+    assert df1.loc[0, "ticker"] == "WEGE3"
+    assert df1.loc[0, "quantity"] == 100
+
+    assert len(df2) == 0  # Completely isolated!

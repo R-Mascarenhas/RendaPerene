@@ -1,7 +1,7 @@
 import datetime
 import numpy as np
 import pandas as pd
-from core.ports import PlanningConfigPort
+from core.ports import PlanningConfigPort, hybridmethod
 from core.daos.planning_dao import PlanningDAO
 from core.constants import (
     BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
@@ -14,36 +14,50 @@ from core.strings import MODEL_CLASSIC
 class SimulationService:
     """Domain Service for financial independence calculations and compound interest."""
 
-    # Concrete Outbound Adapter injected by default (Dependency Inversion Principle compliance)
-    _planning_repo: PlanningConfigPort = PlanningDAO
+    def __init__(self, planning_repo: PlanningConfigPort = None):
+        if isinstance(planning_repo, type):
+            planning_repo = planning_repo()
+        self._planning_repo = planning_repo or PlanningDAO()
+
+    # Default instance for backwards compatibility in presentation layers
+    _default_instance = None
+
+    @classmethod
+    def get_default(cls):
+        if cls._default_instance is None:
+            cls._default_instance = cls()
+        return cls._default_instance
 
     @classmethod
     def set_adapters(cls, planning_repo: PlanningConfigPort = None):
         """Dynamic dependency injection mechanism for testing and custom environment mocks."""
+        inst = cls.get_default()
         if planning_repo is not None:
-            cls._planning_repo = planning_repo
+            if isinstance(planning_repo, type):
+                planning_repo = planning_repo()
+            inst._planning_repo = planning_repo
 
-    @classmethod
-    def get_configuration(cls):
+    @hybridmethod
+    def get_configuration(self):
         """Fetches the planning configuration from the database."""
-        return cls._planning_repo.get_configuration()
+        return self._planning_repo.get_configuration()
 
-    @classmethod
-    def save_configuration(cls, birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type="MULTIPLIER", desired_income_fixed=10000.0, ceiling_model_selection="Bazin Clássico", bazin_target_yield=6.0, bazin_target_spread=3.0, planning_start_date=None):
+    @hybridmethod
+    def save_configuration(self, birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type="MULTIPLIER", desired_income_fixed=10000.0, ceiling_model_selection="Bazin Clássico", bazin_target_yield=6.0, bazin_target_spread=3.0, planning_start_date=None):
         """Saves or updates the planning configuration in the database."""
-        cls._planning_repo.save_configuration(
+        self._planning_repo.save_configuration(
             birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input,
             desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread,
             planning_start_date
         )
 
-    @classmethod
-    def get_initial_investment_age(cls, birth_date, config=None):
+    @hybridmethod
+    def get_initial_investment_age(self, birth_date, config=None):
         """Returns the exact age in months when the first investment was made."""
         if config is not None and config.get(PLANNING_START_DATE) is not None:
             min_date_str = config[PLANNING_START_DATE]
         else:
-            min_date_str = cls._planning_repo.get_min_transaction_date()
+            min_date_str = self._planning_repo.get_min_transaction_date()
 
         start_date = datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
 
@@ -60,15 +74,15 @@ class SimulationService:
         val = (fv - pv * interest_factor) / denominator if denominator > 0 else 0.0
         return max(0.0, val)
 
-    @staticmethod
-    def get_current_simulation():
+    @hybridmethod
+    def get_current_simulation(self):
         """
         Runs the entire retirement simulation using DB parameters (Single Source of Truth).
         Calculates lifetime monthly contribution using total_time_months and PV=0.
         Calculates course-corrected monthly contribution using actual database invested capital as PV.
         Returns a dictionary containing all computed parameters (DRY-compliant).
         """
-        config = SimulationService.get_configuration()
+        config = self.get_configuration()
         if not config:
             return None
 
@@ -78,7 +92,7 @@ class SimulationService:
         months_age = (today.year - birth_date.year) * 12 + today.month - birth_date.month - (today.day < birth_date.day)
         current_age = months_age / 12
 
-        start_months_age = SimulationService.get_initial_investment_age(birth_date, config)
+        start_months_age = self.get_initial_investment_age(birth_date, config)
         start_age_years = start_months_age / 12
 
         total_time_months = max(0, config[RETIREMENT_AGE] * 12 - start_months_age)
@@ -101,14 +115,14 @@ class SimulationService:
         # Get initial equity input from database configuration (only used if planning start date is specified)
         initial_equity_input = float(config[INITIAL_EQUITY_INPUT]) if config.get(PLANNING_START_DATE) is not None else 0.0
 
-        required_monthly_contribution = SimulationService.pmt_annuity_due(
+        required_monthly_contribution = self.pmt_annuity_due(
             monthly_interest_rate,
             total_time_months,
             initial_equity_input,
             target_equity
         )
 
-        updated_monthly_contribution = SimulationService.pmt_annuity_due(
+        updated_monthly_contribution = self.pmt_annuity_due(
             monthly_interest_rate,
             remaining_time_months,
             total_invested + initial_equity_input,
@@ -136,16 +150,16 @@ class SimulationService:
             "planning_start_date": config.get(PLANNING_START_DATE)
         }
 
-    @staticmethod
-    def get_updated_required_contribution():
+    @hybridmethod
+    def get_updated_required_contribution(self):
         """Returns the updated monthly contribution dynamically for the dashboard's planning metrics."""
-        sim = SimulationService.get_current_simulation()
+        sim = self.get_current_simulation()
         return sim["updated_monthly_contribution"] if sim else 0.0
 
-    @staticmethod
-    def get_required_contribution():
+    @hybridmethod
+    def get_required_contribution(self):
         """Returns the lifetime required monthly contribution dynamically."""
-        sim = SimulationService.get_current_simulation()
+        sim = self.get_current_simulation()
         return sim["required_monthly_contribution"] if sim else 0.0
 
     @staticmethod
@@ -233,8 +247,8 @@ class SimulationService:
         df_evolution['planned_dividends'] = planned_dividends
         return df_evolution
 
-    @staticmethod
-    def get_projection_chart_dataset(extrapolation_months: int = 12) -> pd.DataFrame:
+    @hybridmethod
+    def get_projection_chart_dataset(self, extrapolation_months: int = 12) -> pd.DataFrame:
         """
         Fetches historical portfolio portfolio evolution and prepares future extrapolation (trendlines,
         planned curves, etc.) for the comparative charts, returning a single display DataFrame.
@@ -244,7 +258,7 @@ class SimulationService:
         from core.constants import MONTH_STR, CUMULATIVE_INVESTED, CUMULATIVE_DIVIDENDS, MONTH_DISPLAY
         from core.utils.trendlines import TrendlineCalculator, PolynomialTrendlineStrategy, LinearMomentumTrendlineStrategy
 
-        config = SimulationService.get_configuration()
+        config = self.get_configuration()
         start_date_val = config.get(PLANNING_START_DATE) if config else None
         df_evolution = AssetService.calculate_historical_evolution(start_date=start_date_val)
         if df_evolution.empty:
@@ -269,7 +283,7 @@ class SimulationService:
         df_extrap[MONTH_DISPLAY] = df_extrap[MONTH_STR].apply(Formatter.format_month_year)
 
         # 2. GENERATE CONTINUOUS PLANNED CURVES
-        config = SimulationService.get_configuration()
+        config = self.get_configuration()
         from core.constants import ANNUAL_INTEREST_RATE
         if config:
             annual_interest_rate_val = float(config[ANNUAL_INTEREST_RATE])
@@ -279,9 +293,9 @@ class SimulationService:
             monthly_interest_rate = (1 + 6.0 / 100) ** (1 / 12) - 1
             initial_equity = 0.0
 
-        monthly_contribution = SimulationService.get_required_contribution()
+        monthly_contribution = self.get_required_contribution()
 
-        df_extrap = SimulationService.calculate_planned_historical_evolution(df_extrap, monthly_contribution, monthly_interest_rate, initial_equity=initial_equity)
+        df_extrap = self.calculate_planned_historical_evolution(df_extrap, monthly_contribution, monthly_interest_rate, initial_equity=initial_equity)
 
         # 3. COMPUTE EXTRAPOLATION TRENDLINES
         df_extrap['trend_dividends'] = TrendlineCalculator.calculate_trend(

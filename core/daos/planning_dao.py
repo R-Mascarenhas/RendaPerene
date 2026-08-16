@@ -8,10 +8,16 @@ from core.constants import (
 class PlanningDAO:
     """Data Access Object (DAO) for managing SQLite database access for retirement planning configurations."""
 
-    @staticmethod
-    def get_configuration() -> dict | None:
+    def __init__(self, db_manager=None):
+        self.db = db_manager or db
+
+    def get_personal_connection(self):
+        """Delegates and returns an active SQLite database connection."""
+        return self.db.get_personal_connection()
+
+    def get_configuration(self) -> dict | None:
         """Fetches the planning configuration from the database."""
-        conn = db.get_personal_connection()
+        conn = self.get_personal_connection()
         cursor = conn.cursor()
         try:
             cursor.execute(f"""
@@ -42,14 +48,13 @@ class PlanningDAO:
         finally:
             conn.close()
 
-    @staticmethod
-    def save_configuration(birth_date: str, retirement_age: int, desired_income_mw: float,
+    def save_configuration(self, birth_date: str, retirement_age: int, desired_income_mw: float,
                            annual_interest_rate: float, mw_value: float, initial_equity_input: float,
                            desired_income_type: str = "MULTIPLIER", desired_income_fixed: float = 10000.0,
                            ceiling_model_selection: str = "Bazin Clássico", bazin_target_yield: float = 6.0,
                            bazin_target_spread: float = 3.0, planning_start_date: str = None) -> None:
         """Saves or updates the planning configuration in the database."""
-        conn = db.get_personal_connection()
+        conn = self.get_personal_connection()
         cursor = conn.cursor()
         try:
             cursor.execute("SELECT id FROM planning_configuration WHERE id = 1")
@@ -78,10 +83,9 @@ class PlanningDAO:
         finally:
             conn.close()
 
-    @staticmethod
-    def get_min_transaction_date() -> str:
+    def get_min_transaction_date(self) -> str:
         """Returns the chronological minimum transaction date, or a default fallback date."""
-        conn = db.get_personal_connection()
+        conn = self.get_personal_connection()
         cursor = conn.cursor()
         try:
             cursor.execute("SELECT MIN(date) FROM transactions")

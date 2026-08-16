@@ -318,3 +318,55 @@ class PortfolioDAO:
             return pd.read_sql_query("SELECT date, quantity, unit_price, fees FROM transactions WHERE transaction_type = 'BUY'", conn)
         finally:
             conn.close()
+
+    def initialize_tables(self, conn) -> None:
+        """Creates tables, runs migrations, and seeds defaults for the Portfolio/Transaction domain."""
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                transaction_type TEXT NOT NULL,
+                quantity INTEGER NOT NULL,
+                unit_price REAL NOT NULL,
+                fees REAL DEFAULT 0.0
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS dividends (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                dividend_type TEXT NOT NULL,
+                total_value REAL NOT NULL
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tracked_market_assets (
+                ticker TEXT PRIMARY KEY
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS dividend_corrections (
+                ticker TEXT NOT NULL,
+                year INTEGER NOT NULL,
+                total_value REAL NOT NULL,
+                PRIMARY KEY (ticker, year)
+            )
+        ''')
+
+        # Pre-seed BBAS3 and BBDC3 values if empty to keep out-of-the-box accuracy without Python hardcoding
+        cursor.execute("SELECT COUNT(*) FROM dividend_corrections")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES ('BBAS3', 2023, 2.29)")
+            cursor.execute("INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES ('BBAS3', 2024, 2.61)")
+            cursor.execute("INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES ('BBDC3', 2023, 1.54)")
+            cursor.execute("INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES ('BBDC3', 2024, 1.01)")
+
+# Register schema self-registration provider
+db.register_schema(PortfolioDAO())

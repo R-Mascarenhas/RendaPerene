@@ -147,3 +147,11 @@ class PlanningConfigPort(Protocol):
 
     def get_min_transaction_date(self) -> str:
         ...
+
+
+class TableSchemaPort(Protocol):
+    """Outbound Port interface defining database table schema self-registration and initialization (DIP compliant)."""
+
+    def initialize_tables(self, conn: Any) -> None:
+        """Creates tables, runs necessary retrocompatibility schema migrations, and seeds defaults on the connection."""
+        ...

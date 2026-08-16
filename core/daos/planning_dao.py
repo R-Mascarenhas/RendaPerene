@@ -93,3 +93,36 @@ class PlanningDAO:
             return res[0] if res and res[0] is not None else "2021-04-30"
         finally:
             conn.close()
+
+    def initialize_tables(self, conn) -> None:
+        """Creates tables, runs migrations, and seeds defaults for the Retirement Planning domain."""
+        import sqlite3
+        cursor = conn.cursor()
+
+        # Generate planning_configuration table schema dynamically using core constants
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS planning_configuration (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                {BIRTH_DATE} TEXT NOT NULL,
+                {RETIREMENT_AGE} INTEGER NOT NULL,
+                {DESIRED_INCOME_MW} REAL NOT NULL,
+                {ANNUAL_INTEREST_RATE} REAL NOT NULL,
+                {MW_VALUE} REAL NOT NULL,
+                {INITIAL_EQUITY_INPUT} REAL NOT NULL,
+                {DESIRED_INCOME_TYPE} TEXT DEFAULT 'MULTIPLIER',
+                {DESIRED_INCOME_FIXED} REAL DEFAULT 10000.0,
+                {CEILING_MODEL_SELECTION} TEXT DEFAULT 'Bazin Clássico',
+                {BAZIN_TARGET_YIELD} REAL DEFAULT 6.0,
+                {BAZIN_TARGET_SPREAD} REAL DEFAULT 3.0,
+                {PLANNING_START_DATE} TEXT DEFAULT NULL
+            )
+        ''')
+
+        # Run retrocompatibility schema migrations
+        try:
+            cursor.execute(f"ALTER TABLE planning_configuration ADD COLUMN {PLANNING_START_DATE} TEXT DEFAULT NULL")
+        except sqlite3.OperationalError:
+            pass
+
+# Register schema self-registration provider
+db.register_schema(PlanningDAO())

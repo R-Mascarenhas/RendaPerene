@@ -1,4 +1,3 @@
-import streamlit as st
 import yfinance as yf
 import datetime
 import os
@@ -8,7 +7,6 @@ class MarketData:
     """Class responsible for integrations with market and financial APIs."""
 
     @staticmethod
-    @st.cache_data(ttl=600)
     def get_batch_quotes(tickers: list) -> dict:
         """Fetches batch quotes from Yahoo Finance with a 10-minute cache."""
         quotes = {}
@@ -32,7 +30,6 @@ class MarketData:
             return 0.0
 
     @staticmethod
-    @st.cache_data(ttl=600)
     def get_ticker_intraday_history(ticker: str, period="1d", interval="5m") -> pd.DataFrame:
         """
         Fetches the intraday close prices series for a specific ticker.
@@ -61,7 +58,6 @@ class MarketData:
             return pd.DataFrame()
 
     @staticmethod
-    @st.cache_data(ttl=3600)
     def get_ticker_history(ticker: str, period="1y", interval="1d") -> pd.DataFrame:
         """Fetches the raw historical stock price series from Yahoo Finance with a 1-hour cache."""
         try:
@@ -71,7 +67,6 @@ class MarketData:
             return pd.DataFrame()
 
     @staticmethod
-    @st.cache_data(ttl=600)
     def _get_raw_ticker_market_analysis(ticker: str) -> dict:
         """
         Fetches raw core B3 valuation metrics and 5-year historical dividends from Yahoo Finance and database corrections.
@@ -171,14 +166,12 @@ class MarketData:
         return data
 
     @staticmethod
-    @st.cache_data
     def load_assets_catalog():
         """Loads the B3 assets static catalog from assets.csv into memory RAM (Vastly faster!)."""
         from core.daos.assets_catalog_dao import AssetsCatalogDAO
-        return AssetsCatalogDAO.load_catalog()
+        return AssetsCatalogDAO().load_catalog()
 
     @staticmethod
-    @st.cache_data(ttl=2592000)
     def get_current_ipca_l12m() -> float:
         """Dynamically fetches the official 12-month accumulated IPCA index from the Banco Central (BCB) SGS API Series 13522."""
         import requests
@@ -193,7 +186,6 @@ class MarketData:
         return 4.50 # Highly realistic Brazilian fallback IPCA proxy if the BCB API is temporarily down
 
     @staticmethod
-    @st.cache_data(ttl=2592000)
     def get_current_selic() -> float:
         """Dynamically fetches the official annualized SELIC Target rate from the Banco Central (BCB) SGS API Series 1178."""
         import requests
@@ -208,7 +200,6 @@ class MarketData:
         return 10.50 # Highly realistic Brazilian fallback SELIC proxy if the BCB API is temporarily down
 
     @staticmethod
-    @st.cache_data(ttl=2592000)
     def get_current_minimum_wage() -> float:
         """Dynamically fetches the current Brazilian minimum wage from the Banco Central (BCB) API Series 1619."""
         import requests
@@ -222,6 +213,12 @@ class MarketData:
             pass
         return 1621.0
 
-# Attach direct clear delegate function attribute for compatibility with existing tests/handlers
-MarketData.get_ticker_market_analysis.clear = MarketData._get_raw_ticker_market_analysis.clear
+# Attach direct clear dummy functions for backwards compatibility in headless environments
+MarketData.get_ticker_market_analysis.clear = lambda: None
+MarketData.get_current_ipca_l12m.clear = lambda: None
+MarketData.get_current_selic.clear = lambda: None
+MarketData.get_current_minimum_wage.clear = lambda: None
+MarketData.get_batch_quotes.clear = lambda: None
+MarketData.get_ticker_intraday_history.clear = lambda: None
+MarketData.get_ticker_history.clear = lambda: None
 

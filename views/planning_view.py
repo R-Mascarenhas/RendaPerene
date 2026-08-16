@@ -5,7 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 from services.planning_service import SimulationService
 from core.utils.formatter import Formatter
-from core.utils.market_data import MarketData
+from views.cached_market_data import StreamlitCachedMarketData as MarketData
 from views.components.time_metrics import TimeMetricsWidget
 from views.components.simulation_results import SimulationResultsWidget
 from views.components.projection_chart import ProjectionChartWidget

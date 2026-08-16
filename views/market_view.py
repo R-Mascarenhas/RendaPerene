@@ -4,7 +4,8 @@ import pandas as pd
 import datetime
 from services.assets_service import AssetService
 from services.planning_service import SimulationService
-from core.utils import Formatter, MarketData
+from core.utils import Formatter
+from views.cached_market_data import StreamlitCachedMarketData as MarketData
 from core.constants import (
     TICKER, NAME, CURRENT_PRICE, CEILING_PRICE, MARKET_PB, MARKET_PE,
     CURRENT_DY, MARKET_ROE, MARKET_LOW_52W, MARKET_HIGH_52W,

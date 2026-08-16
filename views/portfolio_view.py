@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from services.assets_service import AssetService
 from core.utils.formatter import Formatter
-from core.utils.market_data import MarketData
+from views.cached_market_data import StreamlitCachedMarketData as MarketData
 from core.strings import *
 class PortfolioView:
     """Class responsible for rendering the detailed metrics, charts, and pivot tables per active asset in your portfolio."""

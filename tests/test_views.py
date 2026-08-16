@@ -173,7 +173,7 @@ def test_views_static_market_data_methods_sanity():
     # Traverse views directory
     for root, dirs, files in os.walk(views_dir):
         for file_name in files:
-            if file_name.endswith(".py"):
+            if file_name.endswith(".py") and file_name != "cached_market_data.py":
                 file_path = os.path.join(root, file_name)
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()

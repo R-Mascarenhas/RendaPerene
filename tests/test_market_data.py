@@ -145,3 +145,51 @@ def test_get_tracked_market_assets_includes_owned_stocks(mock_db):
     assert "CXSE3" in manual_both
     assert "BBAS3" not in manual_both # Must be excluded since it is currently owned
     assert manual_both == ["CXSE3"]
+
+
+def test_streamlit_cached_market_data_delegation(monkeypatch):
+    """
+    Verifies that StreamlitCachedMarketData correctly delegates calls to the underlying
+    pure MarketData class, ensuring the structural adapter contract is preserved.
+    """
+    from views.cached_market_data import StreamlitCachedMarketData
+
+    calls = []
+
+    def mock_get_batch_quotes(tickers):
+        calls.append("get_batch_quotes")
+        return {"MOCK3": 10.0}
+
+    monkeypatch.setattr(MarketData, "get_batch_quotes", mock_get_batch_quotes)
+
+    result = StreamlitCachedMarketData.get_batch_quotes(["MOCK3"])
+    assert result == {"MOCK3": 10.0}
+    assert "get_batch_quotes" in calls
+
+
+def test_load_assets_catalog_instantiation():
+    """
+    Verifies that load_assets_catalog correctly compiles and executes, avoiding
+    missing 'self' positional argument TypeError by properly instantiating the DAO.
+    """
+    import importlib
+    import sys
+    import os
+    import core.utils.market_data
+
+    # Reload to get the original unpatched class
+    importlib.reload(core.utils.market_data)
+    OriginalMarketData = core.utils.market_data.MarketData
+
+    # Create a temporary mock csv to avoid FileNotFoundError
+    with open("assets.csv", "w", encoding="utf-8-sig") as f:
+        f.write("CÓDIGO,NOME,IMAGEM,CNPJ,SETOR ECONÔMICO,SUBSETOR ,SEGMENTO / ADM / PAÍS,TIPO,SEGMENTO\n")
+
+    try:
+        catalog = OriginalMarketData.load_assets_catalog()
+        assert isinstance(catalog, pd.DataFrame)
+    finally:
+        # Cleanup and restore monkeypatch for subsequent tests
+        if os.path.exists("assets.csv"):
+            os.remove("assets.csv")
+        importlib.reload(core.utils.market_data)

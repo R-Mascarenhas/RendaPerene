@@ -3,7 +3,7 @@ import streamlit as st
 import datetime
 import pandas as pd
 from services.assets_service import AssetService
-from core.utils.market_data import MarketData
+from views.cached_market_data import StreamlitCachedMarketData as MarketData
 from core.strings import (
     MSG_INVALID_ASSET_SELECTION, MSG_MANUAL_ENTRY_TITLE, MSG_MANUAL_ENTRY_SUCCESS_TX,
     MSG_MANUAL_ENTRY_SUCCESS_DIV, MSG_SMART_IMPORTER_TITLE, MSG_SMART_IMPORTER_DESC,

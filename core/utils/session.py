@@ -1,6 +1,6 @@
 import streamlit as st
 import datetime
-from core.utils.market_data import MarketData
+from views.cached_market_data import StreamlitCachedMarketData as MarketData
 from core.constants import (
     BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE, MW_VALUE, INITIAL_EQUITY_INPUT,
     DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED, CEILING_MODEL_SELECTION, BAZIN_TARGET_YIELD, BAZIN_TARGET_SPREAD,

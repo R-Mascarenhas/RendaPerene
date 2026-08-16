@@ -89,6 +89,11 @@ db.init_personal_db()
 
 st.set_page_config(page_title=f"Renda Perene v{get_app_version()}", page_icon="💼", layout="wide")
 
+# Configure dependency injection adapters for Streamlit presentation environment
+from views.cached_market_data import StreamlitCachedMarketData
+from services.assets_service import AssetService
+AssetService.set_adapters(market_data_api=StreamlitCachedMarketData)
+
 # Session state must be initialized before rendering any view
 SessionManager.initialize()
 

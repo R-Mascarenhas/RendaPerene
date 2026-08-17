@@ -45,6 +45,16 @@ def mock_db(monkeypatch):
     monkeypatch.setattr(db, "get_personal_connection", test_db.get_personal_connection)
     monkeypatch.setattr(MarketData, "load_assets_catalog", mock_load_catalog)
 
+    # Wire default test adapters at the test environment composition edge
+    from services.assets_service import AssetService
+    from core.utils.b3_parser import B3ExcelParserAdapter
+    AssetService.set_adapters(
+        portfolio_repo=None,
+        catalog_repo=None,
+        market_data_api=MarketData,
+        excel_parser=B3ExcelParserAdapter()
+    )
+
     yield
 
     if os.path.exists(TEST_PERSONAL_DB):

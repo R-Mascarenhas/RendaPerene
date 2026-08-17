@@ -4,7 +4,13 @@ import pandas as pd
 
 from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.daos.portfolio_dao import PortfolioDAO
-from core.ports import AssetsCatalogPort, MarketDataPort, PortfolioPort, hybridmethod
+from core.ports import (
+    AssetsCatalogPort,
+    ExcelParserPort,
+    MarketDataPort,
+    PortfolioPort,
+    hybridmethod,
+)
 from core.utils.market_data import MarketData
 
 
@@ -16,10 +22,12 @@ class AssetService:
         portfolio_repo: PortfolioPort = None,
         catalog_repo: AssetsCatalogPort = None,
         market_data_api: MarketDataPort = None,
+        excel_parser: ExcelParserPort = None,
     ):
         self._portfolio_repo = portfolio_repo or PortfolioDAO()
         self._catalog_repo = catalog_repo or AssetsCatalogDAO()
         self._market_data_api = market_data_api or MarketData
+        self._excel_parser = excel_parser
 
     # Default instance for backwards compatibility in presentation layers
     _default_instance = None
@@ -36,6 +44,7 @@ class AssetService:
         portfolio_repo: PortfolioPort = None,
         catalog_repo: AssetsCatalogPort = None,
         market_data_api: MarketDataPort = None,
+        excel_parser: ExcelParserPort = None,
     ):
         """Dynamic dependency injection mechanism for testing and custom environment mocks."""
         inst = cls.get_default()
@@ -45,6 +54,8 @@ class AssetService:
             inst._catalog_repo = catalog_repo
         if market_data_api is not None:
             inst._market_data_api = market_data_api
+        if excel_parser is not None:
+            inst._excel_parser = excel_parser
 
     @hybridmethod
     def register_fallback_asset(self, ticker: str):
@@ -118,102 +129,39 @@ class AssetService:
     @hybridmethod
     def process_b3_import(self, df: pd.DataFrame, progress_callback=None) -> tuple[int, int]:
         """Processes a DataFrame imported from B3, routing and translating row categories to English."""
-        df.columns = df.columns.str.strip()
+        if self._excel_parser is None:
+            raise RuntimeError("No ExcelParserPort adapter was injected into AssetService.")
+
+        transactions_df, dividends_df = self._excel_parser.parse_b3_excel(
+            df, progress_callback=progress_callback
+        )
 
         processed_transactions = 0
         processed_dividends = 0
-        total_rows = len(df)
 
-        for idx, (_, row) in enumerate(df.iterrows()):
-            if progress_callback and total_rows > 0:
-                progress_callback(idx + 1, total_rows)
-            try:
-                movement = str(row.get("Tipo de Movimentação", row.get("Movimentação", ""))).strip()
-                entry_exit = str(row.get("Entrada/Saída", "")).strip().lower()
-                date_str = str(row.get("Data do Negócio", row.get("Data", ""))).strip()
+        # Record standardized transactions
+        for _, row in transactions_df.iterrows():
+            success = self.add_transaction(
+                ticker=row["ticker"],
+                date=row["date"],
+                transaction_type=row["transaction_type"],
+                quantity=row["quantity"],
+                unit_price=row["unit_price"],
+                fees=row["fees"],
+            )
+            if success:
+                processed_transactions += 1
 
-                date_parts = date_str.split("/")
-                if len(date_parts) == 3:
-                    date = f"{date_parts[2]}-{date_parts[1]}-{date_parts[0]}"
-                else:
-                    date = date_str
-
-                raw_product = str(row.get("Código de Negociação", row.get("Produto", ""))).strip()
-                ticker = raw_product.split("-")[0].strip()
-
-                if not ticker or len(ticker) < 5 or not ticker[:4].isalpha():
-                    continue
-
-                quantity = int(row.get("Quantidade", 0))
-                raw_price = row.get("Preço", row.get("Preço unitário", 0.0))
-                price = 0.0 if raw_price == "-" else float(raw_price)
-
-                if ticker == "CXSE3" and date == "2021-04-30" and price == 0.0:
-                    price = 9.67
-
-                raw_value = row.get("Valor", row.get("Valor da Operação", 0.0))
-                total_value = 0.0 if raw_value == "-" else float(raw_value)
-
-                transaction_type = None
-                if "Compra" in movement:
-                    transaction_type = "BUY"
-                elif "Venda" in movement:
-                    transaction_type = "SELL"
-                elif (
-                    "Desdobro" in movement or "Bonificação" in movement or "Bonificacao" in movement
-                ):
-                    if "credito" in entry_exit or "crédito" in entry_exit:
-                        transaction_type = "SPLIT"
-                elif "Grupamento" in movement:
-                    transaction_type = "GROUP"
-                elif (
-                    "Transferência - Liquidação" in movement
-                    or "Transferência" in movement
-                    or "Transferencia" in movement
-                    or "Depósito" in movement
-                    or "Deposito" in movement
-                ):
-                    # Ignore custodian transfers at zero cost (typically labeled as 'Transferência' or 'Transferência - Liquidação' with zero price)
-                    is_transfer = (
-                        "Transfer" in movement
-                        or "Transferência" in movement
-                        or "Transferencia" in movement
-                    )
-                    if is_transfer and (price == 0.0 or raw_price == "-"):
-                        continue
-                    if "credito" in entry_exit or "crédito" in entry_exit:
-                        transaction_type = "BUY"
-                    elif "debito" in entry_exit or "débito" in entry_exit:
-                        transaction_type = "SELL"
-                elif "Resgate" in movement:
-                    transaction_type = "SELL"
-
-                if transaction_type == "BUY":
-                    success = self.add_transaction(ticker, date, "BUY", quantity, price)
-                    if success:
-                        processed_transactions += 1
-                elif transaction_type == "SELL":
-                    success = self.add_transaction(ticker, date, "SELL", quantity, price)
-                    if success:
-                        processed_transactions += 1
-                elif transaction_type == "SPLIT":
-                    success = self.add_transaction(ticker, date, "BUY", quantity, 0.0)
-                    if success:
-                        processed_transactions += 1
-                elif transaction_type == "GROUP":
-                    success = self.add_transaction(ticker, date, "GROUP", quantity, 0.0)
-                    if success:
-                        processed_transactions += 1
-                elif any(term in movement for term in ["Dividendo", "Juros", "Rendimento"]):
-                    dividend_type = "DIVIDEND" if "Dividendo" in movement else "JCP"
-                    if "Rendimento" in movement:
-                        dividend_type = "YIELD"
-                    success = self.add_dividend(ticker, date, dividend_type, total_value)
-                    if success:
-                        processed_dividends += 1
-
-            except Exception:
-                continue
+        # Record standardized dividends
+        for _, row in dividends_df.iterrows():
+            success = self.add_dividend(
+                ticker=row["ticker"],
+                date=row["date"],
+                dividend_type=row["dividend_type"],
+                total_value=row["total_value"],
+            )
+            if success:
+                processed_dividends += 1
 
         return processed_transactions, processed_dividends
 

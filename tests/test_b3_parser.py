@@ -223,3 +223,202 @@ def test_discrepancies_parser():
     assert df_positions.loc["IRBR3", "quantity"] == 200
     # Cost basis remains 19400 + 2000 = 21400. Average price adjusts to 21400 / 200 = 107.00
     assert round(df_positions.loc["IRBR3", "average_price"], 2) == 107.00
+
+def test_b3_parser_adapter_isolation():
+    """Unit test specifically verifying the B3ExcelParserAdapter in isolation,
+    asserting it returns clean, standardized DataFrames in English.
+    """
+    from core.utils.b3_parser import B3ExcelParserAdapter
+
+    data = {
+        "Entrada/Saída": ["Credito", "Debito"],
+        "Movimentação": ["Compra", "Venda"],
+        "Data": ["10/07/2024", "15/07/2024"],
+        "Produto": ["BBAS3 - BANCO DO BRASIL S/A", "VALE3 - VALE S/A"],
+        "Quantidade": [100, 50],
+        "Preço unitário": [26.25, 60.00],
+        "Valor da Operação": [2625.00, 3000.00]
+    }
+    df_excel = pd.DataFrame(data)
+
+    adapter = B3ExcelParserAdapter()
+    transactions_df, dividends_df = adapter.parse_b3_excel(df_excel)
+
+    # Verify transactions DataFrame columns and records
+    assert not transactions_df.empty
+    assert list(transactions_df.columns) == ['ticker', 'date', 'transaction_type', 'quantity', 'unit_price', 'fees']
+    assert transactions_df.loc[0, 'ticker'] == 'BBAS3'
+    assert transactions_df.loc[0, 'date'] == '2024-07-10'
+    assert transactions_df.loc[0, 'transaction_type'] == 'BUY'
+    assert transactions_df.loc[0, 'quantity'] == 100
+    assert transactions_df.loc[0, 'unit_price'] == 26.25
+
+    assert transactions_df.loc[1, 'ticker'] == 'VALE3'
+    assert transactions_df.loc[1, 'date'] == '2024-07-15'
+    assert transactions_df.loc[1, 'transaction_type'] == 'SELL'
+    assert transactions_df.loc[1, 'quantity'] == 50
+    assert transactions_df.loc[1, 'unit_price'] == 60.00
+
+    # Verify dividends DataFrame is empty
+    assert dividends_df.empty
+
+
+def test_b3_parser_column_variants():
+    """Unit test verifying that B3ExcelParserAdapter supports alternative column names correctly."""
+    from core.utils.b3_parser import B3ExcelParserAdapter
+    # Set up data with alternative column headers (e.g. 'Movimentação' instead of 'Tipo de Movimentação' and 'Preço' instead of 'Preço unitário')
+    data = {
+        "Entrada/Saída": ["Credito", "Debito"],
+        "Movimentação": ["Compra", "Venda"],
+        "Data": ["10/07/2024", "15/07/2024"],
+        "Produto": ["BBAS3 - BANCO DO BRASIL S/A", "VALE3 - VALE S/A"],
+        "Quantidade": [100, 50],
+        "Preço": [26.25, 60.00],
+        "Valor": [2625.00, 3000.00]
+    }
+    df_excel = pd.DataFrame(data)
+    adapter = B3ExcelParserAdapter()
+    transactions_df, dividends_df = adapter.parse_b3_excel(df_excel)
+
+    assert not transactions_df.empty
+    assert transactions_df.loc[0, 'ticker'] == 'BBAS3'
+    assert transactions_df.loc[0, 'transaction_type'] == 'BUY'
+    assert transactions_df.loc[0, 'unit_price'] == 26.25
+    assert transactions_df.loc[1, 'ticker'] == 'VALE3'
+    assert transactions_df.loc[1, 'transaction_type'] == 'SELL'
+    assert transactions_df.loc[1, 'unit_price'] == 60.00
+
+
+def test_b3_parser_corporate_events_and_dividends():
+    """Unit test verifying that Desdobro, Bonificação, Grupamento, Dividendo, Juros, and Rendimento are mapped correctly."""
+    from core.utils.b3_parser import B3ExcelParserAdapter
+    data = {
+        "Entrada/Saída": ["Credito", "Credito", "Credito", "Credito", "Credito", "Credito"],
+        "Movimentação": [
+            "Desdobro",
+            "Bonificação em Ativos",
+            "Grupamento",
+            "Dividendo",
+            "Juros Sobre Capital Próprio",
+            "Rendimento"
+        ],
+        "Data": ["10/07/2024", "11/07/2024", "12/07/2024", "13/07/2024", "14/07/2024", "15/07/2024"],
+        "Produto": ["BBAS3", "VALE3", "PETR4", "BBAS3", "VALE3", "MXRF11"],
+        "Quantidade": [100, 50, 10, 0, 0, 0],
+        "Preço unitário": ["-", "-", "-", "-", "-", "-"],
+        "Valor da Operação": ["-", "-", "-", 120.00, 50.00, 8.50]
+    }
+    df_excel = pd.DataFrame(data)
+    adapter = B3ExcelParserAdapter()
+    transactions_df, dividends_df = adapter.parse_b3_excel(df_excel)
+
+    assert len(transactions_df) == 3
+    # Desdobro -> BUY, unit_price = 0.0
+    assert transactions_df.loc[0, 'ticker'] == 'BBAS3'
+    assert transactions_df.loc[0, 'transaction_type'] == 'BUY'
+    assert transactions_df.loc[0, 'unit_price'] == 0.0
+
+    # Bonificação em Ativos -> BUY, unit_price = 0.0
+    assert transactions_df.loc[1, 'ticker'] == 'VALE3'
+    assert transactions_df.loc[1, 'transaction_type'] == 'BUY'
+    assert transactions_df.loc[1, 'unit_price'] == 0.0
+
+    # Grupamento -> GROUP, unit_price = 0.0
+    assert transactions_df.loc[2, 'ticker'] == 'PETR4'
+    assert transactions_df.loc[2, 'transaction_type'] == 'GROUP'
+    assert transactions_df.loc[2, 'unit_price'] == 0.0
+
+    assert len(dividends_df) == 3
+    # Dividendo -> DIVIDEND
+    assert dividends_df.loc[0, 'ticker'] == 'BBAS3'
+    assert dividends_df.loc[0, 'dividend_type'] == 'DIVIDEND'
+    assert dividends_df.loc[0, 'total_value'] == 120.00
+
+    # Juros -> JCP
+    assert dividends_df.loc[1, 'ticker'] == 'VALE3'
+    assert dividends_df.loc[1, 'dividend_type'] == 'JCP'
+    assert dividends_df.loc[1, 'total_value'] == 50.00
+
+    # Rendimento -> YIELD
+    assert dividends_df.loc[2, 'ticker'] == 'MXRF11'
+    assert dividends_df.loc[2, 'dividend_type'] == 'YIELD'
+    assert dividends_df.loc[2, 'total_value'] == 8.50
+
+
+def test_b3_parser_zero_cost_transfers_and_exclusions():
+    """Unit test verifying custodian transfers are excluded if price is zero, but recorded if price is positive."""
+    from core.utils.b3_parser import B3ExcelParserAdapter
+    data = {
+        "Entrada/Saída": ["Credito", "Debito", "Credito"],
+        "Movimentação": ["Transferência", "Transferência", "Transferência"],
+        "Data": ["10/07/2024", "11/07/2024", "12/07/2024"],
+        "Produto": ["BBAS3", "VALE3", "PETR4"],
+        "Quantidade": [100, 50, 10],
+        "Preço unitário": ["-", "-", 25.00],
+        "Valor da Operação": ["-", "-", 250.00]
+    }
+    df_excel = pd.DataFrame(data)
+    adapter = B3ExcelParserAdapter()
+    transactions_df, dividends_df = adapter.parse_b3_excel(df_excel)
+
+    # Only PETR4 has positive price, other transfers are zero-cost and should be excluded.
+    assert len(transactions_df) == 1
+    assert transactions_df.loc[0, 'ticker'] == 'PETR4'
+    assert transactions_df.loc[0, 'transaction_type'] == 'BUY'
+    assert transactions_df.loc[0, 'unit_price'] == 25.00
+
+
+def test_b3_parser_cxse3_price_correction():
+    """Unit test verifying that zero-cost CXSE3 on 2021-04-30 gets its unit price corrected to 9.67."""
+    from core.utils.b3_parser import B3ExcelParserAdapter
+    data = {
+        "Entrada/Saída": ["Credito"],
+        "Movimentação": ["Compra"],
+        "Data": ["30/04/2021"],
+        "Produto": ["CXSE3"],
+        "Quantidade": [100],
+        "Preço unitário": ["-"],
+        "Valor da Operação": ["-"]
+    }
+    df_excel = pd.DataFrame(data)
+    adapter = B3ExcelParserAdapter()
+    transactions_df, dividends_df = adapter.parse_b3_excel(df_excel)
+
+    assert len(transactions_df) == 1
+    assert transactions_df.loc[0, 'ticker'] == 'CXSE3'
+    assert transactions_df.loc[0, 'unit_price'] == 9.67
+
+
+def test_assets_service_injected_parser_delegation():
+    """Unit test verifying AssetService handles custom injected ExcelParserPort implementation."""
+    from core.ports import ExcelParserPort
+    from services.assets_service import AssetService
+
+    class FakeExcelParser(ExcelParserPort):
+        def parse_b3_excel(self, df: pd.DataFrame, progress_callback = None):
+            # Custom hardcoded parse output
+            tx_data = [{
+                'ticker': 'FAKE4', 'date': '2026-08-17', 'transaction_type': 'BUY',
+                'quantity': 200, 'unit_price': 10.00, 'fees': 0.0
+            }]
+            div_data = []
+            return pd.DataFrame(tx_data), pd.DataFrame(div_data)
+
+    fake_parser = FakeExcelParser()
+
+    # Create a fresh isolated AssetService instance
+    service = AssetService(excel_parser=fake_parser)
+    assert service._excel_parser is fake_parser
+
+    # Try processing
+    dummy_df = pd.DataFrame({"dummy": [1]})
+    tx_count, div_count = service.process_b3_import(dummy_df)
+
+    assert tx_count == 1
+    assert div_count == 0
+
+    df_positions = service.calculate_positions()
+    df_positions.set_index("ticker", inplace=True)
+    assert "FAKE4" in df_positions.index
+    assert df_positions.loc["FAKE4", "quantity"] == 200
+    assert df_positions.loc["FAKE4", "average_price"] == 10.00

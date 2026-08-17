@@ -1,6 +1,8 @@
-import streamlit as st
 import pandas as pd
+import streamlit as st
+
 from core.utils.market_data import MarketData
+
 
 class StreamlitCachedMarketData:
     """
@@ -91,5 +93,8 @@ class StreamlitCachedMarketData:
         """Dynamically fetches the current Brazilian minimum wage (Cached)."""
         return MarketData.get_current_minimum_wage()
 
+
 # Attach direct clear delegate function attribute for compatibility with existing tests/handlers
-StreamlitCachedMarketData.get_ticker_market_analysis.clear = StreamlitCachedMarketData._get_raw_ticker_market_analysis.clear
+StreamlitCachedMarketData.get_ticker_market_analysis.clear = (
+    StreamlitCachedMarketData._get_raw_ticker_market_analysis.clear
+)

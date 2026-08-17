@@ -1,23 +1,29 @@
+import datetime
+
+import plotly.graph_objects as go
 import streamlit as st
 
-import pandas as pd
-import numpy as np
-import datetime
-import plotly.graph_objects as go
-from services.planning_service import SimulationService
-from services.assets_service import AssetService
-from core.utils.formatter import Formatter
-from core.strings import (
-    MSG_LONG_TERM_PROJECTION_TITLE, MSG_CONSTANT_CONTRIB_VS_INTEREST_TITLE,
-    MSG_REAL_VS_PLANNED_TITLE, MSG_REAL_VS_PLANNED_DESC
-)
 from core.constants import (
-    SIM_CURRENT_AGE, SIM_START_AGE_YEARS, SIM_TOTAL_TIME_MONTHS, SIM_REMAINING_TIME_MONTHS,
-    SIM_REQUIRED_CONTRIBUTION, SIM_UPDATED_CONTRIBUTION, SIM_TOTAL_INVESTED,
-    SIM_MONTHLY_INTEREST_RATE, SIM_TARGET_EQUITY,
-    ANNUAL_INTEREST_RATE, MONTH_STR, MONTH_DISPLAY, CUMULATIVE_INVESTED, PLANNED_INVESTED,
-    CUMULATIVE_DIVIDENDS, PLANNED_DIVIDENDS
+    CUMULATIVE_DIVIDENDS,
+    CUMULATIVE_INVESTED,
+    MONTH_DISPLAY,
+    PLANNED_DIVIDENDS,
+    PLANNED_INVESTED,
+    SIM_MONTHLY_INTEREST_RATE,
+    SIM_REQUIRED_CONTRIBUTION,
+    SIM_START_AGE_YEARS,
+    SIM_TARGET_EQUITY,
+    SIM_TOTAL_TIME_MONTHS,
 )
+from core.strings import (
+    MSG_CONSTANT_CONTRIB_VS_INTEREST_TITLE,
+    MSG_LONG_TERM_PROJECTION_TITLE,
+    MSG_REAL_VS_PLANNED_DESC,
+    MSG_REAL_VS_PLANNED_TITLE,
+)
+from core.utils.formatter import Formatter
+from services.planning_service import SimulationService
+
 
 class ProjectionChartWidget:
     """Displays highly polished, interactive compounding projection and comparative curves."""
@@ -42,7 +48,7 @@ class ProjectionChartWidget:
             initial_equity,
             sim[SIM_REQUIRED_CONTRIBUTION],
             sim[SIM_MONTHLY_INTEREST_RATE],
-            sim[SIM_TARGET_EQUITY]
+            sim[SIM_TARGET_EQUITY],
         )
 
         if df_projection.empty:
@@ -61,7 +67,7 @@ class ProjectionChartWidget:
                     fill="tozeroy",
                     fillcolor="rgba(44, 160, 44, 0.15)",
                     line=dict(color="rgba(44, 160, 44, 0.8)", width=3),
-                    hovertemplate="Patrimônio: R$ %{y:,.2f}<extra></extra>"
+                    hovertemplate="Patrimônio: R$ %{y:,.2f}<extra></extra>",
                 )
             )
 
@@ -74,7 +80,7 @@ class ProjectionChartWidget:
                     fill="tozeroy",
                     fillcolor="rgba(31, 119, 180, 0.25)",
                     line=dict(color="rgba(31, 119, 180, 0.8)", width=3),
-                    hovertemplate="Aportado: R$ %{y:,.2f}<extra></extra>"
+                    hovertemplate="Aportado: R$ %{y:,.2f}<extra></extra>",
                 )
             )
 
@@ -85,7 +91,7 @@ class ProjectionChartWidget:
                     name="Juros Acumulado (Rendimento)",
                     mode="lines",
                     line=dict(color="red", width=4),
-                    hovertemplate="Juros: R$ %{y:,.2f}<extra></extra>"
+                    hovertemplate="Juros: R$ %{y:,.2f}<extra></extra>",
                 )
             )
 
@@ -96,11 +102,14 @@ class ProjectionChartWidget:
                     name="Meta",
                     mode="lines",
                     line=dict(color="grey", width=2, dash="dash"),
-                    hovertemplate="Meta: R$ %{y:,.2f}<extra></extra>"
+                    hovertemplate="Meta: R$ %{y:,.2f}<extra></extra>",
                 )
             )
 
-            crossover_rows = df_projection[df_projection["Juros Acumulado (Rendimento)"] >= df_projection["Valor Aportado Acumulado"]]
+            crossover_rows = df_projection[
+                df_projection["Juros Acumulado (Rendimento)"]
+                >= df_projection["Valor Aportado Acumulado"]
+            ]
             if not crossover_rows.empty:
                 crossover_row = crossover_rows.iloc[0]
                 cross_age = float(crossover_row["Idade"])
@@ -118,7 +127,7 @@ class ProjectionChartWidget:
                     bgcolor="rgba(255, 255, 255, 0.9)",
                     bordercolor="orange",
                     borderwidth=1,
-                    font=dict(size=12, color="#333333")
+                    font=dict(size=12, color="#333333"),
                 )
 
             fig.update_layout(
@@ -127,7 +136,7 @@ class ProjectionChartWidget:
                 hoverlabel=dict(namelength=-1),
                 xaxis=dict(hoverformat=".1f anos"),
                 yaxis_tickformat="R$ ,.2f",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.01)
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.01),
             )
             st.plotly_chart(fig, width="stretch")
 
@@ -139,7 +148,7 @@ class ProjectionChartWidget:
             sim[SIM_TOTAL_TIME_MONTHS],
             initial_equity,
             sim[SIM_REQUIRED_CONTRIBUTION],
-            sim[SIM_MONTHLY_INTEREST_RATE]
+            sim[SIM_MONTHLY_INTEREST_RATE],
         )
 
         if df_cashflow.empty:
@@ -156,7 +165,7 @@ class ProjectionChartWidget:
                     name="Aporte Mensal (Constante)",
                     mode="lines",
                     line=dict(color="#1f77b4", width=3),
-                    hovertemplate="Aporte: R$ %{y:,.2f}<extra></extra>"
+                    hovertemplate="Aporte: R$ %{y:,.2f}<extra></extra>",
                 )
             )
 
@@ -167,7 +176,7 @@ class ProjectionChartWidget:
                     name="Juros Mensal (Crescente)",
                     mode="lines",
                     line=dict(color="#2ca02c", width=3),
-                    hovertemplate="Rendimento: R$ %{y:,.2f}<extra></extra>"
+                    hovertemplate="Rendimento: R$ %{y:,.2f}<extra></extra>",
                 )
             )
 
@@ -189,7 +198,7 @@ class ProjectionChartWidget:
                     bgcolor="rgba(255, 255, 255, 0.9)",
                     bordercolor="green",
                     borderwidth=1,
-                    font=dict(size=12, color="#333333")
+                    font=dict(size=12, color="#333333"),
                 )
 
             fig2.update_layout(
@@ -198,13 +207,15 @@ class ProjectionChartWidget:
                 hoverlabel=dict(namelength=-1),
                 xaxis=dict(hoverformat=".1f anos"),
                 yaxis_tickformat="R$ ,.2f",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.01)
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.01),
             )
             st.plotly_chart(fig2, width="stretch")
 
     def _render_historical_comparisons(self, extrapolation=12):
         """Fetches and prepares the 12-month future extrapolation data, then renders both comparative charts."""
-        df_extrap = SimulationService.get_projection_chart_dataset(extrapolation_months=extrapolation)
+        df_extrap = SimulationService.get_projection_chart_dataset(
+            extrapolation_months=extrapolation
+        )
         if df_extrap.empty:
             return
 
@@ -233,7 +244,7 @@ class ProjectionChartWidget:
                     name="Proventos Reais (B3)",
                     mode="lines+markers",
                     line=dict(color="#2ca02c", width=3),
-                    hovertemplate="Real: R$ %{y:,.2f}<extra></extra>"
+                    hovertemplate="Real: R$ %{y:,.2f}<extra></extra>",
                 )
             )
 
@@ -244,22 +255,24 @@ class ProjectionChartWidget:
                     name="Proventos Planejados (Meta)",
                     mode="lines",
                     line=dict(color="#a02c2c", width=2, dash="dash"),
-                    hovertemplate="Meta: R$ %{y:,.2f}<extra></extra>"
+                    hovertemplate="Meta: R$ %{y:,.2f}<extra></extra>",
                 )
             )
 
             fig3.add_trace(
                 go.Scatter(
                     x=df_extrap[MONTH_DISPLAY],
-                    y=df_extrap['trend_dividends'],
+                    y=df_extrap["trend_dividends"],
                     name="Tendência Polinomial (Real)",
                     mode="lines",
                     line=dict(color="#1a5c1a", width=2, dash="dot"),
-                    hovertemplate="Tendência: R$ %{y:,.2f}<extra></extra>"
+                    hovertemplate="Tendência: R$ %{y:,.2f}<extra></extra>",
                 )
             )
 
-            fig3.add_vline(x=current_month_display, line_width=1.5, line_dash="dash", line_color="grey")
+            fig3.add_vline(
+                x=current_month_display, line_width=1.5, line_dash="dash", line_color="grey"
+            )
             fig3.add_annotation(
                 x=current_month_display,
                 y=0.1,
@@ -268,7 +281,7 @@ class ProjectionChartWidget:
                 textangle=-90,
                 yref="paper",
                 yanchor="bottom",
-                font=dict(size=10, color="grey")
+                font=dict(size=10, color="grey"),
             )
 
             fig3.update_layout(
@@ -277,7 +290,7 @@ class ProjectionChartWidget:
                 hoverlabel=dict(namelength=-1),
                 xaxis=dict(type="category", tickangle=-45),
                 yaxis_tickformat="R$ ,.2f",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.01)
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.01),
             )
             st.plotly_chart(fig3, width="stretch")
 
@@ -293,7 +306,7 @@ class ProjectionChartWidget:
                     name="Aportes Reais (B3)",
                     mode="lines+markers",
                     line=dict(color="#1f77b4", width=3),
-                    hovertemplate="Real: R$ %{y:,.2f}<extra></extra>"
+                    hovertemplate="Real: R$ %{y:,.2f}<extra></extra>",
                 )
             )
 
@@ -304,22 +317,24 @@ class ProjectionChartWidget:
                     name="Aportes Planejados (Meta)",
                     mode="lines",
                     line=dict(color="#b41f1f", width=2, dash="dash"),
-                    hovertemplate="Meta: R$ %{y:,.2f}<extra></extra>"
+                    hovertemplate="Meta: R$ %{y:,.2f}<extra></extra>",
                 )
             )
 
             fig4.add_trace(
                 go.Scatter(
                     x=df_extrap[MONTH_DISPLAY],
-                    y=df_extrap['trend_invested'],
+                    y=df_extrap["trend_invested"],
                     name="Tendência (Real)",
                     mode="lines",
                     line=dict(color="#0b4075", width=2, dash="dot"),
-                    hovertemplate="Tendência: R$ %{y:,.2f}<extra></extra>"
+                    hovertemplate="Tendência: R$ %{y:,.2f}<extra></extra>",
                 )
             )
 
-            fig4.add_vline(x=current_month_display, line_width=1.5, line_dash="dash", line_color="grey")
+            fig4.add_vline(
+                x=current_month_display, line_width=1.5, line_dash="dash", line_color="grey"
+            )
             fig4.add_annotation(
                 x=current_month_display,
                 y=0.1,
@@ -328,7 +343,7 @@ class ProjectionChartWidget:
                 textangle=-90,
                 yref="paper",
                 yanchor="bottom",
-                font=dict(size=10, color="grey")
+                font=dict(size=10, color="grey"),
             )
 
             fig4.update_layout(
@@ -337,6 +352,6 @@ class ProjectionChartWidget:
                 hoverlabel=dict(namelength=-1),
                 xaxis=dict(type="category", tickangle=-45),
                 yaxis_tickformat="R$ ,.2f",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.01)
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.01),
             )
             st.plotly_chart(fig4, width="stretch")

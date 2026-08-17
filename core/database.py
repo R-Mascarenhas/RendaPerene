@@ -1,5 +1,6 @@
 class DatabaseManager:
     """Manages SQLite connection and initialization for the personal portfolio transactions domain."""
+
     _registry = []
 
     def __init__(self, personal_db="database/portfolio.db"):
@@ -13,9 +14,9 @@ class DatabaseManager:
 
     def init_personal_db(self):
         """Creates the user data tables in the personal SQLite database by iterating over registered schemas."""
-        import os
         import glob
         import importlib
+        import os
 
         # Dynamically discover and load all schema providers in core/daos/
         daos_dir = os.path.dirname(__file__)
@@ -41,21 +42,23 @@ class DatabaseManager:
     def get_personal_connection(self):
         """Returns a new connection to the personal transactional database, isolating sessions in cloud demo mode."""
         import os
-        import sqlite3
         import shutil
+        import sqlite3
 
         db_file = self.personal_db
         try:
             import streamlit as st
+
             # Detect if running in public shared cloud environments (Streamlit Cloud uses '/mount/src/...')
             is_cloud = (
-                "STREAMLIT_SHARING_MODE" in os.environ or
-                os.path.abspath(".").startswith("/mount") or
-                "/mount/" in os.path.abspath(".")
+                "STREAMLIT_SHARING_MODE" in os.environ
+                or os.path.abspath(".").startswith("/mount")
+                or "/mount/" in os.path.abspath(".")
             )
             if st.runtime.exists() and is_cloud:
                 if "session_id" not in st.session_state:
                     import uuid
+
                     st.session_state["session_id"] = str(uuid.uuid4())
                 db_file = f"database/portfolio_{st.session_state['session_id']}.db"
 
@@ -70,6 +73,7 @@ class DatabaseManager:
 
         os.makedirs(os.path.dirname(db_file), exist_ok=True)
         return sqlite3.connect(db_file)
+
 
 # Global Singleton instance for the app
 db = DatabaseManager()

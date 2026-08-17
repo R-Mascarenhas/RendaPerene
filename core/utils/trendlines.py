@@ -1,16 +1,21 @@
 from typing import Protocol
-import pandas as pd
+
 import numpy as np
+import pandas as pd
+
 
 class TrendlineStrategy(Protocol):
     """Protocol defining the trendline projection calculation contract (LSP compliant)."""
-    def calculate(self, df: pd.DataFrame, y_col: str, extrapolate_periods: int) -> list:
-        ...
+
+    def calculate(self, df: pd.DataFrame, y_col: str, extrapolate_periods: int) -> list: ...
+
 
 class PolynomialTrendlineStrategy:
     """Fits a 2nd degree (or higher) polynomial curve to the series, projecting it."""
+
     def __init__(self, deg: int = 2):
         self.deg = deg
+
     def calculate(self, df: pd.DataFrame, y_col: str, extrapolate_periods: int) -> list:
         df_clean = df.dropna(subset=[y_col])
         if df_clean.empty or len(df_clean) < self.deg + 1:
@@ -26,8 +31,10 @@ class PolynomialTrendlineStrategy:
         trend = np.polyval(coefs, x_total)
         return [max(0.0, float(v)) for v in trend]
 
+
 class LinearTrendlineStrategy:
     """Fits a 1st degree linear regression line (y = mx + b) and projects it."""
+
     def calculate(self, df: pd.DataFrame, y_col: str, extrapolate_periods: int) -> list:
         df_clean = df.dropna(subset=[y_col])
         if df_clean.empty or len(df_clean) < 2:
@@ -43,10 +50,13 @@ class LinearTrendlineStrategy:
         trend = np.polyval(coefs, x_total)
         return [max(0.0, float(v)) for v in trend]
 
+
 class MovingAverageTrendlineStrategy:
     """Calculates rolling moving average, and forward-fills it constantly into the future."""
+
     def __init__(self, window: int = 3):
         self.window = window
+
     def calculate(self, df: pd.DataFrame, y_col: str, extrapolate_periods: int) -> list:
         df_clean = df.dropna(subset=[y_col])
         if df_clean.empty:
@@ -62,13 +72,16 @@ class MovingAverageTrendlineStrategy:
 
         return result
 
+
 class LinearMomentumTrendlineStrategy:
     """
     Fits a linear trendline projecting the historical average monthly cashflow rate.
     If you stop contributing (rate is 0), the projected future trend stays completely flat.
     """
+
     def __init__(self, window_months: int = 12):
         self.window_months = window_months
+
     def calculate(self, df: pd.DataFrame, y_col: str, extrapolate_periods: int) -> list:
         df_clean = df.dropna(subset=[y_col])
         if df_clean.empty:
@@ -80,7 +93,7 @@ class LinearMomentumTrendlineStrategy:
 
         if len(y_vals) > 1:
             rates = np.diff(y_vals)
-            avg_monthly_rate = np.mean(rates[-self.window_months:]) if len(rates) > 0 else 0.0
+            avg_monthly_rate = np.mean(rates[-self.window_months :]) if len(rates) > 0 else 0.0
         else:
             avg_monthly_rate = 0.0
 
@@ -91,10 +104,13 @@ class LinearMomentumTrendlineStrategy:
 
         return result
 
+
 class TrendlineCalculator:
     """Utility class for computing statistical trendlines using the Strategy Pattern (OCP compliant)."""
 
     @staticmethod
-    def calculate_trend(df: pd.DataFrame, y_col: str, strategy: TrendlineStrategy, extrapolate_periods: int = 0) -> list:
+    def calculate_trend(
+        df: pd.DataFrame, y_col: str, strategy: TrendlineStrategy, extrapolate_periods: int = 0
+    ) -> list:
         """Executes the supplied TrendlineStrategy algorithm on the dataset."""
         return strategy.calculate(df, y_col, extrapolate_periods)

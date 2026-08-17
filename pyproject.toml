@@ -1,0 +1,57 @@
+[tool.ruff]
+# Target Python version 3.10+ as mandated in GEMINI.md
+target-version = "py310"
+line-length = 100
+
+# Exclude pre-existing test suites to keep them strictly read-only and preserve historical diffs
+exclude = ["tests"]
+
+[tool.ruff.lint]
+# Enable standard rules plus Pylint-specific deep analysis checks:
+# E/W: pycodestyle (style guidelines)
+# F: Pyflakes (logical programming errors)
+# I: isort (automatic import sorting and clean grouping)
+# UP: pyupgrade (recommends modern syntax upgrades)
+# PL: Pylint rules (deeper structural static analysis)
+# SIM: flake8-simplify (simplifies nested ifs, redundant casts, etc.)
+# B: flake8-bugbear (common bug prevention)
+select = ["E", "W", "F", "I", "UP", "PL", "SIM", "B"]
+
+# Disable rules that are too noisy or counter-productive for Streamlit GUI logic:
+# E402: Module level import not at top of file (essential for Streamlit page configuration and adapter setup before loading views)
+# E501: Line too long (we have long Portuguese strings for UI text)
+# DTZ011: Naive datetime.date.today() (perfectly valid for 100% offline local-first applications)
+# F403/F405: Star imports (widely used in UI views for localized strings from core.strings)
+# PLC0415: Local imports inside functions/methods (essential to resolve/prevent circular dependencies in Python domain modules)
+# PLR0911/PLR0912/PLR0915: Too many branches/statements/returns (standard in Plotly dashboard drawing pipelines)
+# PLR0917: Too many positional arguments
+# PLR2004: Avoid magic values (finance mathematical equations use raw constants)
+# PLW2901: Redefining loop variables (not a critical bug in standard loops)
+# B023: Function definition does not bind loop variable (often triggered by lambdas in Plotly layout loops)
+# B904: Within an except clause, raise exceptions with raise ... from (we let them bubble or catch at system boundaries)
+ignore = [
+    "E402",
+    "E501",
+    "DTZ011",
+    "F403",
+    "F405",
+    "PLC0415",
+    "PLR0911",
+    "PLR0912",
+    "PLR0915",
+    "PLR0917",
+    "PLR2004",
+    "PLW2901",
+    "B023",
+    "B904"
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+# Substitutes Black style formatter with optimal settings
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

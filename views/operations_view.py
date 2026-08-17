@@ -1,14 +1,22 @@
+import datetime
+
+import pandas as pd
 import streamlit as st
 
-import datetime
-import pandas as pd
+from core.strings import (
+    HELP_OPS_SEARCH,
+    MSG_INVALID_ASSET_SELECTION,
+    MSG_MANUAL_ENTRY_SUCCESS_DIV,
+    MSG_MANUAL_ENTRY_SUCCESS_TX,
+    MSG_MANUAL_ENTRY_TITLE,
+    MSG_SMART_IMPORTER_DESC,
+    MSG_SMART_IMPORTER_ERROR,
+    MSG_SMART_IMPORTER_SUCCESS,
+    MSG_SMART_IMPORTER_TITLE,
+)
 from services.assets_service import AssetService
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
-from core.strings import (
-    MSG_INVALID_ASSET_SELECTION, MSG_MANUAL_ENTRY_TITLE, MSG_MANUAL_ENTRY_SUCCESS_TX,
-    MSG_MANUAL_ENTRY_SUCCESS_DIV, MSG_SMART_IMPORTER_TITLE, MSG_SMART_IMPORTER_DESC,
-    MSG_SMART_IMPORTER_SUCCESS, MSG_SMART_IMPORTER_ERROR, HELP_OPS_SEARCH,
-)
+
 
 class OperationsView:
     """Class responsible for rendering the manual transactions and B3 uploader forms."""
@@ -35,8 +43,8 @@ class OperationsView:
                 "Grupamento",
                 "Dividendo (Recebimento)",
                 "JCP (Recebimento)",
-                "Rendimento (FII/Outros)"
-            ]
+                "Rendimento (FII/Outros)",
+            ],
         )
 
         # Load the assets catalog dynamically to construct the autocompleting ticker + name options
@@ -58,34 +66,43 @@ class OperationsView:
         else:
             available_tickers = sorted(catalog.index.tolist()) if not catalog.empty else []
 
-        options = ["--- Selecione ---"] + [f"{t} - {catalog.loc[t, 'NOME']}" for t in available_tickers if t in catalog.index]
+        options = ["--- Selecione ---"] + [
+            f"{t} - {catalog.loc[t, 'NOME']}" for t in available_tickers if t in catalog.index
+        ]
 
         with st.form("form_unified_entry", clear_on_submit=True):
-            date = st.date_input("Data do Negócio/Pagamento", datetime.date.today(), format="DD/MM/YYYY")
+            date = st.date_input(
+                "Data do Negócio/Pagamento", datetime.date.today(), format="DD/MM/YYYY"
+            )
 
             # Premium autocomplete select box enabling searching by either ticker or company name!
             ticker_selection = st.selectbox(
-                "Selecione o Ativo",
-                options=options,
-                index=0,
-                help=HELP_OPS_SEARCH
+                "Selecione o Ativo", options=options, index=0, help=HELP_OPS_SEARCH
             )
 
             if (is_earning or is_corp_event) and not available_tickers:
-                st.warning("⚠️ Você não possui nenhum ativo em carteira para realizar essa operação.")
+                st.warning(
+                    "⚠️ Você não possui nenhum ativo em carteira para realizar essa operação."
+                )
 
             if "Compra" in entry_type or "Venda" in entry_type:
                 qty = st.number_input("Quantidade", min_value=1, value=100, step=1)
-                price = st.number_input("Preço Unitário (R$)", min_value=0.01, value=10.00, step=0.1)
+                price = st.number_input(
+                    "Preço Unitário (R$)", min_value=0.01, value=10.00, step=0.1
+                )
                 fees = st.number_input("Taxas/Corretagem (R$)", min_value=0.0, value=0.0, step=0.1)
                 total_val = 0.0
             elif "Desdobro" in entry_type:
-                qty = st.number_input("Quantidade de Novas Ações Recebidas", min_value=1, value=10, step=1)
+                qty = st.number_input(
+                    "Quantidade de Novas Ações Recebidas", min_value=1, value=10, step=1
+                )
                 price = 0.0
                 fees = 0.0
                 total_val = 0.0
             elif "Grupamento" in entry_type:
-                qty = st.number_input("Nova Quantidade Total (Ações Finais)", min_value=1, value=10, step=1)
+                qty = st.number_input(
+                    "Nova Quantidade Total (Ações Finais)", min_value=1, value=10, step=1
+                )
                 price = 0.0
                 fees = 0.0
                 total_val = 0.0
@@ -93,7 +110,9 @@ class OperationsView:
                 qty = 0
                 price = 0.0
                 fees = 0.0
-                total_val = st.number_input("Valor Total Recebido (R$)", min_value=0.01, value=10.00, step=0.1)
+                total_val = st.number_input(
+                    "Valor Total Recebido (R$)", min_value=0.01, value=10.00, step=0.1
+                )
 
             submit = st.form_submit_button("Registrar Lançamento")
 
@@ -104,29 +123,35 @@ class OperationsView:
                     # Extract the pure ticker from the custom selected string
                     ticker_input = ticker_selection.split(" - ")[0]
 
-                    if "Compra" in entry_type or "Venda" in entry_type or "Desdobro" in entry_type or "Grupamento" in entry_type:
+                    if (
+                        "Compra" in entry_type
+                        or "Venda" in entry_type
+                        or "Desdobro" in entry_type
+                        or "Grupamento" in entry_type
+                    ):
                         if "Compra" in entry_type:
                             tx_type = "Compra"
                         elif "Venda" in entry_type:
                             tx_type = "Venda"
                         elif "Desdobro" in entry_type:
-                            tx_type = "Compra" # Desdobro/Bonificação maps to BUY with unit_price = 0.0
+                            tx_type = (
+                                "Compra"  # Desdobro/Bonificação maps to BUY with unit_price = 0.0
+                            )
                         elif "Grupamento" in entry_type:
-                            tx_type = "Grupamento" # Maps to GROUP in service
+                            tx_type = "Grupamento"  # Maps to GROUP in service
 
                         success = AssetService.add_transaction(
-                            ticker_input,
-                            date.strftime("%Y-%m-%d"),
-                            tx_type,
-                            qty,
-                            price,
-                            fees
+                            ticker_input, date.strftime("%Y-%m-%d"), tx_type, qty, price, fees
                         )
                         if success:
                             if "Compra" in entry_type:
-                                success_msg = MSG_MANUAL_ENTRY_SUCCESS_TX.format(tx_type="Compra", qty=qty, ticker=ticker_input)
+                                success_msg = MSG_MANUAL_ENTRY_SUCCESS_TX.format(
+                                    tx_type="Compra", qty=qty, ticker=ticker_input
+                                )
                             elif "Venda" in entry_type:
-                                success_msg = MSG_MANUAL_ENTRY_SUCCESS_TX.format(tx_type="Venda", qty=qty, ticker=ticker_input)
+                                success_msg = MSG_MANUAL_ENTRY_SUCCESS_TX.format(
+                                    tx_type="Venda", qty=qty, ticker=ticker_input
+                                )
                             elif "Desdobro" in entry_type:
                                 success_msg = f"Desdobro / Bonificação de {qty} ações de {ticker_input} registrado com sucesso!"
                             elif "Grupamento" in entry_type:
@@ -135,15 +160,20 @@ class OperationsView:
                         else:
                             st.error("Erro ao registrar a movimentação ou lançamento duplicado.")
                     else:
-                        div_type = "Dividendo" if "Dividendo" in entry_type else ("JCP" if "JCP" in entry_type else "Rendimento")
+                        div_type = (
+                            "Dividendo"
+                            if "Dividendo" in entry_type
+                            else ("JCP" if "JCP" in entry_type else "Rendimento")
+                        )
                         success = AssetService.add_dividend(
-                            ticker_input,
-                            date.strftime("%Y-%m-%d"),
-                            div_type,
-                            total_val
+                            ticker_input, date.strftime("%Y-%m-%d"), div_type, total_val
                         )
                         if success:
-                            st.success(MSG_MANUAL_ENTRY_SUCCESS_DIV.format(value=f'{total_val:.2f}', div_type=div_type, ticker=ticker_input))
+                            st.success(
+                                MSG_MANUAL_ENTRY_SUCCESS_DIV.format(
+                                    value=f"{total_val:.2f}", div_type=div_type, ticker=ticker_input
+                                )
+                            )
                         else:
                             st.error("Erro ao registrar o provento ou lançamento duplicado.")
 
@@ -160,7 +190,7 @@ class OperationsView:
         b3_file = st.file_uploader(
             "Arraste o arquivo .xlsx da B3 aqui",
             type=["xlsx"],
-            key=f"b3_file_uploader_{st.session_state.b3_uploader_key}"
+            key=f"b3_file_uploader_{st.session_state.b3_uploader_key}",
         )
 
         # Show persistent success message if present in session_state
@@ -188,17 +218,18 @@ class OperationsView:
                         if (clamped_pct - last_pct) >= 0.05 or current == total:
                             progress_bar.progress(
                                 clamped_pct,
-                                text=f"📊 Processando linha {current} de {total}... ({int(clamped_pct * 100)}%)"
+                                text=f"📊 Processando linha {current} de {total}... ({int(clamped_pct * 100)}%)",
                             )
                             last_pct = clamped_pct
 
                     processed_tx, processed_div = AssetService.process_b3_import(
-                        df_excel,
-                        progress_callback=update_progress
+                        df_excel, progress_callback=update_progress
                     )
 
                     progress_bar.progress(1.0, text="✅ Importação concluída!")
-                    success_text = MSG_SMART_IMPORTER_SUCCESS.format(tx_count=processed_tx, div_count=processed_div)
+                    success_text = MSG_SMART_IMPORTER_SUCCESS.format(
+                        tx_count=processed_tx, div_count=processed_div
+                    )
                     st.session_state.b3_import_success_msg = success_text
                     st.session_state.processed_files.add(file_key)
                     st.session_state.b3_uploader_key += 1

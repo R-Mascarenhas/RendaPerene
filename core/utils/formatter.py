@@ -1,5 +1,6 @@
 from core.constants import MONTHS_PT
 
+
 class Formatter:
     """Utility class for visual data and currency formatting."""
 

@@ -23,11 +23,13 @@ Thumbs.db
 # Temporary files
 out/
 .gemini/
+.vscode/
 
-# Local Agent Context (Do not commit)
+# Local Agent Context
 GEMINI.md
 git_commit_features.py
 docs/reports/
+docs/architecture_review/
 
 # PyInstaller & Dist Packaging
 build/

@@ -60,12 +60,16 @@ MSG_UPDATE_MW_BTN = "🔄"
 MSG_BCB_FETCH_ERROR = "Falha ao recuperar dados oficiais do BCB."
 
 MSG_PORTFOLIO_DETAIL_TITLE = "📁 Detalhamento de Ativos em Carteira"
-MSG_PORTFOLIO_EMPTY_ASSETS = "Nenhum ativo em custódia encontrado. Vá na aba 'Ativos' para inserir seus ativos!"
+MSG_PORTFOLIO_EMPTY_ASSETS = (
+    "Nenhum ativo em custódia encontrado. Vá na aba 'Ativos' para inserir seus ativos!"
+)
 MSG_DIVIDENDS_DYNAMIC_TABLE = "📅 Tabela Dinâmica de Proventos do Ativo"
 MSG_VIEW_DETAILED_YEAR_TABLE = "🔍 Ver Tabela Resumo Detalhada do Ano"
 MSG_ASSET_GENERAL_INDICATORS = "#### 📊 Indicadores Gerais do Ativo"
 MSG_CHART_BEHAVIOR = "##### 📈 Comportamento Gráfico"
-MSG_NO_YF_CHART_DATA = "Dados gráficos de cotações não disponíveis para este ativo no Yahoo Finance."
+MSG_NO_YF_CHART_DATA = (
+    "Dados gráficos de cotações não disponíveis para este ativo no Yahoo Finance."
+)
 MSG_TX_EXTRACT_TITLE = "#### 📂 Extrato de Transações e Proventos"
 MSG_DETAILED_CONTRIBUTIONS = "🛒 Aportes Detalhados"
 MSG_NO_TX_RECORDED = "Nenhuma transação registrada."
@@ -88,11 +92,17 @@ HELP_PLANNING_START_DATE_ENABLED = "Útil se você deseja desconsiderar transaç
 HELP_INITIAL_EQUITY_INPUT_DYNAMIC = "Valor calculado das suas transações da B3 anteriores à data selecionada: **{value}**.\nVocê pode alterar esse campo se desejar ajustar manualmente (ex: para incluir renda fixa ou outros ativos)."
 HELP_MARKET_MONITOR_SEARCH = "Digite para buscar e autocompletar ativos válidos por ticker ou nome da empresa cadastrados no assets.csv"
 HELP_OPS_SEARCH = "Digite para buscar pelo ticker ou por qualquer parte do nome da empresa cadastrada no assets.csv"
-HELP_PLANNING_AUTOMATED = "Calculado de forma automatizada a partir do seu histórico de compras na B3"
+HELP_PLANNING_AUTOMATED = (
+    "Calculado de forma automatizada a partir do seu histórico de compras na B3"
+)
 HELP_UPDATE_MW = "Atualizar valor do salário mínimo da nuvem (API SGS Banco Central)"
 HELP_QTY_END_YEAR = "Quantidade total de cotas na sua posse até o último dia do ano selecionado"
-HELP_TOTAL_PAID_PER_SHARE = "Soma de todos os proventos unitários recebidos por cota neste ano selecionado"
-HELP_ADJ_PRICE = "Preço Médio descontado dos dividendos recebidos. Mostra o seu real custo de aquisição (Basis)."
+HELP_TOTAL_PAID_PER_SHARE = (
+    "Soma de todos os proventos unitários recebidos por cota neste ano selecionado"
+)
+HELP_ADJ_PRICE = (
+    "Preço Médio descontado dos dividendos recebidos. Mostra o seu real custo de aquisição (Basis)."
+)
 HELP_AVG_PRICE = "Preço Médio ponderado de todas as compras (não impactado por proventos)."
 HELP_YOC = "Yield on Cost: Retorno em dividendos totais sobre o capital inicialmente investido."
 HELP_YOC_12 = "Yield on Cost de 12 meses: Retorno em dividendos nos últimos 12 meses sobre o capital investido."
@@ -138,19 +148,27 @@ MSG_ASSET_ADDED_SUCCESS = "Ativo {ticker} adicionado com sucesso ao monitor!"
 MSG_ASSET_ADD_ERROR = "Erro ao adicionar o ativo {ticker} (ou ele já existe no monitor)."
 MSG_CONFIRM_REMOVE = "🗑️ Confirmar Remoção de {ticker}"
 MSG_ASSET_REMOVED_SUCCESS = "Ativo {ticker} removido com sucesso!"
-MSG_DIVIDEND_CORRECTION_SUCCESS = "Proventos de {ticker} para o ano de {year} corrigidos com sucesso para {value}!"
+MSG_DIVIDEND_CORRECTION_SUCCESS = (
+    "Proventos de {ticker} para o ano de {year} corrigidos com sucesso para {value}!"
+)
 MSG_MANUAL_ENTRY_SUCCESS_TX = "Sucesso! {tx_type} de {qty}x {ticker} salva no banco de dados!"
-MSG_MANUAL_ENTRY_SUCCESS_DIV = "Sucesso! Recebimento de R$ {value} em {div_type} de {ticker} registrado!"
+MSG_MANUAL_ENTRY_SUCCESS_DIV = (
+    "Sucesso! Recebimento de R$ {value} em {div_type} de {ticker} registrado!"
+)
 MSG_SMART_IMPORTER_SUCCESS = "Importação realizada com sucesso! Foram adicionadas {tx_count} novas transações e {div_count} registros de proventos no banco de dados local!"
 MSG_SMART_IMPORTER_ERROR = "Erro ao processar arquivo B3. Certifique-se de que é o arquivo oficial da Área do Investidor. Detalhes: {e}"
 MSG_BCB_CONN_ERROR = "Erro ao conectar com a API do BCB: {e}"
 MSG_ASSET_INFO_CNPJ = "**CNPJ:** {cnpj}  \n**Setor:** {sector}  \n**Segmento:** {segment}"
-MSG_NO_DIVIDENDS_RECORDED = "Nenhum provento recebido registrado para o ativo {ticker} no banco de dados."
+MSG_NO_DIVIDENDS_RECORDED = (
+    "Nenhum provento recebido registrado para o ativo {ticker} no banco de dados."
+)
 MSG_ANNUAL_PLANNING_TITLE = "📅 Planejamento Anual de Investimentos ({year})"
 MSG_YTD_CONTRIBUTIONS = "**Total Comprado (Aportado) este ano na B3:** {value} ({pct:.1f}%)"
 MSG_REMAINING_TO_BUY = "🔴 **Falta comprar/reinvestir na B3 para bater a meta:** {value}"
 MSG_ALL_GOALS_MET = "🎉 **Excelente! Todos os aportes mínimos e proventos do ano foram totalmente investidos e reinvestidos na B3!**"
-MSG_REAL_VS_PLANNED_TITLE = "📊 Histórico Real vs. Planejado (Com Projeção de {months} Meses no Futuro)"
+MSG_REAL_VS_PLANNED_TITLE = (
+    "📊 Histórico Real vs. Planejado (Com Projeção de {months} Meses no Futuro)"
+)
 MSG_REAL_VS_PLANNED_DESC = "Compare as curvas planejadas no seu cockpit contra os dados reais colhidos da B3. A linha pontilhada extrapola a tendência do seu ritmo real pelos próximos {months} meses!"
 HELP_INCOME_MULTIPLIER = "Multiplicador: Define a renda com base em salários mínimos. O salário mínimo atual cadastrado é {value}."
 LABEL_CURRENT_PRICE = "Cotação Atual"

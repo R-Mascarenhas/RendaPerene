@@ -1,15 +1,23 @@
 import datetime
+
 import numpy as np
 import pandas as pd
-from core.ports import PlanningConfigPort, hybridmethod
-from core.daos.planning_dao import PlanningDAO
+
 from core.constants import (
-    BIRTH_DATE, RETIREMENT_AGE, DESIRED_INCOME_MW, ANNUAL_INTEREST_RATE,
-    MW_VALUE, INITIAL_EQUITY_INPUT, DESIRED_INCOME_TYPE, DESIRED_INCOME_FIXED,
-    INCOME_TYPE_MULTIPLIER, BAZIN_TARGET_YIELD, BAZIN_TARGET_SPREAD, CEILING_MODEL_SELECTION,
-    PLANNING_START_DATE
+    ANNUAL_INTEREST_RATE,
+    BIRTH_DATE,
+    DESIRED_INCOME_FIXED,
+    DESIRED_INCOME_MW,
+    DESIRED_INCOME_TYPE,
+    INCOME_TYPE_MULTIPLIER,
+    INITIAL_EQUITY_INPUT,
+    MW_VALUE,
+    PLANNING_START_DATE,
+    RETIREMENT_AGE,
 )
-from core.strings import MODEL_CLASSIC
+from core.daos.planning_dao import PlanningDAO
+from core.ports import PlanningConfigPort, hybridmethod
+
 
 class SimulationService:
     """Domain Service for financial independence calculations and compound interest."""
@@ -43,12 +51,35 @@ class SimulationService:
         return self._planning_repo.get_configuration()
 
     @hybridmethod
-    def save_configuration(self, birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input, desired_income_type="MULTIPLIER", desired_income_fixed=10000.0, ceiling_model_selection="Bazin Clássico", bazin_target_yield=6.0, bazin_target_spread=3.0, planning_start_date=None):
+    def save_configuration(
+        self,
+        birth_date,
+        retirement_age,
+        desired_income_mw,
+        annual_interest_rate,
+        mw_value,
+        initial_equity_input,
+        desired_income_type="MULTIPLIER",
+        desired_income_fixed=10000.0,
+        ceiling_model_selection="Bazin Clássico",
+        bazin_target_yield=6.0,
+        bazin_target_spread=3.0,
+        planning_start_date=None,
+    ):
         """Saves or updates the planning configuration in the database."""
         self._planning_repo.save_configuration(
-            birth_date, retirement_age, desired_income_mw, annual_interest_rate, mw_value, initial_equity_input,
-            desired_income_type, desired_income_fixed, ceiling_model_selection, bazin_target_yield, bazin_target_spread,
-            planning_start_date
+            birth_date,
+            retirement_age,
+            desired_income_mw,
+            annual_interest_rate,
+            mw_value,
+            initial_equity_input,
+            desired_income_type,
+            desired_income_fixed,
+            ceiling_model_selection,
+            bazin_target_yield,
+            bazin_target_spread,
+            planning_start_date,
         )
 
     @hybridmethod
@@ -61,7 +92,12 @@ class SimulationService:
 
         start_date = datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
 
-        start_months_age = (start_date.year - birth_date.year) * 12 + start_date.month - birth_date.month - (start_date.day < birth_date.day)
+        start_months_age = (
+            (start_date.year - birth_date.year) * 12
+            + start_date.month
+            - birth_date.month
+            - (start_date.day < birth_date.day)
+        )
         return start_months_age
 
     @staticmethod
@@ -87,9 +123,18 @@ class SimulationService:
             return None
 
         today = datetime.date.today()
-        birth_date = datetime.datetime.strptime(config[BIRTH_DATE], "%Y-%m-%d").date() if isinstance(config[BIRTH_DATE], str) else config[BIRTH_DATE]
+        birth_date = (
+            datetime.datetime.strptime(config[BIRTH_DATE], "%Y-%m-%d").date()
+            if isinstance(config[BIRTH_DATE], str)
+            else config[BIRTH_DATE]
+        )
 
-        months_age = (today.year - birth_date.year) * 12 + today.month - birth_date.month - (today.day < birth_date.day)
+        months_age = (
+            (today.year - birth_date.year) * 12
+            + today.month
+            - birth_date.month
+            - (today.day < birth_date.day)
+        )
         current_age = months_age / 12
 
         start_months_age = self.get_initial_investment_age(birth_date, config)
@@ -102,31 +147,35 @@ class SimulationService:
         income_type = config.get(DESIRED_INCOME_TYPE, INCOME_TYPE_MULTIPLIER)
         if income_type == INCOME_TYPE_MULTIPLIER:
             target_monthly_income = config[DESIRED_INCOME_MW] * config[MW_VALUE]
-        else: # FIXED
+        else:  # FIXED
             target_monthly_income = config[DESIRED_INCOME_FIXED]
 
         monthly_interest_rate = (1 + config[ANNUAL_INTEREST_RATE] / 100) ** (1 / 12) - 1
-        target_equity = target_monthly_income / monthly_interest_rate if monthly_interest_rate > 0 else 0.0
+        target_equity = (
+            target_monthly_income / monthly_interest_rate if monthly_interest_rate > 0 else 0.0
+        )
 
         from services.assets_service import AssetService
+
         df_pos = AssetService.calculate_positions(start_date=config.get(PLANNING_START_DATE))
-        total_invested = float(df_pos['invested_amount'].sum()) if not df_pos.empty else 0.0
+        total_invested = float(df_pos["invested_amount"].sum()) if not df_pos.empty else 0.0
 
         # Get initial equity input from database configuration (only used if planning start date is specified)
-        initial_equity_input = float(config[INITIAL_EQUITY_INPUT]) if config.get(PLANNING_START_DATE) is not None else 0.0
+        initial_equity_input = (
+            float(config[INITIAL_EQUITY_INPUT])
+            if config.get(PLANNING_START_DATE) is not None
+            else 0.0
+        )
 
         required_monthly_contribution = self.pmt_annuity_due(
-            monthly_interest_rate,
-            total_time_months,
-            initial_equity_input,
-            target_equity
+            monthly_interest_rate, total_time_months, initial_equity_input, target_equity
         )
 
         updated_monthly_contribution = self.pmt_annuity_due(
             monthly_interest_rate,
             remaining_time_months,
             total_invested + initial_equity_input,
-            target_equity
+            target_equity,
         )
 
         return {
@@ -147,7 +196,7 @@ class SimulationService:
             "desired_income_fixed": config[DESIRED_INCOME_FIXED],
             "desired_income_type": config[DESIRED_INCOME_TYPE],
             "annual_interest_rate": config[ANNUAL_INTEREST_RATE],
-            "planning_start_date": config.get(PLANNING_START_DATE)
+            "planning_start_date": config.get(PLANNING_START_DATE),
         }
 
     @hybridmethod
@@ -163,7 +212,14 @@ class SimulationService:
         return sim["required_monthly_contribution"] if sim else 0.0
 
     @staticmethod
-    def build_projection_dataframe(current_age, simulation_months, initial_equity, required_monthly_contribution, monthly_interest_rate, target_equity):
+    def build_projection_dataframe(
+        current_age,
+        simulation_months,
+        initial_equity,
+        required_monthly_contribution,
+        monthly_interest_rate,
+        target_equity,
+    ):
         """
         Projects current actual equity + future contributions growing over the remaining months.
         Starts from today (current_age) until retirement.
@@ -176,22 +232,31 @@ class SimulationService:
 
         cumulative_invested = initial_equity + months_array * required_monthly_contribution
 
-        interest_factors = (1 + monthly_interest_rate)**months_array
-        projected_equity = initial_equity * interest_factors + \
-                           required_monthly_contribution * (1 + monthly_interest_rate) * ((interest_factors - 1) / monthly_interest_rate)
+        interest_factors = (1 + monthly_interest_rate) ** months_array
+        projected_equity = initial_equity * interest_factors + required_monthly_contribution * (
+            1 + monthly_interest_rate
+        ) * ((interest_factors - 1) / monthly_interest_rate)
 
         cumulative_interest = projected_equity - cumulative_invested
 
-        return pd.DataFrame({
-            "Idade": ages_array,
-            "Patrimônio Projetado": projected_equity,
-            "Valor Aportado Acumulado": cumulative_invested,
-            "Juros Acumulado (Rendimento)": cumulative_interest,
-            "Meta": target_equity
-        })
+        return pd.DataFrame(
+            {
+                "Idade": ages_array,
+                "Patrimônio Projetado": projected_equity,
+                "Valor Aportado Acumulado": cumulative_invested,
+                "Juros Acumulado (Rendimento)": cumulative_interest,
+                "Meta": target_equity,
+            }
+        )
 
     @staticmethod
-    def build_monthly_cashflow_dataframe(current_age, simulation_months, initial_equity, required_monthly_contribution, monthly_interest_rate):
+    def build_monthly_cashflow_dataframe(
+        current_age,
+        simulation_months,
+        initial_equity,
+        required_monthly_contribution,
+        monthly_interest_rate,
+    ):
         """
         Calculates monthly cashflow values: a constant monthly contribution
         and a growing monthly interest generated by the compounded equity.
@@ -212,16 +277,21 @@ class SimulationService:
             contributions.append(required_monthly_contribution)
             interests.append(period_interest)
 
-            last_equity = (last_equity + required_monthly_contribution) * (1 + monthly_interest_rate)
+            last_equity = (last_equity + required_monthly_contribution) * (
+                1 + monthly_interest_rate
+            )
 
-        return pd.DataFrame({
-            "Idade": ages,
-            "Aporte Mensal": contributions,
-            "Juros Mensal": interests
-        })
+        return pd.DataFrame(
+            {"Idade": ages, "Aporte Mensal": contributions, "Juros Mensal": interests}
+        )
 
     @staticmethod
-    def calculate_planned_historical_evolution(df_evolution: pd.DataFrame, monthly_contribution: float, monthly_interest_rate: float, initial_equity: float = 0.0) -> pd.DataFrame:
+    def calculate_planned_historical_evolution(
+        df_evolution: pd.DataFrame,
+        monthly_contribution: float,
+        monthly_interest_rate: float,
+        initial_equity: float = 0.0,
+    ) -> pd.DataFrame:
         """
         Centralized, DRY-compliant mathematical projection for historical planned curves.
         Generates linear accumulation of planned investments and compound interest.
@@ -243,8 +313,8 @@ class SimulationService:
             last_equity = next_equity
             last_dividends = next_dividends
 
-        df_evolution['planned_invested'] = planned_invested
-        df_evolution['planned_dividends'] = planned_dividends
+        df_evolution["planned_invested"] = planned_invested
+        df_evolution["planned_dividends"] = planned_dividends
         return df_evolution
 
     @hybridmethod
@@ -253,10 +323,19 @@ class SimulationService:
         Fetches historical portfolio portfolio evolution and prepares future extrapolation (trendlines,
         planned curves, etc.) for the comparative charts, returning a single display DataFrame.
         """
-        from services.assets_service import AssetService
+        from core.constants import (
+            CUMULATIVE_DIVIDENDS,
+            CUMULATIVE_INVESTED,
+            MONTH_DISPLAY,
+            MONTH_STR,
+        )
         from core.utils.formatter import Formatter
-        from core.constants import MONTH_STR, CUMULATIVE_INVESTED, CUMULATIVE_DIVIDENDS, MONTH_DISPLAY
-        from core.utils.trendlines import TrendlineCalculator, PolynomialTrendlineStrategy, LinearMomentumTrendlineStrategy
+        from core.utils.trendlines import (
+            LinearMomentumTrendlineStrategy,
+            PolynomialTrendlineStrategy,
+            TrendlineCalculator,
+        )
+        from services.assets_service import AssetService
 
         config = self.get_configuration()
         start_date_val = config.get(PLANNING_START_DATE) if config else None
@@ -270,14 +349,14 @@ class SimulationService:
 
         end_date = datetime.date.today() + datetime.timedelta(days=365)
 
-        date_range_extrap = pd.date_range(start=start_date, end=end_date, freq='MS')
-        all_months_extrap = date_range_extrap.strftime('%Y-%m').tolist()
+        date_range_extrap = pd.date_range(start=start_date, end=end_date, freq="MS")
+        all_months_extrap = date_range_extrap.strftime("%Y-%m").tolist()
         df_extrap = pd.DataFrame({MONTH_STR: all_months_extrap})
 
         df_extrap = df_extrap.merge(
             df_evolution[[MONTH_STR, CUMULATIVE_INVESTED, CUMULATIVE_DIVIDENDS]],
             on=MONTH_STR,
-            how='left'
+            how="left",
         )
 
         df_extrap[MONTH_DISPLAY] = df_extrap[MONTH_STR].apply(Formatter.format_month_year)
@@ -285,24 +364,37 @@ class SimulationService:
         # 2. GENERATE CONTINUOUS PLANNED CURVES
         config = self.get_configuration()
         from core.constants import ANNUAL_INTEREST_RATE
+
         if config:
             annual_interest_rate_val = float(config[ANNUAL_INTEREST_RATE])
             monthly_interest_rate = (1 + annual_interest_rate_val / 100) ** (1 / 12) - 1
-            initial_equity = float(config[INITIAL_EQUITY_INPUT]) if config.get(PLANNING_START_DATE) is not None else 0.0
+            initial_equity = (
+                float(config[INITIAL_EQUITY_INPUT])
+                if config.get(PLANNING_START_DATE) is not None
+                else 0.0
+            )
         else:
             monthly_interest_rate = (1 + 6.0 / 100) ** (1 / 12) - 1
             initial_equity = 0.0
 
         monthly_contribution = self.get_required_contribution()
 
-        df_extrap = self.calculate_planned_historical_evolution(df_extrap, monthly_contribution, monthly_interest_rate, initial_equity=initial_equity)
+        df_extrap = self.calculate_planned_historical_evolution(
+            df_extrap, monthly_contribution, monthly_interest_rate, initial_equity=initial_equity
+        )
 
         # 3. COMPUTE EXTRAPOLATION TRENDLINES
-        df_extrap['trend_dividends'] = TrendlineCalculator.calculate_trend(
-            df_extrap, CUMULATIVE_DIVIDENDS, PolynomialTrendlineStrategy(deg=2), extrapolate_periods=extrapolation_months
+        df_extrap["trend_dividends"] = TrendlineCalculator.calculate_trend(
+            df_extrap,
+            CUMULATIVE_DIVIDENDS,
+            PolynomialTrendlineStrategy(deg=2),
+            extrapolate_periods=extrapolation_months,
         )
-        df_extrap['trend_invested'] = TrendlineCalculator.calculate_trend(
-            df_extrap, CUMULATIVE_INVESTED, LinearMomentumTrendlineStrategy(window_months=extrapolation_months), extrapolate_periods=extrapolation_months
+        df_extrap["trend_invested"] = TrendlineCalculator.calculate_trend(
+            df_extrap,
+            CUMULATIVE_INVESTED,
+            LinearMomentumTrendlineStrategy(window_months=extrapolation_months),
+            extrapolate_periods=extrapolation_months,
         )
 
         return df_extrap

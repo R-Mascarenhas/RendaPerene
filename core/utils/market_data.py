@@ -1,7 +1,8 @@
-import yfinance as yf
 import datetime
-import os
+
 import pandas as pd
+import yfinance as yf
+
 
 class MarketData:
     """Class responsible for integrations with market and financial APIs."""
@@ -14,7 +15,7 @@ class MarketData:
             try:
                 ticker_sa = f"{t.strip().upper()}.SA"
                 info = yf.Ticker(ticker_sa).fast_info
-                quotes[t] = info['lastPrice']
+                quotes[t] = info["lastPrice"]
             except Exception:
                 quotes[t] = 0.0
         return quotes
@@ -25,7 +26,7 @@ class MarketData:
         try:
             ticker_sa = f"{ticker.strip().upper()}.SA"
             info = yf.Ticker(ticker_sa).fast_info
-            return float(info['lastPrice'])
+            return float(info["lastPrice"])
         except Exception:
             return 0.0
 
@@ -43,15 +44,15 @@ class MarketData:
 
             # Reset index and keep datetime and Close columns
             df = history.reset_index()
-            time_col = 'Datetime' if 'Datetime' in df.columns else 'Date'
+            time_col = "Datetime" if "Datetime" in df.columns else "Date"
 
-            df = df[[time_col, 'Close']].rename(columns={time_col: 'time', 'Close': 'price'})
+            df = df[[time_col, "Close"]].rename(columns={time_col: "time", "Close": "price"})
 
             # Format display timestamps tightly and force categorical string index
             if interval == "5m" or interval == "15m":
-                df['display_time'] = df['time'].dt.strftime('%d/%m %H:%M')
+                df["display_time"] = df["time"].dt.strftime("%d/%m %H:%M")
             else:
-                df['display_time'] = df['time'].dt.strftime('%d/%m/%Y')
+                df["display_time"] = df["time"].dt.strftime("%d/%m/%Y")
 
             return df
         except Exception:
@@ -81,14 +82,16 @@ class MarketData:
             # 1. Fetch dynamic valuation metrics safely
             pb = info.get("priceToBook", 0.0) if info.get("priceToBook") is not None else 0.0
             pe = info.get("trailingPE", 0.0) if info.get("trailingPE") is not None else 0.0
-            dy = (info.get("dividendYield", 0.0) or 0.0)
+            dy = info.get("dividendYield", 0.0) or 0.0
             roe = (info.get("returnOnEquity", 0.0) or 0.0) * 100
 
             # Use extremely reliable fast_info for prices, highs, and lows on B3
             fast = yt.fast_info
             low_52w = fast.get("yearLow", info.get("fiftyTwoWeekLow", 0.0))
             high_52w = fast.get("yearHigh", info.get("fiftyTwoWeekHigh", 0.0))
-            current_price = fast.get("lastPrice", info.get("currentPrice", info.get("regularMarketPrice", 0.0)))
+            current_price = fast.get(
+                "lastPrice", info.get("currentPrice", info.get("regularMarketPrice", 0.0))
+            )
 
             # 2. Fetch last 5-year historical dividends series
             div_series = yt.dividends
@@ -98,8 +101,8 @@ class MarketData:
 
             if not div_series.empty:
                 df_div = div_series.to_frame().reset_index()
-                df_div['year'] = df_div['Date'].dt.year
-                df_annual = df_div.groupby('year')['Dividends'].sum()
+                df_div["year"] = df_div["Date"].dt.year
+                df_annual = df_div.groupby("year")["Dividends"].sum()
 
                 for yr in last_5_years:
                     div_by_year[yr] = float(df_annual.get(yr, 0.0))
@@ -109,9 +112,12 @@ class MarketData:
 
             # Dynamically adjust TTM sum from SQLite dividend corrections table
             from core.database import db
+
             conn_corr = db.get_personal_connection()
             cursor_corr = conn_corr.cursor()
-            cursor_corr.execute("SELECT year, total_value FROM dividend_corrections WHERE ticker = ?", (ticker,))
+            cursor_corr.execute(
+                "SELECT year, total_value FROM dividend_corrections WHERE ticker = ?", (ticker,)
+            )
             db_corrections = cursor_corr.fetchall()
             conn_corr.close()
 
@@ -131,7 +137,7 @@ class MarketData:
                 "high_52w": high_52w,
                 "low_52w": low_52w,
                 "dividends_5y": div_by_year,
-                "avg_dividend_5y": avg_dividend_5y
+                "avg_dividend_5y": avg_dividend_5y,
             }
         except Exception:
             return {}
@@ -169,49 +175,54 @@ class MarketData:
     def load_assets_catalog():
         """Loads the B3 assets static catalog from assets.csv into memory RAM (Vastly faster!)."""
         from core.daos.assets_catalog_dao import AssetsCatalogDAO
+
         return AssetsCatalogDAO().load_catalog()
 
     @staticmethod
     def get_current_ipca_l12m() -> float:
         """Dynamically fetches the official 12-month accumulated IPCA index from the Banco Central (BCB) SGS API Series 13522."""
         import requests
-        url = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.13522/dados/ultimos/1?formato=json'
+
+        url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.13522/dados/ultimos/1?formato=json"
         try:
             response = requests.get(url, timeout=5)
             data = response.json()
-            if data and len(data) > 0 and 'valor' in data[0]:
-                return float(data[0]['valor'])
+            if data and len(data) > 0 and "valor" in data[0]:
+                return float(data[0]["valor"])
         except Exception:
             pass
-        return 4.50 # Highly realistic Brazilian fallback IPCA proxy if the BCB API is temporarily down
+        return 4.50  # Highly realistic Brazilian fallback IPCA proxy if the BCB API is temporarily down
 
     @staticmethod
     def get_current_selic() -> float:
         """Dynamically fetches the official annualized SELIC Target rate from the Banco Central (BCB) SGS API Series 1178."""
         import requests
-        url = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados/ultimos/1?formato=json'
+
+        url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados/ultimos/1?formato=json"
         try:
             response = requests.get(url, timeout=5)
             data = response.json()
-            if data and len(data) > 0 and 'valor' in data[0]:
-                return float(data[0]['valor'])
+            if data and len(data) > 0 and "valor" in data[0]:
+                return float(data[0]["valor"])
         except Exception:
             pass
-        return 10.50 # Highly realistic Brazilian fallback SELIC proxy if the BCB API is temporarily down
+        return 10.50  # Highly realistic Brazilian fallback SELIC proxy if the BCB API is temporarily down
 
     @staticmethod
     def get_current_minimum_wage() -> float:
         """Dynamically fetches the current Brazilian minimum wage from the Banco Central (BCB) API Series 1619."""
         import requests
-        url = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs.1619/dados/ultimos/1?formato=json'
+
+        url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1619/dados/ultimos/1?formato=json"
         try:
             response = requests.get(url, timeout=5)
             data = response.json()
-            if data and len(data) > 0 and 'valor' in data[0]:
-                return float(data[0]['valor'])
+            if data and len(data) > 0 and "valor" in data[0]:
+                return float(data[0]["valor"])
         except Exception:
             pass
         return 1621.0
+
 
 # Attach direct clear dummy functions for backwards compatibility in headless environments
 MarketData.get_ticker_market_analysis.clear = lambda: None
@@ -221,4 +232,3 @@ MarketData.get_current_minimum_wage.clear = lambda: None
 MarketData.get_batch_quotes.clear = lambda: None
 MarketData.get_ticker_intraday_history.clear = lambda: None
 MarketData.get_ticker_history.clear = lambda: None
-

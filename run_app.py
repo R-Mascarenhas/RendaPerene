@@ -1,17 +1,11 @@
 # run_app.py
 import os
-import sys
 import shutil
-import sqlite3
+import sys
 
 # Force PyInstaller to index library dependencies in the executable bundle
-import streamlit as st
-import pandas as pd
-import yfinance as yf
-import openpyxl
-import plotly
-
 import streamlit.web.cli as stcli
+
 
 def resolve_path(relative_path: str) -> str:
     """Resolves absolute path for packaged assets under PyInstaller or dev mode."""
@@ -22,17 +16,18 @@ def resolve_path(relative_path: str) -> str:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+
 if __name__ == "__main__":
     # Ensure database and assets are persisted locally on the host, not in temporary unpacked paths
     if getattr(sys, "frozen", False):
         exe_dir = os.path.dirname(sys.executable)
     else:
         exe_dir = os.path.abspath(".")
-    
+
     os.chdir(exe_dir)
-    
+
     os.makedirs("database", exist_ok=True)
-    
+
     # Copy fallback catalog assets.csv if not present locally
     local_assets_csv = "assets.csv"
     if not os.path.exists(local_assets_csv):
@@ -54,7 +49,7 @@ if __name__ == "__main__":
         "--server.port=8501",
         "--server.headless=false",
         "--server.showEmailPrompt=false",
-        "--browser.gatherUsageStats=false"
+        "--browser.gatherUsageStats=false",
     ]
-    
+
     sys.exit(stcli.main())

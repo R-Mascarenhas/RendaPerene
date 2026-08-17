@@ -154,3 +154,13 @@ class TableSchemaPort(Protocol):
     def initialize_tables(self, conn: Any) -> None:
         """Creates tables, runs necessary retrocompatibility schema migrations, and seeds defaults on the connection."""
         ...
+
+
+class ExcelParserPort(Protocol):
+    """Outbound Port interface defining file/spreadsheet ingestion and parsing operations (DIP compliant)."""
+
+    def parse_b3_excel(
+        self, df: pd.DataFrame, progress_callback: Any = None
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Parses raw B3 investment account excel spreadsheet rows, returning a standardized (transactions_df, dividends_df) tuple in English."""
+        ...

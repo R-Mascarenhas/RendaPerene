@@ -3,6 +3,8 @@ import datetime
 import pandas as pd
 import yfinance as yf
 
+from services.valuation_service import ValuationService
+
 
 class MarketData:
     """Class responsible for integrations with market and financial APIs."""
@@ -153,23 +155,7 @@ class MarketData:
         if not raw_data:
             return {}
 
-        # Copy dict to avoid mutating cached object directly
-        data = raw_data.copy()
-
-        avg_dividend_5y = data["avg_dividend_5y"]
-        current_price = data["current_price"]
-
-        # Calculate dynamic Bazin ceiling price using the customized caller's yield divisor
-        target_yield = target_yield_pct / 100
-        ceiling_price = (avg_dividend_5y / target_yield) if target_yield > 0 else 0.0
-
-        # Calculate dynamic real 5-year average dividend yield
-        avg_dy_5y = (avg_dividend_5y / current_price * 100) if current_price > 0 else 0.0
-
-        data["ceiling_price"] = ceiling_price
-        data["avg_dy_5y"] = avg_dy_5y
-
-        return data
+        return ValuationService.apply_bazin_valuation(raw_data, target_yield_pct)
 
     @staticmethod
     def load_assets_catalog():

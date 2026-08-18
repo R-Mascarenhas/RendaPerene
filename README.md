@@ -58,7 +58,11 @@ python3 -m venv venv
 source venv/bin/activate  # On Windows use: venv\Scripts\activate
 
 # Install dependencies
-pip install -r requirements.txt
+# For production/execution only:
+pip install .
+
+# For active development, linting, and testing (editable mode):
+pip install -e ".[dev]"
 ```
 
 ### 2. Launch the Application
@@ -77,7 +81,7 @@ pytest
 
 ## 🏗️ Architecture & Conventions
 
-This project strictly adheres to **SOLID** principles, **Clean Architecture**, and **DRY** (Don't Repeat Yourself). 
+This project strictly adheres to **SOLID** principles, **Clean Architecture**, and **DRY** (Don't Repeat Yourself).
 * **Language Policy:** The codebase (classes, variables, SQL, comments) is entirely in **English**, while the User Interface (strings, chart labels, tooltips) is rigorously localized to **Portuguese (PT-BR)**.
 * **Separation of Concerns:** Views (`views/`) handle exclusively GUI rendering via Streamlit. All business logic, SQLite operations, and DataFrame manipulations occur in Domain Services (`services/`).
 * **Strategy Pattern:** Financial projections and statistical trendlines are implemented using Open/Closed Principle (OCP) compliant strategies (e.g., Polynomial, Linear Momentum) located in `core/utils/trendlines.py`.

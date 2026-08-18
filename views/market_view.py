@@ -55,6 +55,7 @@ from core.strings import (
 from core.utils import Formatter
 from services.assets_service import AssetService
 from services.planning_service import SimulationService
+from services.valuation_service import ValuationService
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
 
 
@@ -115,8 +116,6 @@ class MarketView:
             )
 
             model = st.session_state.get(SESSION_CEILING_MODEL_SELECTION, MODEL_CLASSIC)
-            ipca_val = MarketData.get_current_ipca_l12m()
-            selic_val = MarketData.get_current_selic()
 
             if model == MODEL_CLASSIC:
                 st.number_input(
@@ -128,9 +127,13 @@ class MarketView:
                     step=0.5,
                     on_change=self._on_bazin_yield_change,
                 )
-                target_yield = st.session_state[SESSION_BAZIN_TARGET_YIELD]
+                target_yield = ValuationService.calculate_target_yield(
+                    model,
+                    classic_target_yield=st.session_state[SESSION_BAZIN_TARGET_YIELD],
+                )
             elif model == MODEL_SELIC:
-                target_yield = selic_val
+                selic_val = MarketData.get_current_selic()
+                target_yield = ValuationService.calculate_target_yield(model, selic_rate=selic_val)
                 st.caption(f"ℹ️ Taxa SELIC Meta (BCB): **{selic_val:.2f}% a.a.**")
             else:  # IPCA + Spread Alvo
                 st.number_input(
@@ -143,13 +146,13 @@ class MarketView:
                     on_change=self._on_bazin_spread_change,
                 )
                 spread = st.session_state[SESSION_BAZIN_TARGET_SPREAD]
-                target_yield = ipca_val + spread
+                ipca_val = MarketData.get_current_ipca_l12m()
+                target_yield = ValuationService.calculate_target_yield(
+                    model, ipca_rate=ipca_val, target_spread=spread
+                )
                 st.caption(
                     f"ℹ️ Divisor Resultante: **{target_yield:.2f}%** (IPCA: {ipca_val:.2f}% + Spread: {spread:.2f}%)"
                 )
-
-            # Permanently cache the evaluated target yield in session state so other views sync instantly!
-            st.session_state.target_bazin_yield_pct = target_yield
 
         tracked_tickers = AssetService.get_tracked_market_assets()
 
@@ -298,22 +301,10 @@ class MarketView:
         self._save_market_params()
 
     def _save_market_params(self):
-        """Calculates the resulting target yield dynamically and persists configurations to SQLite portfolio.db."""
+        """Persists the selected valuation model and its input parameters to SQLite."""
         model = st.session_state[SESSION_CEILING_MODEL_SELECTION]
         yield_val = float(st.session_state[SESSION_BAZIN_TARGET_YIELD])
         spread_val = float(st.session_state[SESSION_BAZIN_TARGET_SPREAD])
-
-        ipca_val = MarketData.get_current_ipca_l12m()
-        selic_val = MarketData.get_current_selic()
-
-        if model == MODEL_CLASSIC:
-            target_yield = yield_val
-        elif model == MODEL_SELIC:
-            target_yield = selic_val
-        else:
-            target_yield = ipca_val + spread_val
-
-        st.session_state.target_bazin_yield_pct = target_yield
 
         # Retrieve and load general simulation settings to preserve them cleanly
         config = SimulationService.get_configuration()

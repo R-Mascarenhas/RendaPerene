@@ -1,79 +1,100 @@
-# Portfolio App - Architecture & Implementation Specification
+# RendaPerene Architecture
 
-## 1. Project Overview
-The goal of this project is to build a modern, local-first web application to entirely replace the legacy `Carteira - Rafael Mascarenhas.ods` spreadsheet. It provides automated average price calculations, live real-time quotes, a drag-and-drop B3 data importer, and interactive retirement planning simulations.
+## Overview
 
-## 2. Technology Stack
-*   **Language:** Python 3.10+ (100% English codebase and variables)
-*   **Frontend / UI:** Streamlit (100% Portuguese PT-BR user-facing UI labels)
-*   **Database:** SQLite3 (Local file `database/portfolio.db`)
-*   **Data Processing:** Pandas
-*   **Live Quotes API:** `yfinance` (Free, no authentication required. Tickers use `.SA` suffix for B3).
+RendaPerene is a Python and Streamlit application for tracking Brazilian (B3) investment portfolios and planning retirement. It keeps portfolio data in local SQLite files, imports B3 Excel exports, obtains market data from existing public integrations, and presents the interface in Brazilian Portuguese.
 
-## 3. Deployment & Data Privacy
-*   **Strictly Local:** The application runs entirely on the user's local machine via `streamlit run app.py`.
-*   **Data Sovereignty:** The SQLite database (`portfolio.db`) lives locally. There is no cloud database and no mandatory Google Drive synchronization (the user explicitly opted for independent local instances).
-*   **No Web Scraping:** The app will *not* attempt to automatically scrape the B3 portal due to 2FA and anti-bot measures.
+The application is local-first. It does not use a cloud database, user authentication, telemetry, or automated scraping of the B3 portal.
 
-## 4. Data Ingestion Strategy
-*   **Historical Data (ODS):** The user opted to **abandon** automated migration of the legacy ODS file. The user will manually start fresh by typing their current holdings/history into the new app interface.
-*   **Ongoing Integration (B3 Import):** The app features a Drag-and-Drop file uploader. The user downloads the official Excel (`.xlsx`) export from the B3 Investor Portal and drops it into the app. Pandas will parse this file to automatically populate the `transactions` and `dividends` tables, translating categories to English in real-time.
+## Runtime and composition
 
-## 5. Database Schema (SQLite)
+`app.py` is the composition root. It:
 
-### Table: `transactions`
-*   `id` (INTEGER, Primary Key, Auto-increment)
-*   `date` (TEXT) - YYYY-MM-DD
-*   `ticker` (TEXT) - e.g., 'BBAS3'
-*   `transaction_type` (TEXT) - 'BUY' / 'SELL'
-*   `quantity` (INTEGER)
-*   `unit_price` (REAL)
-*   `fees` (REAL)
+1. selects and initializes the active portfolio database;
+2. configures Streamlit;
+3. wires the production adapters for portfolio, planning, B3 parsing, and cached market data;
+4. initializes session state; and
+5. routes the three top-level views: Dashboard, Assets, and Planning.
 
-### Table: `dividends`
-*   `id` (INTEGER, Primary Key, Auto-increment)
-*   `date` (TEXT)
-*   `ticker` (TEXT)
-*   `dividend_type` (TEXT) - 'DIVIDEND' / 'JCP' / 'YIELD'
-*   `total_value` (REAL)
+On a normal local run, the active database is `database/portfolio.db` or another `portfolio_*.db` selected in the sidebar. When a Streamlit shared-host environment is detected, the runtime creates a session-specific database cloned from `database/portfolio_demo.db`; this is demonstration support, not the primary persistence model.
 
-### Table: `planning_configuration`
-*   `id` (INTEGER, Primary Key, Default 1)
-*   `birth_date` (TEXT)
-*   `retirement_age` (INTEGER)
-*   `desired_income_mw` (REAL)
-*   `annual_interest_rate` (REAL)
-*   `mw_value` (REAL)
-*   `initial_equity_input` (REAL)
+Run the application with:
 
-### Table: `tracked_market_assets`
-*   `ticker` (TEXT, Primary Key)
+```bash
+venv/bin/streamlit run app.py
+```
 
-### Table: `dividend_corrections`
-*   `ticker` (TEXT)
-*   `year` (INTEGER)
-*   `total_value` (REAL)
-*   *Primary Key:* `(ticker, year)`
+## Layers and dependencies
 
-## 6. Project Structure (Unified SOLID Layers)
+The repository has three top-level layers:
 
-The codebase is structured into three clean, un-nested top-level layers to maximize maintainability, readability, and prepare for a future Kotlin Multiplatform (KMP) or Desktop JVM migration:
+- **`core/`** holds technical infrastructure and shared contracts. It includes `DatabaseManager`, protocols in `core/ports.py`, SQLite DAOs, constants, localized strings, formatting, session management, the B3 parser, and headless market-data integration.
+- **`services/`** holds application and domain logic. Services depend on ports rather than presentation code.
+- **`views/`** holds Streamlit rendering and interaction. `StreamlitCachedMarketData` is the presentation-boundary adapter that adds Streamlit caching to the headless market-data implementation.
 
-*   **`core/`** - Shares technical infrastructure (Database SQLite managers, PT-BR `Formatter`, local-caching `MarketData`, and `TrendlineCalculator` implementing OCP Strategy Pattern).
-*   **`services/`** - Unified, framework-agnostic mathematical domain services. Contains `AssetService` (the single source of truth for holdings, trades, and average prices) and `SimulationService` (the single source of truth for planning and annuity PMT calculations).
-*   **`views/`** - 100% presentation/UI. Houses the top-level Streamlit coordinators (`dashboard_view.py`, `planning_view.py`, `assets_view.py`) and their decoupled sub-components (`components/`).
+Dependency direction is `views` → `services` → `core` contracts and adapters. The composition root selects concrete adapters. Views must not contain business calculations, raw SQL, or B3 parsing logic.
 
-## 7. Core Application Views (Streamlit Tabs)
+### Domain services
 
-1.  **📊 Dashboard:**
-    *   `AnnualPlanningWidget` - Displays the progress towards your annual out-of-pocket contribution target.
-    *   `PatrimonySummaryWidget` - Renders cards with key metrics (Total Invested, Current Value, Unrealized Profit/Loss, and overall Portfolio Yield on Cost).
-    *   `DashboardCharts` - Plots pie allocation and progressive comparison bar charts.
-    *   `DetailedHoldingsWidget` - Displays the active stock/FII holdings data grid with high-contrast performance colored cell styling.
-2.  **🎯 Planejamento:**
-    *   Simulates retirement age, desired income, and linear linear-momentum growth projections.
-    *   Renders interactive area/monthly and comparative charts projecting compound interest growth.
-3.  **📝 Ativos:**
-    *   `📥 Importar & Lançar` - Form for manual transactions and B3 drag-and-drop zone.
-    *   `📁 Meus Ativos` - Subtabs with unblocked B3 sector logos, dynamic 5y historical dividend pivot tables, and Google Finance-style price charts with interactive trade transaction markers.
-    *   `📈 Mercado` - Searchable watchlist with auto-completing search and Bazin price teto valuation grids.
+- `AssetService` is the source of truth for transactions, dividends, asset positions, historical evolution, and the monitored-assets list.
+- `SimulationService` owns retirement configuration and annuity-due calculations. Consumers use `get_current_simulation()` instead of reimplementing contribution calculations.
+- `ValuationService` contains pure Bazin target-yield and ceiling-price rules; it has no Streamlit, database, or market-data dependency.
+
+### Ports and adapters
+
+`core/ports.py` defines the boundaries for portfolio persistence, asset catalog access, market data, planning configuration, database schema registration, B3 Excel parsing, and cross-service providers. Production adapters are the SQLite DAOs, `MarketData`, and `B3ExcelParserAdapter`. Tests replace these boundaries with isolated databases, mocks, or injected adapters.
+
+## Persistence
+
+`DatabaseManager` discovers schema providers in `core/daos/` and asks each registered DAO to create or migrate its tables. The tables live together in the active portfolio SQLite database; the static asset catalog is a separate `assets.csv` file.
+
+| Store | Purpose |
+| --- | --- |
+| `transactions` | Portfolio ledger: `id`, `date`, `ticker`, `transaction_type`, `quantity`, `unit_price`, and `fees`. Transaction types persisted by the application are `BUY`, `SELL`, and `GROUP`. |
+| `dividends` | Received income: `id`, `date`, `ticker`, `dividend_type`, and `total_value`; types are `DIVIDEND`, `JCP`, and `YIELD`. |
+| `tracked_market_assets` | Manually tracked tickers. Owned assets are combined with this list for market monitoring. |
+| `dividend_corrections` | Per-ticker, per-year dividend overrides, keyed by `(ticker, year)`. |
+| `planning_configuration` | Singleton configuration (`id = 1`): birth date, retirement age, income inputs, annual interest rate, minimum wage, initial equity, income mode, Bazin model inputs, and optional planning start date. |
+| `assets.csv` | Static B3 catalog with ticker metadata. Unknown imported tickers can be added as fallback catalog entries. |
+
+SQLite does not declare cross-store foreign keys. Services preserve the required consistency programmatically.
+
+## Financial and import rules
+
+The B3 importer receives an Excel file selected by the user, normalizes its columns and dates, and emits English internal transaction and dividend records.
+
+- Purchases update the weighted average price, including fees.
+- Sales reduce the held quantity while retaining the average price of the remaining position.
+- B3 splits and bonuses are stored as zero-cost `BUY` transactions.
+- Reverse splits are stored as `GROUP` transactions, which replace the current quantity with the reported quantity.
+- Redemptions are stored as `SELL` transactions.
+- Zero-cost custodian transfers are ignored; non-zero transfers are interpreted from their credit/debit direction.
+- Retirement contribution calculations use annuity-due payments (`type = 1`) through `SimulationService.pmt_annuity_due()`.
+
+## External integrations
+
+- `yfinance` supplies B3 quotes, price history, and dividend/valuation data. Tickers are requested with the `.SA` suffix.
+- Banco Central do Brasil (BCB) SGS endpoints supply IPCA, Selic, and minimum-wage values. The headless integration uses fallbacks when a request fails.
+- The Streamlit adapter caches market results: quotes and detailed analysis for 10 minutes, history for one hour, and BCB indicators for 30 days.
+
+These integrations support local use but require network access when fresh data is requested. The application does not scrape the B3 portal; users import the official B3 Excel export themselves.
+
+## Presentation
+
+All code, identifiers, SQL, comments, and developer documentation are in English. All user-facing labels, messages, chart labels, help text, and rendered tables are in PT-BR. BRL values displayed to users use `Formatter.format_currency()`.
+
+- **Dashboard** renders annual contribution progress, portfolio summary metrics, charts, and detailed holdings.
+- **Assets** coordinates three subviews: portfolio details, market monitoring and Bazin valuation, and manual/B3-import operations.
+- **Planning** edits persisted retirement parameters, supports a sandbox simulation, and renders timing, required-contribution, and projection components.
+
+## Validation
+
+Pytest uses `pytest.ini` to make the repository root importable. The shared test fixture redirects persistence to an isolated database and configures test adapters.
+
+```bash
+venv/bin/pytest
+venv/bin/ruff check .
+venv/bin/ruff format --check .
+```
+
+Ruff targets Python 3.10 with a 100-character line length and intentionally excludes `tests/`.

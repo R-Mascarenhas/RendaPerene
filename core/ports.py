@@ -164,3 +164,19 @@ class ExcelParserPort(Protocol):
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Parses raw B3 investment account excel spreadsheet rows, returning a standardized (transactions_df, dividends_df) tuple in English."""
         ...
+
+
+class PortfolioProviderPort(Protocol):
+    """Outbound Port interface defining required portfolio metrics and positions provider operations (DIP compliant)."""
+
+    def calculate_positions(
+        self, today_date: Any = None, start_date: Any = None
+    ) -> pd.DataFrame: ...
+
+    def calculate_historical_evolution(self, start_date: Any = None) -> pd.DataFrame: ...
+
+
+class PlanningProviderPort(Protocol):
+    """Outbound Port interface defining required simulation and planning operations (DIP compliant)."""
+
+    def get_current_simulation(self) -> dict | None: ...

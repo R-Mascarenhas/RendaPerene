@@ -16,16 +16,21 @@ from core.constants import (
     RETIREMENT_AGE,
 )
 from core.daos.planning_dao import PlanningDAO
-from core.ports import PlanningConfigPort, hybridmethod
+from core.ports import PlanningConfigPort, PortfolioProviderPort, hybridmethod
 
 
 class SimulationService:
     """Domain Service for financial independence calculations and compound interest."""
 
-    def __init__(self, planning_repo: PlanningConfigPort = None):
+    def __init__(
+        self,
+        planning_repo: PlanningConfigPort = None,
+        portfolio_provider: PortfolioProviderPort = None,
+    ):
         if isinstance(planning_repo, type):
             planning_repo = planning_repo()
         self._planning_repo = planning_repo or PlanningDAO()
+        self._portfolio_provider = portfolio_provider
 
     # Default instance for backwards compatibility in presentation layers
     _default_instance = None
@@ -37,13 +42,19 @@ class SimulationService:
         return cls._default_instance
 
     @classmethod
-    def set_adapters(cls, planning_repo: PlanningConfigPort = None):
+    def set_adapters(
+        cls,
+        planning_repo: PlanningConfigPort = None,
+        portfolio_provider: PortfolioProviderPort = None,
+    ):
         """Dynamic dependency injection mechanism for testing and custom environment mocks."""
         inst = cls.get_default()
         if planning_repo is not None:
             if isinstance(planning_repo, type):
                 planning_repo = planning_repo()
             inst._planning_repo = planning_repo
+        if portfolio_provider is not None:
+            inst._portfolio_provider = portfolio_provider
 
     @hybridmethod
     def get_configuration(self):
@@ -155,9 +166,12 @@ class SimulationService:
             target_monthly_income / monthly_interest_rate if monthly_interest_rate > 0 else 0.0
         )
 
-        from services.assets_service import AssetService
+        if self._portfolio_provider is None:
+            raise RuntimeError("Portfolio provider port is not configured on SimulationService.")
 
-        df_pos = AssetService.calculate_positions(start_date=config.get(PLANNING_START_DATE))
+        df_pos = self._portfolio_provider.calculate_positions(
+            start_date=config.get(PLANNING_START_DATE)
+        )
         total_invested = float(df_pos["invested_amount"].sum()) if not df_pos.empty else 0.0
 
         # Get initial equity input from database configuration (only used if planning start date is specified)
@@ -335,11 +349,15 @@ class SimulationService:
             PolynomialTrendlineStrategy,
             TrendlineCalculator,
         )
-        from services.assets_service import AssetService
+
+        if self._portfolio_provider is None:
+            raise RuntimeError("Portfolio provider port is not configured on SimulationService.")
 
         config = self.get_configuration()
         start_date_val = config.get(PLANNING_START_DATE) if config else None
-        df_evolution = AssetService.calculate_historical_evolution(start_date=start_date_val)
+        df_evolution = self._portfolio_provider.calculate_historical_evolution(
+            start_date=start_date_val
+        )
         if df_evolution.empty:
             return pd.DataFrame()
 

@@ -28,6 +28,7 @@ from core.strings import (
 from core.utils.formatter import Formatter
 from services.assets_service import AssetService
 from services.planning_service import SimulationService
+from views.components.chart_theme import ChartThemeAdapter
 
 
 class DashboardCharts:
@@ -100,7 +101,7 @@ class DashboardCharts:
                 textinfo="percent+label",
                 hovertemplate="<b>%{label}</b><br>Valor Total: R$ %{value:,.2f} (%{percent})<br><br><b>Ativos:</b><br>%{customdata[0]}<extra></extra>",
             )
-            st.plotly_chart(fig_sectors, width="stretch")
+            st.plotly_chart(ChartThemeAdapter.apply_theme(fig_sectors), width="stretch")
 
         with chart_col2:
             df_chart_evol = df_positions[[TICKER, INVESTED_AMOUNT, CURRENT_VALUE]].copy()
@@ -116,13 +117,13 @@ class DashboardCharts:
                 barmode="group",
                 title="Evolução por ativo",
                 labels={"value": "Valores (R$)", TICKER: "Ticker", "variable": "Legenda"},
-                color_discrete_sequence=["#1f77b4", "#2ca02c"],
+                color_discrete_sequence=[ChartThemeAdapter.BLUE, ChartThemeAdapter.GREEN],
             )
             fig_evol.update_traces(
                 hovertemplate="<b>%{x}</b><br>Valor: R$ %{y:,.2f}<extra></extra>"
             )
-            fig_evol.update_layout(yaxis_tickformat="R$ ,.2f", hovermode="x unified")
-            st.plotly_chart(fig_evol, width="stretch")
+            fig_evol.update_yaxes(tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT)
+            st.plotly_chart(ChartThemeAdapter.apply_theme(fig_evol), width="stretch")
 
         with chart_col3:
             if "total_yoc" not in df_positions.columns:
@@ -142,13 +143,13 @@ class DashboardCharts:
                     title="Eficiência por Ativo (Yield on Cost Total)",
                     labels={"total_yoc": "Yield on Cost (%)", TICKER: "Ticker"},
                     color="total_yoc",
-                    color_continuous_scale="Viridis",
+                    color_continuous_scale=ChartThemeAdapter.YIELD_COLOR_SCALE,
                 )
                 fig_proventos.update_traces(
                     hovertemplate="<b>%{y}</b><br>Yield on Cost: %{x:.2f}%<extra></extra>"
                 )
-                fig_proventos.update_layout(xaxis_tickformat=".2f", hovermode="y unified")
-                st.plotly_chart(fig_proventos, width="stretch")
+                fig_proventos.update_xaxes(tickformat=".2f")
+                st.plotly_chart(ChartThemeAdapter.apply_theme(fig_proventos), width="stretch")
 
     def _render_evolution_chart(self):
         st.markdown("---")
@@ -186,7 +187,7 @@ class DashboardCharts:
                     y=df_evolution[CUMULATIVE_INVESTED],
                     name="Valor Investido",
                     mode="lines+markers",
-                    line=dict(color="#1f77b4", width=3),
+                    line=dict(color=ChartThemeAdapter.BLUE, width=3),
                     marker=dict(size=6),
                     hovertemplate="Valor Investido: R$ %{y:,.2f}<extra></extra>",
                 ),
@@ -200,7 +201,7 @@ class DashboardCharts:
                     y=df_evolution[PLANNED_INVESTED],
                     name="Planejado (Meta)",
                     mode="lines",
-                    line=dict(color="#1f77b4", width=2, dash="dash"),
+                    line=dict(color=ChartThemeAdapter.BLUE, width=2, dash="dash"),
                     hovertemplate="Planejado (Meta): R$ %{y:,.2f}<extra></extra>",
                 ),
                 secondary_y=False,
@@ -213,7 +214,7 @@ class DashboardCharts:
                     y=df_evolution[CUMULATIVE_DIVIDENDS],
                     name="Total de Proventos",
                     mode="lines+markers",
-                    line=dict(color="#2ca02c", width=3),
+                    line=dict(color=ChartThemeAdapter.GREEN, width=3),
                     marker=dict(size=6),
                     hovertemplate="Total de Proventos: R$ %{y:,.2f}<extra></extra>",
                 ),
@@ -227,7 +228,7 @@ class DashboardCharts:
                     y=df_evolution[PLANNED_DIVIDENDS],
                     name="Proventos Planejados",
                     mode="lines",
-                    line=dict(color="#2ca02c", width=2, dash="dash"),
+                    line=dict(color=ChartThemeAdapter.GREEN, width=2, dash="dash"),
                     hovertemplate="Proventos Planejados: R$ %{y:,.2f}<extra></extra>",
                 ),
                 secondary_y=False,
@@ -244,10 +245,10 @@ class DashboardCharts:
                     x=df_evolution[MONTH_DISPLAY],
                     y=df_evolution[MONTHLY_DIVIDEND],
                     name="Proventos (Mês)",
-                    marker_color="rgba(242, 196, 26, 0.6)",
+                    marker_color=ChartThemeAdapter.YELLOW_FILL,
                     text=bar_labels,
                     textposition="outside",
-                    textfont=dict(size=12, color="#f2c41a", family="sans-serif"),
+                    textfont=dict(size=12, color=ChartThemeAdapter.YELLOW, family="sans-serif"),
                     hovertemplate="Proventos (Mês): R$ %{y:,.2f}<extra></extra>",
                 ),
                 secondary_y=True,
@@ -255,17 +256,17 @@ class DashboardCharts:
 
             fig_multi.update_layout(
                 title_text="Histórico de Evolução Patrimonial: Real vs. Planejado",
-                hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0.01),
                 uniformtext=dict(minsize=12, mode="show"),
             )
 
             fig_multi.update_yaxes(
-                title_text="Valores Acumulados (R$)", tickformat="R$ ,.2f", secondary_y=False
+                title_text="Valores Acumulados (R$)",
+                tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT,
+                secondary_y=False,
             )
             fig_multi.update_yaxes(
                 title_text="Proventos Mensais Recebidos (R$)",
-                tickformat="R$ ,.2f",
+                tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT,
                 secondary_y=True,
             )
             fig_multi.update_xaxes(
@@ -275,7 +276,7 @@ class DashboardCharts:
                 tickmode="linear",
             )
 
-            st.plotly_chart(fig_multi, width="stretch")
+            st.plotly_chart(ChartThemeAdapter.apply_theme(fig_multi), width="stretch")
 
     def _render_monthly_contributions_chart(self):
         st.markdown("---")
@@ -306,6 +307,6 @@ class DashboardCharts:
                 hovertemplate="Ano: %{data.name}<br>Aporte: R$ %{y:,.2f}<extra></extra>"
             )
             fig_contribs.update_xaxes(categoryorder="array", categoryarray=meses_completos)
-            fig_contribs.update_layout(yaxis_tickformat="R$ ,.2f", hovermode="x unified")
+            fig_contribs.update_yaxes(tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT)
 
-            st.plotly_chart(fig_contribs, width="stretch")
+            st.plotly_chart(ChartThemeAdapter.apply_theme(fig_contribs), width="stretch")

@@ -255,6 +255,44 @@ def test_planning_view_start_date_change_callback(mock_db, monkeypatch):
     assert st.session_state[SESSION_PLANNING_START_DATE] == datetime.date(2024, 1, 1)
     assert st.session_state[SESSION_INITIAL_EQUITY] == 3000.0
 
+def test_chart_theme_adapter_applies_light_defaults(monkeypatch):
+    from plotly.graph_objects import Figure
+
+    from views.components.chart_theme import ChartThemeAdapter
+
+    monkeypatch.setattr(ChartThemeAdapter, "current_theme_type", lambda: "light")
+
+    figure = ChartThemeAdapter.apply_theme(Figure())
+
+    assert figure.layout.paper_bgcolor == ChartThemeAdapter.TRANSPARENT
+    assert figure.layout.plot_bgcolor == ChartThemeAdapter.TRANSPARENT
+    assert figure.layout.font.color == ChartThemeAdapter.LIGHT_FONT_COLOR
+    assert figure.layout.hovermode == "x unified"
+    assert figure.layout.legend.orientation == "h"
+    assert figure.layout.legend.y == -0.22
+    assert figure.layout.margin.b == 90
+    assert figure.layout.xaxis.gridcolor == ChartThemeAdapter.LIGHT_GRID_COLOR
+    assert figure.layout.yaxis.gridcolor == ChartThemeAdapter.LIGHT_GRID_COLOR
+    assert ChartThemeAdapter.annotation_background() == ChartThemeAdapter.LIGHT_ANNOTATION_BACKGROUND
+    assert ChartThemeAdapter.annotation_font_color() == ChartThemeAdapter.LIGHT_FONT_COLOR
+
+
+def test_chart_theme_adapter_applies_dark_defaults(monkeypatch):
+    from plotly.graph_objects import Figure
+
+    from views.components.chart_theme import ChartThemeAdapter
+
+    monkeypatch.setattr(ChartThemeAdapter, "current_theme_type", lambda: "dark")
+
+    figure = ChartThemeAdapter.apply_theme(Figure())
+
+    assert figure.layout.template.layout.paper_bgcolor == "rgb(17,17,17)"
+    assert figure.layout.font.color == ChartThemeAdapter.DARK_FONT_COLOR
+    assert figure.layout.xaxis.gridcolor == ChartThemeAdapter.DARK_GRID_COLOR
+    assert ChartThemeAdapter.annotation_background() == ChartThemeAdapter.DARK_ANNOTATION_BACKGROUND
+    assert ChartThemeAdapter.annotation_font_color() == ChartThemeAdapter.DARK_FONT_COLOR
+
+
 def test_sector_chart_hover_customdata(monkeypatch):
     """
     Ensures that DashboardCharts._render_top_charts prepares custom hover data

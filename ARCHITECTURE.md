@@ -86,6 +86,7 @@ All code, identifiers, SQL, comments, and developer documentation are in English
 - **Dashboard** renders annual contribution progress, portfolio summary metrics, charts, and detailed holdings.
 - **Assets** coordinates three subviews: portfolio details, market monitoring and Bazin valuation, and manual/B3-import operations.
 - **Planning** edits persisted retirement parameters, supports a sandbox simulation, and renders timing, required-contribution, and projection components.
+- **`ChartThemeAdapter`** applies the shared dark Plotly palette, typography, grid, legend, margins, currency ticks, and unified hover behavior to dashboard and planning figures. Chart components remain responsible for their traces and chart-specific axes.
 
 ## Validation
 

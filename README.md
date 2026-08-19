@@ -2,100 +2,104 @@
 
 # 💼 RendaPerene
 
-**A Local-First, Production-Grade Investment & Retirement Cockpit**
+**Local-first portfolio tracking and retirement planning for Brazilian investors**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat&logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white)](https://sqlite.org/index.html)
+[![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white)](https://sqlite.org/)
 [![Pytest](https://img.shields.io/badge/Tested_with-Pytest-0A9EDC?style=flat&logo=pytest&logoColor=white)](https://docs.pytest.org/)
-[![Code Style: Clean Architecture](https://img.shields.io/badge/Code_Style-Clean_Architecture-brightgreen.svg)]()
 
 </div>
 
----
+## Overview
 
-## 📖 Overview
+RendaPerene is a Streamlit application for recording Brazilian (B3) investment portfolios and simulating retirement. It stores the portfolio and planning configuration in local SQLite files, while using existing public integrations to obtain current market and macroeconomic data.
 
-**RendaPerene** is a high-performance, 100% offline investment portfolio tracker designed to completely replace complex and fragile legacy financial spreadsheets. Built with Python and Streamlit, it provides a localized (PT-BR) interactive dashboard, B3 (Brazilian Stock Exchange) transaction parsing, and an advanced mathematical retirement simulator aligned with Luiz Barsi's previdenciary strategy.
+The interface is in Brazilian Portuguese (PT-BR); source code and developer documentation are in English.
 
-Security and data sovereignty are at the core of this project: **Zero cloud database dependencies, no external telemetry, and fully local execution.**
+## Features
 
----
+- **Portfolio dashboard:** portfolio totals, annual contribution progress, performance metrics, holdings tables, and Plotly charts.
+- **Manual operations and B3 import:** record purchases, sales, dividends, JCP, and yields manually, or import the official B3 `.xlsx` export.
+- **Ledger rules:** calculates weighted average price including fees; handles splits/bonuses, reverse splits, redemptions, and duplicate imports.
+- **Asset details and market monitor:** follows owned and manually selected assets, displays price history and dividend information, and supports Bazin ceiling-price models.
+- **Retirement planning:** calculates lifetime and course-corrected monthly contributions using annuity-due math, with projections based on the stored plan and portfolio history.
+- **Multiple local portfolios:** select an existing portfolio database or create a new local portfolio from the sidebar.
 
-## ✨ Key Features
+## Data and privacy
 
-* 📊 **Interactive Dashboard:** Beautiful, localized Plotly charts (donut sectors, profit/loss bars, chronologically ordered monthly timeline bar charts).
-* 🏦 **B3 Excel Parser Integration:** Drag-and-drop support for official B3 `.xlsx` reports. Dynamically parses Buy, Sell, Stock Splits (*Desdobros*), and Redemptions (*Resgates*) with automatic chronological weighted average price (PM) calculations.
-* 🔮 **Course-Corrected Retirement Simulator:** Advanced Annuity Due (PMT) financial math. It projects your lifetime retirement goals side-by-side with a real-world, course-corrected timeline based on your *actual* invested capital today.
-* 🗄️ **Dual-Database Architecture:** Reference market assets (Tickers, Sectors, Segments) are completely decoupled from your personal transactions, allowing for seamless database migrations and resets.
-* 🇧🇷 **Exclusive B3 / Brazilian Market Support:** Currently optimized exclusively for the Brazilian market. It automatically appends `.SA` to `yfinance` queries, parses localized B3 spreadsheets, fetches real-time macroeconomic indicators (IPCA, SELIC, Minimum Wage) from the Brazilian Central Bank (BCB) API, and enforces strict BRL (R$) formatting.
-* 📈 **Advanced Dividend Tracking:** Automatically calculates YTD (Year-to-Date), L12M (Last 12 Months), YoC (Yield on Cost), and Bazin/Barsi-aligned pricing parameters based on dynamic market data.
+Portfolio data is stored locally in SQLite databases under `database/`. The application does not use a cloud database, accounts, or telemetry, and it does not scrape the B3 portal.
 
----
+Fresh market data requires network access:
 
-## 🛠️ Technology Stack
+- Yahoo Finance (`yfinance`) provides B3 prices, market metrics, price history, and dividend data.
+- Banco Central do Brasil (BCB) provides IPCA, Selic, and minimum-wage indicators.
 
-* **Language:** Python 3.10+
-* **Framework:** Streamlit (Implementing a strict MVC-like pattern)
-* **Database:** SQLite3 (Dual File Pools)
-* **Data Science & Math:** Pandas, NumPy
-* **Market Integration:** `yfinance` (with intelligent TTLCache for fast batch queries)
-* **Visualization:** Plotly Express & Plotly Graph Objects
-* **Testing:** Pytest (Automated Regression Testing with `pytest.ini` pythonpath integration)
+The B3 import is user-directed: download the official Excel export from the B3 Investor Portal and upload it in the application. Local databases and personal spreadsheets are ignored by Git; do not commit them.
 
----
+## Requirements
 
-## 🚀 Installation & Execution
+- Python 3.10 or newer
+- `pip`
+- Network access only when requesting fresh Yahoo Finance or BCB data
 
-### 1. Clone and Setup Environment
-Clone the repository and create an isolated virtual environment:
+## Installation
+
+Clone the repository, create a virtual environment, and install the application:
+
 ```bash
 git clone https://github.com/R-Mascarenhas/RendaPerene.git
-cd rendaperene
+cd RendaPerene
 
-# Create and activate a virtual environment
 python3 -m venv venv
-source venv/bin/activate  # On Windows use: venv\Scripts\activate
-
-# Install dependencies
-# For production/execution only:
-pip install .
-
-# For active development, linting, and testing (editable mode):
-pip install -e ".[dev]"
+source venv/bin/activate
+python -m pip install .
 ```
 
-### 2. Launch the Application
-Run the Streamlit server to open the interactive dashboard in your browser:
+For development, install the optional test and lint dependencies:
+
 ```bash
-streamlit run app.py
+python -m pip install -e ".[dev]"
 ```
 
-### 3. Run Automated Tests
-To execute the comprehensive Pytest regression suite:
+On Windows PowerShell, activate the environment with:
+
+```powershell
+.\venv\Scripts\Activate.ps1
+```
+
+## Run
+
+Start the Streamlit application:
+
 ```bash
-pytest
+venv/bin/streamlit run app.py
 ```
 
----
+If the environment is activated, `streamlit run app.py` is equivalent. The first run creates and initializes `database/portfolio.db` when it does not already exist.
 
-## 🏗️ Architecture & Conventions
+## Validation
 
-This project strictly adheres to **SOLID** principles, **Clean Architecture**, and **DRY** (Don't Repeat Yourself).
-* **Language Policy:** The codebase (classes, variables, SQL, comments) is entirely in **English**, while the User Interface (strings, chart labels, tooltips) is rigorously localized to **Portuguese (PT-BR)**.
-* **Separation of Concerns:** Views (`views/`) handle exclusively GUI rendering via Streamlit. All business logic, SQLite operations, and DataFrame manipulations occur in Domain Services (`services/`).
-* **Strategy Pattern:** Financial projections and statistical trendlines are implemented using Open/Closed Principle (OCP) compliant strategies (e.g., Polynomial, Linear Momentum) located in `core/utils/trendlines.py`.
+Run the regression suite and lint checks:
 
----
+```bash
+venv/bin/pytest
+venv/bin/ruff check .
+venv/bin/ruff format --check .
+```
 
-## 🔒 Security & Privacy Notice
+Ruff targets Python 3.10, uses a 100-character line length, and intentionally excludes `tests/` from its configured scope.
 
-**Local-First Mandate:** This application operates entirely on your local machine. Your financial data is saved strictly to local SQLite `.db` files. There are no cloud APIs, third-party authentication services, or data telemetry scrapers.
+## Architecture
 
-**Disclaimer:** This project is a strictly personal, independent development portfolio.
+The application is divided into three layers:
 
----
+- `core/`: database infrastructure, DAO implementations, ports, formatting, B3 parsing, and headless market-data integration.
+- `services/`: framework-agnostic portfolio, planning, and valuation rules.
+- `views/`: Streamlit views and presentation components.
 
-<div align="center">
-  <i>Developed with ❤️ for financial independence.</i>
-</div>
+`app.py` is the composition root that initializes persistence, wires production adapters, initializes session state, and routes the Dashboard, Assets, and Planning views. See [ARCHITECTURE.md](ARCHITECTURE.md) for the persistence model, dependency boundaries, financial rules, and integrations.
+
+## License
+
+This project is distributed under the [GNU Affero General Public License v3.0](LICENSE).

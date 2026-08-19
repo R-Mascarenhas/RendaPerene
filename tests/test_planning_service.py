@@ -1,5 +1,6 @@
 import pytest
 import datetime
+import pandas as pd
 from services.assets_service import AssetService
 from services.planning_service import SimulationService
 
@@ -247,3 +248,90 @@ def test_decoupled_planning_config_seam(mock_db):
         # Reset to default adapter (DIP restore hygiene)
         from core.daos.planning_dao import PlanningDAO
         SimulationService.set_adapters(planning_repo=PlanningDAO)
+
+
+def test_decoupled_portfolio_provider_seam(mock_db):
+    """
+    TDD Test to verify that SimulationService can utilize an in-memory custom
+    stub for its portfolio provider using the set_adapters seam, completely decoupling
+    the simulation calculations and projection datasets from any database or AssetService dependencies.
+    """
+    class StubPlanningConfig:
+        @staticmethod
+        def get_configuration() -> dict | None:
+            return {
+                "birth_date": "1990-01-01",
+                "retirement_age": 60,
+                "desired_income_mw": 5.0,
+                "annual_interest_rate": 6.0,
+                "mw_value": 1412.0,
+                "initial_equity_input": 0.0,
+                "desired_income_type": "MULTIPLIER",
+                "desired_income_fixed": 10000.0,
+                "ceiling_model_selection": "Bazin Clássico",
+                "bazin_target_yield": 6.0,
+                "bazin_target_spread": 3.0,
+                "planning_start_date": "2024-01-01"
+            }
+
+        @staticmethod
+        def save_configuration(*args, **kwargs) -> None:
+            pass
+
+        @staticmethod
+        def get_min_transaction_date() -> str:
+            return "2024-01-01"
+
+    class StubPortfolioProvider:
+        def calculate_positions(self, today_date=None, start_date=None) -> pd.DataFrame:
+            # Under planning_start_date="2024-01-01", return custom mock positions
+            return pd.DataFrame([
+                {"ticker": "MOCK1", "invested_amount": 10000.0},
+                {"ticker": "MOCK2", "invested_amount": 25000.0}
+            ])
+
+        def calculate_historical_evolution(self, start_date=None) -> pd.DataFrame:
+            # Generate months from 2024-01 to today
+            start = pd.to_datetime("2024-01-01")
+            end = pd.to_datetime(datetime.date.today())
+            date_range = pd.date_range(start=start, end=end, freq="MS")
+            months = date_range.strftime("%Y-%m").tolist()
+
+            # Create cumulative values that grow over time
+            data = []
+            for i, m in enumerate(months):
+                data.append({
+                    "month_str": m,
+                    "cumulative_invested": 10000.0 + i * 1000.0,
+                    "cumulative_dividends": 100.0 + i * 10.0,
+                    "net_cashflow": 1000.0,
+                    "monthly_dividend": 10.0
+                })
+            return pd.DataFrame(data)
+
+    # Inject BOTH stub config and stub portfolio provider
+    SimulationService.set_adapters(
+        planning_repo=StubPlanningConfig,
+        portfolio_provider=StubPortfolioProvider()
+    )
+
+    try:
+        # Verify that get_current_simulation sum of invested amount is 35000.0 (from mock)
+        sim = SimulationService.get_current_simulation()
+        assert sim is not None
+        assert sim["total_invested"] == 35000.0 # 10000 + 25000
+
+        # Verify that get_projection_chart_dataset uses the mock's historical evolution
+        df_proj = SimulationService.get_projection_chart_dataset()
+        assert not df_proj.empty
+        # Month 2024-01 should match mock
+        first_row = df_proj[df_proj["month_str"] == "2024-01"]
+        assert not first_row.empty
+    finally:
+        # Restore original test environment adapters (hygiene)
+        from core.daos.planning_dao import PlanningDAO
+        from services.assets_service import AssetService
+        SimulationService.set_adapters(
+            planning_repo=PlanningDAO,
+            portfolio_provider=AssetService.get_default()
+        )

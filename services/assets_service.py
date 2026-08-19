@@ -8,6 +8,7 @@ from core.ports import (
     AssetsCatalogPort,
     ExcelParserPort,
     MarketDataPort,
+    PlanningProviderPort,
     PortfolioPort,
     hybridmethod,
 )
@@ -23,11 +24,13 @@ class AssetService:
         catalog_repo: AssetsCatalogPort = None,
         market_data_api: MarketDataPort = None,
         excel_parser: ExcelParserPort = None,
+        planning_provider: PlanningProviderPort = None,
     ):
         self._portfolio_repo = portfolio_repo or PortfolioDAO()
         self._catalog_repo = catalog_repo or AssetsCatalogDAO()
         self._market_data_api = market_data_api or MarketData
         self._excel_parser = excel_parser
+        self._planning_provider = planning_provider
 
     # Default instance for backwards compatibility in presentation layers
     _default_instance = None
@@ -45,6 +48,7 @@ class AssetService:
         catalog_repo: AssetsCatalogPort = None,
         market_data_api: MarketDataPort = None,
         excel_parser: ExcelParserPort = None,
+        planning_provider: PlanningProviderPort = None,
     ):
         """Dynamic dependency injection mechanism for testing and custom environment mocks."""
         inst = cls.get_default()
@@ -56,6 +60,8 @@ class AssetService:
             inst._market_data_api = market_data_api
         if excel_parser is not None:
             inst._excel_parser = excel_parser
+        if planning_provider is not None:
+            inst._planning_provider = planning_provider
 
     @hybridmethod
     def register_fallback_asset(self, ticker: str):
@@ -745,7 +751,6 @@ class AssetService:
             TOTAL_DIVIDENDS,
             YTD_DIVIDENDS,
         )
-        from services.planning_service import SimulationService
 
         if df_positions.empty:
             return df_positions, {}
@@ -786,9 +791,12 @@ class AssetService:
             (l12m_dividends / total_invested_init * 100) if total_invested_init > 0 else 0.0
         )
 
-        # Pull the invested capital parameter used in PMT calculations from the planning service
-        sim = SimulationService.get_current_simulation()
-        total_invested_sim = sim["total_invested"] if sim else 0.0
+        # Pull the invested capital parameter used in PMT calculations from the planning service if available
+        if self._planning_provider is not None:
+            sim = self._planning_provider.get_current_simulation()
+            total_invested_sim = sim["total_invested"] if sim else total_invested_init
+        else:
+            total_invested_sim = total_invested_init
 
         return df_positions, {
             "total_equity": total_equity,

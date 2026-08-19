@@ -47,13 +47,16 @@ def mock_db(monkeypatch):
 
     # Wire default test adapters at the test environment composition edge
     from services.assets_service import AssetService
+    from services.planning_service import SimulationService
     from core.utils.b3_parser import B3ExcelParserAdapter
     AssetService.set_adapters(
         portfolio_repo=None,
         catalog_repo=None,
         market_data_api=MarketData,
-        excel_parser=B3ExcelParserAdapter()
+        excel_parser=B3ExcelParserAdapter(),
+        planning_provider=SimulationService.get_default(),
     )
+    SimulationService.set_adapters(portfolio_provider=AssetService.get_default())
 
     yield
 

@@ -30,6 +30,7 @@ GEMINI.md
 git_commit_features.py
 docs/reports/
 docs/architecture_review/
+docs/backlog/
 
 # PyInstaller & Dist Packaging
 build/

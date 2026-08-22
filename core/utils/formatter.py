@@ -1,4 +1,6 @@
-from core.constants import MONTHS_PT
+import math
+
+from core.constants import BILLION, MILLION, MONTHS_PT, TRILLION
 
 
 class Formatter:
@@ -6,8 +8,51 @@ class Formatter:
 
     @staticmethod
     def format_currency(value: float) -> str:
-        """Formats a float to the Brazilian currency string (R$ 1.234,56)."""
-        return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        """Format BRL values, compacting amounts whose magnitude reaches millions."""
+        return Formatter._format_compact_value(value, prefix="R$ ", decimal_places=2)
+
+    @staticmethod
+    def format_market_value(value, value_type: str) -> str:
+        """Format an optional Yahoo Finance value for the market detail screen."""
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            return "N/D"
+
+        if not math.isfinite(numeric_value):
+            return "N/D"
+        if value_type == "currency":
+            return Formatter.format_currency(numeric_value)
+        if value_type == "percentage":
+            return f"{numeric_value * 100:.2f}%"
+        if value_type == "percentage_points":
+            return f"{numeric_value:.2f}%"
+        if value_type == "integer":
+            return Formatter.format_integer(numeric_value)
+        return f"{numeric_value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    @staticmethod
+    def format_integer(value: float) -> str:
+        """Format integer-like values, compacting magnitudes at millions and billions."""
+        return Formatter._format_compact_value(value, decimal_places=0)
+
+    @staticmethod
+    def _format_compact_value(value: float, *, prefix: str = "", decimal_places: int) -> str:
+        """Format a signed value with Brazilian separators and optional compact magnitude suffixes."""
+        numeric_value = float(value)
+        absolute_value = abs(numeric_value)
+        sign = "-" if numeric_value < 0 else ""
+        if absolute_value >= TRILLION:
+            formatted_value = f"{absolute_value / TRILLION:,.2f} tri"
+        elif absolute_value >= BILLION:
+            formatted_value = f"{absolute_value / BILLION:,.2f} bi"
+        elif absolute_value >= MILLION:
+            formatted_value = f"{absolute_value / MILLION:,.2f} mi"
+        else:
+            formatted_value = f"{absolute_value:,.{decimal_places}f}"
+        return (
+            f"{sign}{prefix}{formatted_value}".replace(",", "X").replace(".", ",").replace("X", ".")
+        )
 
     @staticmethod
     def format_month_year(month_str: str) -> str:

@@ -290,6 +290,19 @@ class AssetService:
         }
 
     @hybridmethod
+    def get_asset_market_analysis(self, ticker: str, target_yield: float) -> dict:
+        """Return catalog metadata and Bazin valuation data for any catalog ticker."""
+        ticker = ticker.strip().upper()
+        details = self._market_data_api.get_ticker_market_analysis(
+            ticker, target_yield_pct=target_yield
+        )
+        if not details:
+            return {}
+
+        details["metadata"] = self.get_asset_metadata(ticker)
+        return details
+
+    @hybridmethod
     def get_years_with_dividends(self) -> list:
         """Returns a sorted list of all unique years available in the dividends database."""
         return self._portfolio_repo.get_years_with_dividends()

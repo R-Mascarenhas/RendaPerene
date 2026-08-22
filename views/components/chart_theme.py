@@ -66,6 +66,11 @@ class ChartThemeAdapter:
         return ChartThemeAdapter.LIGHT_FONT_COLOR
 
     @staticmethod
+    def heatmap_empty_color() -> str:
+        """Return a neutral heatmap-cell color compatible with the active theme."""
+        return "#2a2f36" if ChartThemeAdapter.is_dark_theme() else "#edf2f7"
+
+    @staticmethod
     def apply_theme(fig: go.Figure) -> go.Figure:
         """Apply shared visual settings for the configured Streamlit theme."""
         is_dark = ChartThemeAdapter.is_dark_theme()

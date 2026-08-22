@@ -43,6 +43,17 @@ MSG_INVALID_ASSET_SELECTION = "Por favor, selecione um ativo válido da lista."
 MSG_NO_ASSETS_MONITOR = "Nenhuma empresa adicionada ao monitor. Digite um ticker no formulário acima para começar a acompanhar!"
 MSG_MONITORED_ASSETS_PANEL = "Painel de Ativos Monitorados"
 MSG_YF_FETCH_ERROR = "Falha ao obter dados do Yahoo Finance para as empresas monitoradas. Verifique se digitou os tickers corretamente."
+MSG_ASSET_DEEP_DIVE_TITLE = "🔍 Raio-X"
+MSG_ASSET_DEEP_DIVE_DESC = (
+    "Consulte indicadores e histórico de proventos de qualquer ativo do catálogo da B3."
+)
+MSG_ASSET_DEEP_DIVE_NO_DATA = (
+    "Não há dados de mercado disponíveis no Yahoo Finance para este ativo no momento."
+)
+MSG_ASSET_DEEP_DIVE_PRICE_HISTORY = "Histórico de Cotação"
+MSG_ASSET_FAVORITE = "☆ Favoritar"
+MSG_ASSET_FAVORITED = "★ Favorito"
+MSG_ASSET_UNFAVORITE = "★ Desfavoritar"
 MSG_ADJUST_DIVIDENDS_EXPANDER = "🔧 Ajustar Proventos Históricos"
 MSG_ADJUST_DIVIDENDS_DESC = "Caso identifique erros de omissão de dividendos no Yahoo Finance (como JCPs complementares), corrija os valores consolidados de cada ano abaixo:"
 MSG_INVALID_ASSET_CORRECTION = "Por favor, selecione um ativo válido para aplicar a correção."
@@ -182,3 +193,6 @@ TAB_PLANNING = "🎯 Planejamento"
 TAB_MY_ASSETS = "📁 Meus Ativos"
 TAB_MARKET = "📈 Mercado"
 TAB_IMPORT_LAUNCH = "📥 Importar & Lançar"
+
+TAB_MARKET_MONITORING = "📊 Monitoramento"
+TAB_ASSET_DEEP_DIVE = "🔍 Raio-X"

@@ -5,12 +5,14 @@ from core.utils.market_data import MarketData
 from core.database import db
 from services.assets_service import AssetService
 
+
 def test_get_ticker_market_analysis(monkeypatch):
     """
     Verifies that get_ticker_market_analysis correctly parses and calculates market data.
     In particular, checks that the dividend yield (dy) is NOT multiplied by 100 if yfinance
     already returns it as a percentage (e.g. 1.2 for BBAS3 instead of 0.012).
     """
+
     class MockTicker:
         def __init__(self, ticker_name):
             self.info = {
@@ -18,13 +20,16 @@ def test_get_ticker_market_analysis(monkeypatch):
                 "priceToBook": 0.85,
                 "trailingPE": 4.5,
                 "dividendYield": 1.2,  # Already percentage (1.2%)
-                "returnOnEquity": 0.09224  # Decimal fraction (9.224%)
+                "returnOnEquity": 0.09224,  # Decimal fraction (9.224%)
+                "open": 19.5,
+                "dayHigh": 20.1,
+                "dayLow": 19.4,
+                "marketCap": 55_000_000_000,
+                "sharesOutstanding": 2_800_000_000,
+                "volume": 1_500_000,
+                "totalDebt": 1_000_000_000,
             }
-            self.fast_info = {
-                "yearLow": 15.0,
-                "yearHigh": 30.0,
-                "lastPrice": 19.86
-            }
+            self.fast_info = {"yearLow": 15.0, "yearHigh": 30.0, "lastPrice": 19.86}
             self.dividends = pd.Series(dtype=float)
 
     monkeypatch.setattr(yf, "Ticker", MockTicker)
@@ -38,13 +43,20 @@ def test_get_ticker_market_analysis(monkeypatch):
     assert analysis["pb"] == 0.85
     assert analysis["pe"] == 4.5
     assert analysis["roe"] == 9.224  # Should be multiplied by 100 since ROE is a decimal fraction
-    assert analysis["dy"] == 1.2      # Should be exactly 1.2, NOT 120.0
+    assert analysis["net_margin"] is None
+    assert analysis["dy"] == 1.2  # Should be exactly 1.2, NOT 120.0
+    assert analysis["quote_snapshot"]["opening_price"] == 19.5
+    assert analysis["quote_snapshot"]["market_cap"] == 55_000_000_000
+    assert analysis["quote_snapshot"]["daily_financial_volume"] == pytest.approx(29_790_000)
+    assert analysis["indicators"]["total_debt"] == 1_000_000_000
+
 
 def test_get_ticker_market_analysis_normalization(monkeypatch):
     """
     Verifies that get_ticker_market_analysis correctly normalizes the ticker parameter
     (converting to uppercase and stripping whitespace) before performing any database queries.
     """
+
     class MockTicker:
         def __init__(self, ticker_name):
             assert "BBAS3.SA" in ticker_name
@@ -53,26 +65,30 @@ def test_get_ticker_market_analysis_normalization(monkeypatch):
                 "priceToBook": 0.85,
                 "trailingPE": 4.5,
                 "dividendYield": 1.2,
-                "returnOnEquity": 0.09224
+                "returnOnEquity": 0.09224,
             }
-            self.fast_info = {
-                "yearLow": 15.0,
-                "yearHigh": 30.0,
-                "lastPrice": 19.86
-            }
-            s = pd.Series({
-                pd.Timestamp("2024-01-01"): 1.50
-            })
+            self.fast_info = {"yearLow": 15.0, "yearHigh": 30.0, "lastPrice": 19.86}
+            s = pd.Series({pd.Timestamp("2024-01-01"): 1.50})
             s.index.name = "Date"
             s.name = "Dividends"
             self.dividends = s
+
+        def history(self, period, interval):
+            assert period == "max"
+            assert interval == "1d"
+            return pd.DataFrame(
+                {"Close": [20.0, 25.0]},
+                index=pd.to_datetime(["2024-01-02", "2024-12-30"]),
+            )
 
     monkeypatch.setattr(yf, "Ticker", MockTicker)
 
     # Pre-seed a specific correction for BBAS3 in the database
     conn = db.get_personal_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES ('BBAS3', 2024, 2.50)")
+    cursor.execute(
+        "INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES ('BBAS3', 2024, 2.50)"
+    )
     conn.commit()
     conn.close()
 
@@ -83,7 +99,11 @@ def test_get_ticker_market_analysis_normalization(monkeypatch):
     analysis = MarketData.get_ticker_market_analysis("  bbas3   ")
 
     # Assertions
-    assert analysis["dividends_5y"][2024] == 2.50  # Should be the corrected value, not the yfinance one (1.50)
+    assert (
+        analysis["dividends_5y"][2024] == 2.50
+    )  # Should be the corrected value, not the yfinance one (1.50)
+    assert analysis["dividend_events"] == [{"date": "2024-01-01", "value": 1.5}]
+
 
 def test_market_data_bcb_indicators_sanity():
     """
@@ -99,6 +119,7 @@ def test_market_data_bcb_indicators_sanity():
     selic_val = MarketData.get_current_selic()
     assert isinstance(selic_val, float)
     assert selic_val > 0.0
+
 
 def test_get_tracked_market_assets_includes_owned_stocks(mock_db):
     """
@@ -143,7 +164,7 @@ def test_get_tracked_market_assets_includes_owned_stocks(mock_db):
     # With include_owned=False, BBAS3 should be excluded because it is owned!
     manual_both = AssetService.get_tracked_market_assets(include_owned=False)
     assert "CXSE3" in manual_both
-    assert "BBAS3" not in manual_both # Must be excluded since it is currently owned
+    assert "BBAS3" not in manual_both  # Must be excluded since it is currently owned
     assert manual_both == ["CXSE3"]
 
 
@@ -167,6 +188,28 @@ def test_streamlit_cached_market_data_delegation(monkeypatch):
     assert "get_batch_quotes" in calls
 
 
+def test_asset_service_returns_analysis_for_catalog_asset_without_tracking():
+    """A catalog ticker can be analyzed without being owned or in the watchlist."""
+
+    class FakeMarketData:
+        @staticmethod
+        def load_assets_catalog():
+            return pd.DataFrame({"NOME": ["Empresa Teste"]}, index=["TEST3"])
+
+        @staticmethod
+        def get_ticker_market_analysis(ticker, target_yield_pct):
+            assert ticker == "TEST3"
+            assert target_yield_pct == 6.0
+            return {"current_price": 10.0, "ceiling_price": 12.0}
+
+    analysis = AssetService(market_data_api=FakeMarketData()).get_asset_market_analysis(
+        "test3", 6.0
+    )
+
+    assert analysis["current_price"] == 10.0
+    assert analysis["metadata"]["name"] == "Empresa Teste"
+
+
 def test_load_assets_catalog_instantiation():
     """
     Verifies that load_assets_catalog correctly compiles and executes, avoiding
@@ -183,7 +226,9 @@ def test_load_assets_catalog_instantiation():
 
     # Create a temporary mock csv to avoid FileNotFoundError
     with open("assets.csv", "w", encoding="utf-8-sig") as f:
-        f.write("CÓDIGO,NOME,IMAGEM,CNPJ,SETOR ECONÔMICO,SUBSETOR ,SEGMENTO / ADM / PAÍS,TIPO,SEGMENTO\n")
+        f.write(
+            "CÓDIGO,NOME,IMAGEM,CNPJ,SETOR ECONÔMICO,SUBSETOR ,SEGMENTO / ADM / PAÍS,TIPO,SEGMENTO\n"
+        )
 
     try:
         catalog = OriginalMarketData.load_assets_catalog()

@@ -6,6 +6,7 @@ import streamlit as st
 
 from core.strings import *
 from core.utils.formatter import Formatter
+from core.utils.market_history import get_valid_closing_history
 from services.assets_service import AssetService
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
 
@@ -265,6 +266,9 @@ class PortfolioView:
             history = MarketData.get_ticker_history(
                 ticker, period=chosen_period, interval=chosen_interval
             )
+
+        if not history.empty and "Close" in history.columns:
+            history = get_valid_closing_history(history)
 
         if not history.empty and "Close" in history.columns:
             # Downsample 'max' if duration is > 8 years

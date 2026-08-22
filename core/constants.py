@@ -14,6 +14,10 @@ MONTHS_PT = {
     "12": "Dez",
 }
 
+MILLION = 1_000_000
+BILLION = 1_000_000_000
+TRILLION = 1_000_000_000_000
+
 # Core DataFrame column names and dictionary keys to prevent Magic Strings (DRY-compliant)
 TICKER = "ticker"
 NAME = "name"
@@ -92,11 +96,13 @@ MARKET_PB = "pb"
 MARKET_PE = "pe"
 CURRENT_DY = "dy"
 MARKET_ROE = "roe"
+MARKET_NET_MARGIN = "net_margin"
 MARKET_LOW_52W = "low_52w"
 MARKET_HIGH_52W = "high_52w"
 MARKET_AVG_DIV_5Y = "avg_dividend_5y"
 MARKET_AVG_DY_5Y = "avg_dy_5y"
 MARKET_DIVIDENDS_5Y = "dividends_5y"
+MARKET_DIVIDENDS_HISTORY = "dividends_history"
 
 # Price-Ceiling Model Selection and custom params database configuration keys
 CEILING_MODEL_SELECTION = "ceiling_model_selection"

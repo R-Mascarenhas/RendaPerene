@@ -42,6 +42,11 @@ class ValuationService:
         """Return the five-year average dividend yield as a percentage."""
         return (float(avg_dividend_5y) / float(current_price) * 100) if current_price > 0 else 0.0
 
+    @staticmethod
+    def calculate_required_dividend(current_price: float, target_yield_pct: float) -> float:
+        """Return the annual dividend per share required for a target Bazin yield."""
+        return float(current_price) * (float(target_yield_pct) / 100)
+
     @classmethod
     def apply_bazin_valuation(cls, raw_market_data: dict, target_yield_pct: float) -> dict:
         """Copy raw market data and add its Bazin ceiling and average yield."""

@@ -75,7 +75,7 @@ The B3 importer receives an Excel file selected by the user, normalizes its colu
 
 - `yfinance` supplies B3 quotes, price history, and dividend/valuation data. Tickers are requested with the `.SA` suffix.
 - Banco Central do Brasil (BCB) SGS endpoints supply IPCA, Selic, and minimum-wage values. The headless integration uses fallbacks when a request fails.
-- The Streamlit adapter caches market results: quotes and detailed analysis for 10 minutes, history for one hour, and BCB indicators for 30 days.
+- The Streamlit adapter caches quotes and detailed asset analysis for 10 minutes, price history for one hour, and BCB indicators for 30 days. The detailed analysis includes up to ten completed years of annual dividend history for the Raio-X consultation.
 
 These integrations support local use but require network access when fresh data is requested. The application does not scrape the B3 portal; users import the official B3 Excel export themselves.
 
@@ -84,7 +84,7 @@ These integrations support local use but require network access when fresh data 
 All code, identifiers, SQL, comments, and developer documentation are in English. All user-facing labels, messages, chart labels, help text, and rendered tables are in PT-BR. BRL values displayed to users use `Formatter.format_currency()`.
 
 - **Dashboard** renders annual contribution progress, portfolio summary metrics, charts, and detailed holdings.
-- **Assets** coordinates three subviews: portfolio details, market monitoring and Bazin valuation, and manual/B3-import operations.
+- **Assets** coordinates three subviews: portfolio details, market monitoring and Bazin valuation (including the catalog-wide Raio-X consultation), and manual/B3-import operations. Within the Market screen, `MarketView` only routes the secondary navigation; `MarketMonitoringView` and `AssetDeepDiveView` each render one tab.
 - **Planning** edits persisted retirement parameters, supports a sandbox simulation, and renders timing, required-contribution, and projection components.
 - **`ChartThemeAdapter`** applies the shared dark Plotly palette, typography, grid, legend, margins, currency ticks, and unified hover behavior to dashboard and planning figures. Chart components remain responsible for their traces and chart-specific axes.
 

@@ -12,6 +12,8 @@ class StreamlitCachedMarketData:
     Delegates implementation details to pure headless MarketData.
     """
 
+    RAW_ANALYSIS_CACHE_VERSION = 7
+
     @staticmethod
     @st.cache_data(ttl=600)
     def get_batch_quotes(tickers: list) -> dict:
@@ -37,8 +39,8 @@ class StreamlitCachedMarketData:
 
     @staticmethod
     @st.cache_data(ttl=600)
-    def _get_raw_ticker_market_analysis(ticker: str) -> dict:
-        """Fetches raw core B3 valuation metrics and 5-year historical dividends (Cached)."""
+    def _get_raw_ticker_market_analysis(ticker: str, cache_version: int) -> dict:
+        """Fetch market metrics and dividend history with a versioned 10-minute cache."""
         return MarketData._get_raw_ticker_market_analysis(ticker)
 
     @staticmethod
@@ -48,7 +50,9 @@ class StreamlitCachedMarketData:
         Underlying raw fetching is cached on StreamlitCachedMarketData to avoid redundant web reloads.
         """
         ticker = ticker.strip().upper()
-        raw_data = StreamlitCachedMarketData._get_raw_ticker_market_analysis(ticker)
+        raw_data = StreamlitCachedMarketData._get_raw_ticker_market_analysis(
+            ticker, StreamlitCachedMarketData.RAW_ANALYSIS_CACHE_VERSION
+        )
         if not raw_data:
             return {}
 

@@ -24,6 +24,10 @@ def test_calculate_bazin_ceiling_price_returns_zero_for_non_positive_yield():
     assert ValuationService.calculate_bazin_ceiling_price(1.20, 0.0) == 0.0
 
 
+def test_calculate_required_dividend_uses_the_target_yield_percentage():
+    assert ValuationService.calculate_required_dividend(20.0, 6.0) == pytest.approx(1.2)
+
+
 def test_apply_bazin_valuation_adds_derived_values_without_mutating_raw_data():
     raw_data = {"avg_dividend_5y": 1.20, "current_price": 15.0}
 

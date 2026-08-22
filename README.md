@@ -22,7 +22,7 @@ The interface is in Brazilian Portuguese (PT-BR); source code and developer docu
 - **Portfolio dashboard:** portfolio totals, annual contribution progress, performance metrics, holdings tables, and Plotly charts.
 - **Manual operations and B3 import:** record purchases, sales, dividends, JCP, and yields manually, or import the official B3 `.xlsx` export.
 - **Ledger rules:** calculates weighted average price including fees; handles splits/bonuses, reverse splits, redemptions, and duplicate imports.
-- **Asset details and market monitor:** follows owned and manually selected assets, displays price history and dividend information, and supports Bazin ceiling-price models.
+- **Asset details and market monitor:** follows owned and manually selected assets, displays price history and dividend information, supports Bazin ceiling-price models, and includes a catalog-wide Raio-X consultation with valuation metrics and annual dividends.
 - **Retirement planning:** calculates lifetime and course-corrected monthly contributions using annuity-due math, with projections based on the stored plan and portfolio history.
 - **Multiple local portfolios:** select an existing portfolio database or create a new local portfolio from the sidebar.
 

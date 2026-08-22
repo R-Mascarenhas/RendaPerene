@@ -12,7 +12,9 @@ from core.ports import (
     PortfolioPort,
     hybridmethod,
 )
+from core.strings import MODEL_IPCA_SPREAD, MODEL_SELIC
 from core.utils.market_data import MarketData
+from services.valuation_service import ValuationService
 
 
 class AssetService:
@@ -288,6 +290,57 @@ class AssetService:
             "segment": "",
             "asset_type": "Ação",
         }
+
+    @hybridmethod
+    def get_asset_catalog_entries(self) -> list[tuple[str, str]]:
+        """Return unique catalog tickers and names sorted for UI consumers."""
+        catalog = self._market_data_api.load_assets_catalog()
+        if catalog.empty:
+            return []
+
+        catalog = catalog.loc[~catalog.index.duplicated(keep="first")]
+        entries = [
+            (str(ticker), str(row.get("NOME", f"Asset {ticker}")))
+            for ticker, row in catalog.iterrows()
+        ]
+        return sorted(entries, key=lambda entry: entry[0])
+
+    @hybridmethod
+    def get_bazin_target_context(
+        self,
+        model: str,
+        *,
+        classic_target_yield: float = 6.0,
+        target_spread: float = 3.0,
+    ) -> dict:
+        """Resolve the active Bazin target and the macro rate shown by the UI."""
+        reference_rate = None
+        if model == MODEL_SELIC:
+            reference_rate = self._market_data_api.get_current_selic()
+            target_yield = ValuationService.calculate_target_yield(model, selic_rate=reference_rate)
+        elif model == MODEL_IPCA_SPREAD:
+            reference_rate = self._market_data_api.get_current_ipca_l12m()
+            target_yield = ValuationService.calculate_target_yield(
+                model, ipca_rate=reference_rate, target_spread=target_spread
+            )
+        else:
+            target_yield = ValuationService.calculate_target_yield(
+                model, classic_target_yield=classic_target_yield
+            )
+        return {"target_yield": target_yield, "reference_rate": reference_rate}
+
+    @hybridmethod
+    def get_asset_market_analysis(self, ticker: str, target_yield: float) -> dict:
+        """Return catalog metadata and Bazin valuation data for any catalog ticker."""
+        ticker = ticker.strip().upper()
+        details = self._market_data_api.get_ticker_market_analysis(
+            ticker, target_yield_pct=target_yield
+        )
+        if not details:
+            return {}
+
+        details["metadata"] = self.get_asset_metadata(ticker)
+        return details
 
     @hybridmethod
     def get_years_with_dividends(self) -> list:

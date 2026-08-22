@@ -1,8 +1,10 @@
 import datetime
+import math
 
 import pandas as pd
 import yfinance as yf
 
+from core.utils.market_history import get_annual_closing_prices, get_latest_valid_close
 from services.valuation_service import ValuationService
 
 
@@ -51,7 +53,7 @@ class MarketData:
             df = df[[time_col, "Close"]].rename(columns={time_col: "time", "Close": "price"})
 
             # Format display timestamps tightly and force categorical string index
-            if interval == "5m" or interval == "15m":
+            if interval in {"5m", "15m"}:
                 df["display_time"] = df["time"].dt.strftime("%d/%m %H:%M")
             else:
                 df["display_time"] = df["time"].dt.strftime("%d/%m/%Y")
@@ -82,35 +84,126 @@ class MarketData:
             info = yt.info
 
             # 1. Fetch dynamic valuation metrics safely
-            pb = info.get("priceToBook", 0.0) if info.get("priceToBook") is not None else 0.0
-            pe = info.get("trailingPE", 0.0) if info.get("trailingPE") is not None else 0.0
+            pb = info.get("priceToBook")
+            pe = info.get("trailingPE")
             dy = info.get("dividendYield", 0.0) or 0.0
-            roe = (info.get("returnOnEquity", 0.0) or 0.0) * 100
+            roe = (
+                float(info["returnOnEquity"]) * 100
+                if info.get("returnOnEquity") is not None
+                else None
+            )
+            net_margin = (
+                float(info["profitMargins"]) * 100
+                if info.get("profitMargins") is not None
+                else None
+            )
 
             # Use extremely reliable fast_info for prices, highs, and lows on B3
             fast = yt.fast_info
             low_52w = fast.get("yearLow", info.get("fiftyTwoWeekLow", 0.0))
             high_52w = fast.get("yearHigh", info.get("fiftyTwoWeekHigh", 0.0))
-            current_price = fast.get(
-                "lastPrice", info.get("currentPrice", info.get("regularMarketPrice", 0.0))
+            current_price = next(
+                (
+                    numeric_price
+                    for price in (
+                        fast.get("lastPrice"),
+                        info.get("currentPrice"),
+                        info.get("regularMarketPrice"),
+                    )
+                    if (numeric_price := MarketData._positive_finite_number(price)) is not None
+                ),
+                None,
             )
+            if current_price is None:
+                fallback_history = yt.history(period="5d", interval="1d")
+                current_price = get_latest_valid_close(fallback_history) or 0.0
+            daily_volume = info.get("volume", info.get("regularMarketVolume"))
+            try:
+                daily_financial_volume = float(daily_volume) * float(current_price)
+            except (TypeError, ValueError):
+                daily_financial_volume = None
+            quote_snapshot = {
+                "closing_price": current_price,
+                "opening_price": info.get("open", info.get("regularMarketOpen")),
+                "day_high": info.get("dayHigh", info.get("regularMarketDayHigh")),
+                "day_low": info.get("dayLow", info.get("regularMarketDayLow")),
+                "high_52w": high_52w,
+                "low_52w": low_52w,
+                "market_cap": info.get("marketCap"),
+                "shares_outstanding": info.get("sharesOutstanding"),
+                "daily_volume": daily_volume,
+                "daily_financial_volume": daily_financial_volume,
+                "ibov_participation": None,
+            }
+            indicators = {
+                "trailing_pe": info.get("trailingPE"),
+                "forward_pe": info.get("forwardPE"),
+                "price_to_book": info.get("priceToBook"),
+                "price_to_sales": info.get("priceToSalesTrailing12Months"),
+                "enterprise_to_ebitda": info.get("enterpriseToEbitda"),
+                "enterprise_to_revenue": info.get("enterpriseToRevenue"),
+                "total_cash": info.get("totalCash"),
+                "total_debt": info.get("totalDebt"),
+                "debt_to_equity": info.get("debtToEquity"),
+                "current_ratio": info.get("currentRatio"),
+                "quick_ratio": info.get("quickRatio"),
+                "operating_cashflow": info.get("operatingCashflow"),
+                "free_cashflow": info.get("freeCashflow"),
+                "return_on_assets": info.get("returnOnAssets"),
+                "return_on_equity": info.get("returnOnEquity"),
+                "gross_margins": info.get("grossMargins"),
+                "operating_margins": info.get("operatingMargins"),
+                "profit_margins": info.get("profitMargins"),
+                "revenue_per_share": info.get("revenuePerShare"),
+                "revenue_growth": info.get("revenueGrowth"),
+                "earnings_growth": info.get("earningsGrowth"),
+                "earnings_quarterly_growth": info.get("earningsQuarterlyGrowth"),
+                "dividend_rate": info.get("dividendRate"),
+                "dividend_yield": info.get("dividendYield"),
+                "payout_ratio": info.get("payoutRatio"),
+                "five_year_avg_dividend_yield": info.get("fiveYearAvgDividendYield"),
+                "volume": daily_volume,
+                "average_volume": info.get("averageVolume"),
+                "average_volume_10d": info.get("averageDailyVolume10Day"),
+                "beta": info.get("beta"),
+                "fifty_two_week_change": info.get("52WeekChange"),
+                "benchmark_fifty_two_week_change": info.get("SandP52WeekChange"),
+            }
 
-            # 2. Fetch last 5-year historical dividends series
+            # 2. Fetch five-year Bazin data and ten-year dividend history
             div_series = yt.dividends
             div_by_year = {}
+            dividends_history = {}
+            annual_closing_prices = {}
+            dividend_events = []
             current_year = datetime.date.today().year
             last_5_years = [current_year - i for i in range(1, 6)]
+            last_10_years = [current_year - i for i in range(1, 11)]
 
             if not div_series.empty:
                 df_div = div_series.to_frame().reset_index()
                 df_div["year"] = df_div["Date"].dt.year
                 df_annual = df_div.groupby("year")["Dividends"].sum()
 
+                event_start_year = current_year - 10
+                for _, event in df_div[df_div["year"] >= event_start_year].iterrows():
+                    dividend_events.append(
+                        {
+                            "date": event["Date"].strftime("%Y-%m-%d"),
+                            "value": float(event["Dividends"]),
+                        }
+                    )
+
                 for yr in last_5_years:
                     div_by_year[yr] = float(df_annual.get(yr, 0.0))
+                for yr in last_10_years:
+                    dividends_history[yr] = float(df_annual.get(yr, 0.0))
+
             else:
                 for yr in last_5_years:
                     div_by_year[yr] = 0.0
+                for yr in last_10_years:
+                    dividends_history[yr] = 0.0
 
             # Dynamically adjust TTM sum from SQLite dividend corrections table
             from core.database import db
@@ -126,9 +219,21 @@ class MarketData:
             for yr, corrected_total in db_corrections:
                 if yr in div_by_year:
                     div_by_year[yr] = float(corrected_total)
+                if yr in dividends_history:
+                    dividends_history[yr] = float(corrected_total)
+
+            if any(dividend > 0 for dividend in dividends_history.values()):
+                try:
+                    annual_price_history = yt.history(
+                        period="10y", interval="1mo", auto_adjust=False
+                    )
+                    annual_closing_prices = get_annual_closing_prices(
+                        annual_price_history, last_10_years
+                    )
+                except Exception:
+                    annual_closing_prices = {}
 
             avg_dividend_5y = sum(div_by_year.values()) / 5 if div_by_year else 0.0
-
             return {
                 "name": info.get("longName", f"Asset {ticker}"),
                 "current_price": current_price,
@@ -136,13 +241,30 @@ class MarketData:
                 "pe": pe,
                 "dy": dy,
                 "roe": roe,
+                "net_margin": net_margin,
                 "high_52w": high_52w,
                 "low_52w": low_52w,
+                "quote_snapshot": quote_snapshot,
+                "indicators": indicators,
                 "dividends_5y": div_by_year,
+                "dividends_history": dividends_history,
+                "annual_closing_prices": annual_closing_prices,
+                "dividend_events": dividend_events,
                 "avg_dividend_5y": avg_dividend_5y,
             }
         except Exception:
             return {}
+
+    @staticmethod
+    def _positive_finite_number(value) -> float | None:
+        """Return a positive finite float or None for unusable market values."""
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(numeric_value):
+            return None
+        return numeric_value if numeric_value > 0 else None
 
     @staticmethod
     def get_ticker_market_analysis(ticker: str, target_yield_pct=6.0) -> dict:

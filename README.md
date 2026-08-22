@@ -22,7 +22,7 @@ The interface is in Brazilian Portuguese (PT-BR); source code and developer docu
 - **Portfolio dashboard:** portfolio totals, annual contribution progress, performance metrics, holdings tables, and Plotly charts.
 - **Manual operations and B3 import:** record purchases, sales, dividends, JCP, and yields manually, or import the official B3 `.xlsx` export.
 - **Ledger rules:** calculates weighted average price including fees; handles splits/bonuses, reverse splits, redemptions, and duplicate imports.
-- **Asset details and market monitor:** follows owned and manually selected assets, displays price history and dividend information, and supports Bazin ceiling-price models.
+- **Asset details and market monitor:** follows owned and manually selected assets, displays price history and dividend information, supports Bazin ceiling-price models, and includes a catalog-wide Raio-X consultation with valuation metrics and annual dividend yields based on each year's closing price.
 - **Retirement planning:** calculates lifetime and course-corrected monthly contributions using annuity-due math, with projections based on the stored plan and portfolio history.
 - **Multiple local portfolios:** select an existing portfolio database or create a new local portfolio from the sidebar.
 
@@ -32,7 +32,7 @@ Portfolio data is stored locally in SQLite databases under `database/`. The appl
 
 Fresh market data requires network access:
 
-- Yahoo Finance (`yfinance`) provides B3 prices, market metrics, price history, and dividend data.
+- Yahoo Finance (`yfinance`) provides B3 prices, market metrics, price history, and dividend data. If a live quote is unavailable, the application uses the latest valid daily close for the asset analysis.
 - Banco Central do Brasil (BCB) provides IPCA, Selic, and minimum-wage indicators.
 
 The B3 import is user-directed: download the official Excel export from the B3 Investor Portal and upload it in the application. Local databases and personal spreadsheets are ignored by Git; do not commit them.

@@ -5,6 +5,8 @@ the financial rules can be used and tested independently of the presentation and
 integration layers.
 """
 
+import math
+
 from core.strings import MODEL_IPCA_SPREAD, MODEL_SELIC
 
 
@@ -38,9 +40,50 @@ class ValuationService:
         return float(avg_dividend_5y) / target_yield_decimal if target_yield_decimal > 0 else 0.0
 
     @staticmethod
-    def calculate_average_dividend_yield(avg_dividend_5y: float, current_price: float) -> float:
+    def calculate_average_dividend_yield(
+        avg_dividend_5y: float, current_price: float | None
+    ) -> float:
         """Return the five-year average dividend yield as a percentage."""
-        return (float(avg_dividend_5y) / float(current_price) * 100) if current_price > 0 else 0.0
+        dividend_yield = ValuationService.calculate_dividend_yield(avg_dividend_5y, current_price)
+        return dividend_yield if dividend_yield is not None else 0.0
+
+    @staticmethod
+    def calculate_dividend_yield(
+        dividend_per_share: float, current_price: float | None
+    ) -> float | None:
+        """Return a dividend yield percentage when the inputs are usable."""
+        try:
+            dividend_value = float(dividend_per_share)
+            price_value = float(current_price)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(dividend_value) or not math.isfinite(price_value) or price_value <= 0:
+            return None
+        return dividend_value / price_value * 100
+
+    @staticmethod
+    def calculate_margin_of_safety(
+        current_price: float | None, ceiling_price: float | None
+    ) -> float | None:
+        """Return the upside to the Bazin ceiling price as a percentage."""
+        try:
+            price_value = float(current_price)
+            ceiling_value = float(ceiling_price)
+        except (TypeError, ValueError):
+            return None
+        if (
+            not math.isfinite(price_value)
+            or not math.isfinite(ceiling_value)
+            or price_value <= 0
+            or ceiling_value <= 0
+        ):
+            return None
+        return ((ceiling_value / price_value) - 1) * 100
+
+    @staticmethod
+    def calculate_required_dividend(current_price: float, target_yield_pct: float) -> float:
+        """Return the annual dividend per share required for a target Bazin yield."""
+        return float(current_price) * (float(target_yield_pct) / 100)
 
     @classmethod
     def apply_bazin_valuation(cls, raw_market_data: dict, target_yield_pct: float) -> dict:
@@ -50,4 +93,13 @@ class ValuationService:
         current_price = data.get("current_price", 0.0)
         data["ceiling_price"] = cls.calculate_bazin_ceiling_price(avg_dividend_5y, target_yield_pct)
         data["avg_dy_5y"] = cls.calculate_average_dividend_yield(avg_dividend_5y, current_price)
+        data["margin_of_safety_pct"] = cls.calculate_margin_of_safety(
+            current_price, data["ceiling_price"]
+        )
+        data["required_dividend"] = cls.calculate_required_dividend(current_price, target_yield_pct)
+        annual_closing_prices = data.get("annual_closing_prices", {})
+        data["dividend_yields_history"] = {
+            year: cls.calculate_dividend_yield(dividend, annual_closing_prices.get(year))
+            for year, dividend in data.get("dividends_history", {}).items()
+        }
         return data

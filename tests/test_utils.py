@@ -43,6 +43,22 @@ def test_formatter_colored_cell_style_dry_sanity():
     trend_neutral = Formatter.get_trend_cell_style(0.0)
     assert "transparent" in trend_neutral
 
+
+def test_format_currency_compacts_millions_and_billions():
+    """Large positive and negative currency amounts must remain compact in the UI."""
+    assert Formatter.format_currency(999_999.99) == "R$ 999.999,99"
+    assert Formatter.format_currency(1_250_000) == "R$ 1,25 mi"
+    assert Formatter.format_currency(2_500_000_000) == "R$ 2,50 bi"
+    assert Formatter.format_currency(-2_500_000_000) == "-R$ 2,50 bi"
+
+
+def test_format_integer_compacts_millions_and_billions():
+    """Large integer-like values must remain compact in market metrics."""
+    assert Formatter.format_integer(999_999) == "999.999"
+    assert Formatter.format_integer(1_250_000) == "1,25 mi"
+    assert Formatter.format_integer(2_500_000_000) == "2,50 bi"
+    assert Formatter.format_integer(-2_500_000_000) == "-2,50 bi"
+
 def test_get_app_version_sanity(monkeypatch, tmp_path):
     """
     Verifies that get_app_version() correctly reads version.txt from either

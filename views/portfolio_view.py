@@ -6,6 +6,11 @@ import streamlit as st
 
 from core.strings import *
 from core.utils.formatter import Formatter
+from core.utils.market_history import (
+    MARKET_HISTORY_PERIODS,
+    downsample_history_for_chart,
+    get_closing_price_summary,
+)
 from services.assets_service import AssetService
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
 
@@ -213,8 +218,16 @@ class PortfolioView:
         m_col5.metric(LABEL_YOC_12_MONTHLY, f"{yoc_12:.2f}%", help=HELP_YOC_12)
 
         m_col6_row2, m_col7_row2, m_col8_row2, m_col9_row2 = st.columns(4)
-        m_col6_row2.metric(LABEL_PE_RATIO, f"{pe:.2f}" if pe > 0 else "N/D", help=HELP_PE_RATIO)
-        m_col7_row2.metric(LABEL_P_VP, f"{pb:.2f}" if pb > 0 else "N/D", help=HELP_P_VP)
+        m_col6_row2.metric(
+            LABEL_PE_RATIO,
+            Formatter.format_market_value(pe, "number"),
+            help=HELP_PE_RATIO,
+        )
+        m_col7_row2.metric(
+            LABEL_P_VP,
+            Formatter.format_market_value(pb, "number"),
+            help=HELP_P_VP,
+        )
         m_col8_row2.metric(
             LABEL_HIGH_52W, Formatter.format_currency(high_52w) if high_52w > 0 else "N/D"
         )
@@ -227,38 +240,15 @@ class PortfolioView:
         st.markdown("---")
         st.markdown(MSG_CHART_BEHAVIOR)
 
-        period_map = {
-            "1 Dia": "1d",
-            "5 Dias": "5d",
-            "1 Mês": "1mo",
-            "6 Meses": "6mo",
-            "YTD": "ytd",
-            "1 Ano": "1y",
-            "5 Anos": "5y",
-            "Máximo": "max",
-        }
-
-        interval_map = {
-            "1d": "5m",
-            "5d": "30m",
-            "1mo": "1d",
-            "6mo": "1d",
-            "ytd": "1d",
-            "1y": "1d",
-            "5y": "1wk",
-            "max": "1wk",
-        }
-
         chosen_label = st.radio(
             "Selecione o período do histórico de fechamento",
-            options=list(period_map.keys()),
+            options=list(MARKET_HISTORY_PERIODS),
             index=5,  # Default is "1 Ano" (1y)
             horizontal=True,
             key=f"period_selector_{ticker}",
             label_visibility="collapsed",
         )
-        chosen_period = period_map[chosen_label]
-        chosen_interval = interval_map[chosen_period]
+        chosen_period, chosen_interval = MARKET_HISTORY_PERIODS[chosen_label]
 
         # Fetch the selected history dynamically from Yahoo Finance with caching
         with st.spinner(f"Buscando histórico ({chosen_label}) para {ticker}..."):
@@ -267,6 +257,12 @@ class PortfolioView:
             )
 
         if not history.empty and "Close" in history.columns:
+            summary = get_closing_price_summary(history)
+            if summary is None:
+                st.info(MSG_NO_YF_CHART_DATA)
+                return
+            history = summary["history"]
+
             # Downsample 'max' if duration is > 8 years
             if chosen_period == "max":
                 days_span = (
@@ -274,11 +270,10 @@ class PortfolioView:
                     - pd.to_datetime(history.index.min()).date()
                 ).days
                 if days_span > (8 * 365.25):
-                    history = history.iloc[::3]
+                    history = downsample_history_for_chart(history, step=3)
 
             # 1. Calculate dynamic financial change metrics since the start of the period
-            price_current = float(history["Close"].iloc[-1])
-            price_initial = float(history["Close"].iloc[0])
+            price_current = summary["current_price"]
 
             is_1d_not_open_yet = (
                 chosen_period == "1d"
@@ -289,8 +284,8 @@ class PortfolioView:
                 value_change = 0.0
                 pct_change = 0.0
             else:
-                value_change = price_current - price_initial
-                pct_change = (value_change / price_initial * 100) if price_initial > 0 else 0.0
+                value_change = summary["value_change"]
+                pct_change = summary["change_pct"]
 
             price_fmt = Formatter.format_currency(price_current)
             abs_change_fmt = (

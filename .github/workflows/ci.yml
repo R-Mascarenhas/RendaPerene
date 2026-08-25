@@ -33,17 +33,19 @@ jobs:
 
       - name: Install development dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip tomli
           python - <<'PY'
           import subprocess
           import sys
-          import tomllib
+          import tomli
 
           with open("pyproject.toml", "rb") as file:
-              config = tomllib.load(file)
+              config = tomli.load(file)
 
-          dependencies = config["project"]["dependencies"]
-          dependencies += config["project"]["optional-dependencies"]["dev"]
+          dependencies = [
+              *config["project"]["dependencies"],
+              *config["project"]["optional-dependencies"]["dev"],
+          ]
           subprocess.check_call([sys.executable, "-m", "pip", "install", *dependencies])
           PY
 

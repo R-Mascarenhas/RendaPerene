@@ -48,3 +48,17 @@ Run the smallest relevant test subset during iteration and `venv/bin/pytest` bef
 ## Completion
 
 For code changes, report the files changed and the validation commands run, including any failures or checks not run.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked in GitHub Issues through the connected GitHub MCP, with `gh` as a fallback. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The default canonical triage labels are used. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository. See `docs/agents/domain.md`.

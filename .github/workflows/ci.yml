@@ -16,10 +16,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: Tests and code quality
+  validate:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ruff lint
+            command: ruff check .
+          - name: Ruff format
+            command: ruff format --check .
+          - name: Tests
+            command: pytest
 
     steps:
       - name: Checkout repository
@@ -30,30 +40,12 @@ jobs:
         with:
           python-version: "3.10"
           cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install development dependencies
         run: |
-          python -m pip install --upgrade pip tomli
-          python - <<'PY'
-          import subprocess
-          import sys
-          import tomli
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
 
-          with open("pyproject.toml", "rb") as file:
-              config = tomli.load(file)
-
-          dependencies = [
-              *config["project"]["dependencies"],
-              *config["project"]["optional-dependencies"]["dev"],
-          ]
-          subprocess.check_call([sys.executable, "-m", "pip", "install", *dependencies])
-          PY
-
-      - name: Run Ruff lint
-        run: ruff check .
-
-      - name: Check Ruff formatting
-        run: ruff format --check .
-
-      - name: Run tests
-        run: pytest
+      - name: Run ${{ matrix.name }}
+        run: ${{ matrix.command }}

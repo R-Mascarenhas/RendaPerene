@@ -99,3 +99,4 @@ venv/bin/ruff format --check .
 ```
 
 Ruff targets Python 3.10 with a 100-character line length and intentionally excludes `tests/`.
+The initial CI baseline suppresses `PLR0913` only in the legacy portfolio and planning interfaces tracked by issues #23 and #24. GitHub Actions runs lint, formatting, and tests independently for pull requests targeting `main` and pushes to `main`.

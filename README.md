@@ -89,6 +89,7 @@ venv/bin/ruff format --check .
 ```
 
 Ruff targets Python 3.10, uses a 100-character line length, and intentionally excludes `tests/` from its configured scope.
+GitHub Actions runs the three validation commands independently for pull requests targeting `main` and pushes to `main`.
 
 ## Architecture
 

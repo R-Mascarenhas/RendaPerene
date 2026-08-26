@@ -316,7 +316,7 @@ class SimulationService:
         last_equity = initial_equity
         last_dividends = 0.0
 
-        for idx, row in df_evolution.iterrows():
+        for _ in range(len(df_evolution)):
             period_interest = last_equity * monthly_interest_rate
             next_equity = last_equity + monthly_contribution
             next_dividends = last_dividends + period_interest

@@ -79,6 +79,14 @@ ignore = [
     "B904"
 ]
 
+# Temporary baseline for legacy wide interfaces. Remove these entries as issues #23 and #24 land.
+[tool.ruff.lint.per-file-ignores]
+"core/daos/planning_dao.py" = ["PLR0913"]
+"core/daos/portfolio_dao.py" = ["PLR0913"]
+"core/ports.py" = ["PLR0913"]
+"services/assets_service.py" = ["PLR0913"]
+"services/planning_service.py" = ["PLR0913"]
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 

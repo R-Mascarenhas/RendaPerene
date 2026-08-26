@@ -1,3 +1,6 @@
+from contextlib import suppress
+
+
 class DatabaseManager:
     """Manages SQLite connection and initialization for the personal portfolio transactions domain."""
 
@@ -26,10 +29,8 @@ class DatabaseManager:
             basename = os.path.basename(f)
             if basename != "__init__.py":
                 module_name = basename[:-3]
-                try:
+                with suppress(Exception):
                     importlib.import_module(f"core.daos.{module_name}")
-                except Exception:
-                    pass
 
         conn = self.get_personal_connection()
         try:

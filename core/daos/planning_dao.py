@@ -1,3 +1,6 @@
+import sqlite3
+from contextlib import suppress
+
 from core.constants import (
     ANNUAL_INTEREST_RATE,
     BAZIN_TARGET_SPREAD,
@@ -144,8 +147,6 @@ class PlanningDAO:
 
     def initialize_tables(self, conn) -> None:
         """Creates tables, runs migrations, and seeds defaults for the Retirement Planning domain."""
-        import sqlite3
-
         cursor = conn.cursor()
 
         # Generate planning_configuration table schema dynamically using core constants
@@ -168,12 +169,10 @@ class PlanningDAO:
         """)
 
         # Run retrocompatibility schema migrations
-        try:
+        with suppress(sqlite3.OperationalError):
             cursor.execute(
                 f"ALTER TABLE planning_configuration ADD COLUMN {PLANNING_START_DATE} TEXT DEFAULT NULL"
             )
-        except sqlite3.OperationalError:
-            pass
 
 
 # Register schema self-registration provider

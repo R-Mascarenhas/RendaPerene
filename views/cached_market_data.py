@@ -12,7 +12,7 @@ class StreamlitCachedMarketData:
     Delegates implementation details to pure headless MarketData.
     """
 
-    RAW_ANALYSIS_CACHE_VERSION = 9
+    RAW_ANALYSIS_CACHE_VERSION = 10
 
     @staticmethod
     @st.cache_data(ttl=600)

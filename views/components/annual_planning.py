@@ -7,52 +7,53 @@ from core.strings import (
     MSG_YTD_CONTRIBUTIONS,
 )
 from core.utils.formatter import Formatter
-from services.assets_service import AssetService
-from services.planning_service import SimulationService
+from services.goals_service import GoalService
+from views.components.goal_progress import GoalProgressBar
 
 
 class AnnualPlanningWidget:
     """Displays the progress towards your annual out-of-pocket contribution target."""
 
     def render(self, current_year, ytd_dividends):
-        ytd_contributions = AssetService.get_ytd_contributions(current_year)
-
-        # Pull planned contribution dynamically from Simulation Service (clean DRY pattern)
-        required_monthly_contribution = SimulationService.get_updated_required_contribution()
-        annual_salary_goal = required_monthly_contribution * 12
-        total_annual_goal = annual_salary_goal + ytd_dividends
+        goal = GoalService.get_annual_investment_goal(current_year, ytd_dividends)
 
         st.subheader(MSG_ANNUAL_PLANNING_TITLE.format(year=current_year))
-        plan_col1, plan_col2, plan_col3 = st.columns(3)
+        metric_columns = st.columns(3 if goal["reinvestment_enabled"] else 2)
+        plan_col1 = metric_columns[0]
         plan_col1.metric(
             "Meta de Aporte do Salário (Ano)",
-            Formatter.format_currency(annual_salary_goal),
+            Formatter.format_currency(goal["annual_salary_goal"]),
             "Baseado no seu Planejamento",
         )
-        plan_col2.metric(
-            "Proventos a Reinvestir (YTD)",
-            Formatter.format_currency(ytd_dividends),
-            "Soma dos dividendos recebidos",
-        )
-        plan_col3.metric(
-            "Meta Total Corrente (Aporte + Reinvestimento)",
-            Formatter.format_currency(total_annual_goal),
-            "Meta de Compras na B3",
-        )
-
-        percent_achieved = (ytd_contributions / total_annual_goal) if total_annual_goal > 0 else 0.0
-        remaining_to_buy = max(0.0, total_annual_goal - ytd_contributions)
+        if goal["reinvestment_enabled"]:
+            metric_columns[1].metric(
+                "Proventos a Reinvestir (YTD)",
+                Formatter.format_currency(goal["reinvestment_goal"]),
+                "Soma dos dividendos recebidos",
+            )
+            metric_columns[-1].metric(
+                (
+                    "Meta Total Corrente (Aporte + Reinvestimento)"
+                    if goal["reinvestment_enabled"]
+                    else "Meta Anual de Aportes"
+                ),
+                Formatter.format_currency(goal["total_goal"]),
+                "Meta de Compras na B3",
+            )
 
         st.markdown(
             MSG_YTD_CONTRIBUTIONS.format(
-                value=Formatter.format_currency(ytd_contributions), pct=percent_achieved * 100
+                value=Formatter.format_currency(goal["ytd_contributions"]),
+                pct=goal["progress_percentage"],
             )
         )
-        if remaining_to_buy > 0:
+        if goal["remaining_to_invest"] > 0:
             st.markdown(
-                MSG_REMAINING_TO_BUY.format(value=Formatter.format_currency(remaining_to_buy))
+                MSG_REMAINING_TO_BUY.format(
+                    value=Formatter.format_currency(goal["remaining_to_invest"])
+                )
             )
         else:
             st.markdown(MSG_ALL_GOALS_MET)
 
-        st.progress(min(1.0, percent_achieved))
+        GoalProgressBar.render(goal["progress_percentage"])

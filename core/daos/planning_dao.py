@@ -10,6 +10,8 @@ from core.constants import (
     DESIRED_INCOME_FIXED,
     DESIRED_INCOME_MW,
     DESIRED_INCOME_TYPE,
+    GOAL_REINVEST_DIVIDENDS,
+    GOAL_SHARE_QUANTITY,
     INITIAL_EQUITY_INPUT,
     MW_VALUE,
     PLANNING_START_DATE,
@@ -145,6 +147,119 @@ class PlanningDAO:
         finally:
             conn.close()
 
+    def list_accumulation_goals(self) -> list[dict]:
+        """Returns all configured accumulation goals ordered by ticker."""
+        conn = self.get_personal_connection()
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                """
+                SELECT ticker, start_quantity, target_quantity, target_mode,
+                       target_percentage, allocation_weight, average_dividend_5y,
+                       is_active, created_at
+                FROM asset_accumulation_goals
+                ORDER BY ticker
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    def upsert_accumulation_goal(
+        self,
+        ticker: str,
+        start_quantity: float,
+        target_quantity: float,
+        target_mode: str,
+        target_percentage: float | None,
+        allocation_weight: float,
+        average_dividend_5y: float,
+        is_active: bool = True,
+    ) -> None:
+        """Creates a goal or replaces its baseline and target for the ticker."""
+        conn = self.get_personal_connection()
+        try:
+            conn.execute(
+                """
+                INSERT INTO asset_accumulation_goals (
+                    ticker, start_quantity, target_quantity, target_mode,
+                    target_percentage, allocation_weight, average_dividend_5y, is_active
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ticker) DO UPDATE SET
+                    start_quantity = excluded.start_quantity,
+                    target_quantity = excluded.target_quantity,
+                    target_mode = excluded.target_mode,
+                    target_percentage = excluded.target_percentage,
+                    allocation_weight = excluded.allocation_weight,
+                    average_dividend_5y = excluded.average_dividend_5y,
+                    is_active = excluded.is_active,
+                    created_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    ticker,
+                    start_quantity,
+                    target_quantity,
+                    target_mode,
+                    target_percentage,
+                    allocation_weight,
+                    average_dividend_5y,
+                    int(is_active),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def delete_accumulation_goal(self, ticker: str) -> bool:
+        """Deletes the accumulation goal for a ticker."""
+        conn = self.get_personal_connection()
+        try:
+            cursor = conn.execute(
+                "DELETE FROM asset_accumulation_goals WHERE ticker = ?", (ticker,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+    def get_goal_settings(self) -> dict[str, bool]:
+        """Returns all portfolio-wide investment goal preferences."""
+        conn = self.get_personal_connection()
+        try:
+            row = conn.execute(
+                """
+                SELECT reinvest_dividends_enabled, share_quantity_enabled
+                FROM goal_settings WHERE id = 1
+                """
+            ).fetchone()
+            if not row:
+                return {GOAL_REINVEST_DIVIDENDS: True, GOAL_SHARE_QUANTITY: False}
+            return {
+                GOAL_REINVEST_DIVIDENDS: bool(row[0]),
+                GOAL_SHARE_QUANTITY: bool(row[1]),
+            }
+        finally:
+            conn.close()
+
+    def set_goal_enabled(self, goal_type: str, enabled: bool) -> None:
+        """Persists one supported portfolio-wide investment goal preference."""
+        columns = {
+            GOAL_REINVEST_DIVIDENDS: "reinvest_dividends_enabled",
+            GOAL_SHARE_QUANTITY: "share_quantity_enabled",
+        }
+        if goal_type not in columns:
+            raise ValueError("O tipo de meta informado não é suportado.")
+        conn = self.get_personal_connection()
+        try:
+            conn.execute(
+                f"UPDATE goal_settings SET {columns[goal_type]} = ? WHERE id = 1",
+                (int(enabled),),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def initialize_tables(self, conn) -> None:
         """Creates tables, runs migrations, and seeds defaults for the Retirement Planning domain."""
         cursor = conn.cursor()
@@ -167,6 +282,106 @@ class PlanningDAO:
                 {PLANNING_START_DATE} TEXT DEFAULT NULL
             )
         """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS asset_accumulation_goals (
+                ticker TEXT PRIMARY KEY,
+                start_quantity REAL NOT NULL CHECK (start_quantity >= 0),
+                target_quantity REAL NOT NULL CHECK (target_quantity > start_quantity),
+                target_mode TEXT NOT NULL CHECK (
+                    target_mode IN ('DIVIDEND_INCOME', 'PERCENTAGE', 'QUANTITY')
+                ),
+                target_percentage REAL,
+                allocation_weight REAL NOT NULL CHECK (
+                    allocation_weight >= 0 AND allocation_weight <= 100
+                ),
+                average_dividend_5y REAL NOT NULL CHECK (average_dividend_5y >= 0),
+                is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        accumulation_schema = cursor.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'asset_accumulation_goals'"
+        ).fetchone()[0]
+        accumulation_columns = {
+            row[1] for row in cursor.execute("PRAGMA table_info(asset_accumulation_goals)")
+        }
+        if (
+            "is_active" not in accumulation_columns
+            or "allocation_weight > 0" in accumulation_schema
+        ):
+            active_expression = "is_active" if "is_active" in accumulation_columns else "1"
+            cursor.execute(
+                "ALTER TABLE asset_accumulation_goals RENAME TO asset_accumulation_goals_legacy"
+            )
+            cursor.execute("""
+                CREATE TABLE asset_accumulation_goals (
+                    ticker TEXT PRIMARY KEY,
+                    start_quantity REAL NOT NULL CHECK (start_quantity >= 0),
+                    target_quantity REAL NOT NULL CHECK (target_quantity > start_quantity),
+                    target_mode TEXT NOT NULL CHECK (
+                        target_mode IN ('DIVIDEND_INCOME', 'PERCENTAGE', 'QUANTITY')
+                    ),
+                    target_percentage REAL,
+                    allocation_weight REAL NOT NULL CHECK (
+                        allocation_weight >= 0 AND allocation_weight <= 100
+                    ),
+                    average_dividend_5y REAL NOT NULL CHECK (average_dividend_5y >= 0),
+                    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute(f"""
+                INSERT INTO asset_accumulation_goals (
+                    ticker, start_quantity, target_quantity, target_mode,
+                    target_percentage, allocation_weight, average_dividend_5y,
+                    is_active, created_at
+                )
+                SELECT ticker, start_quantity, target_quantity, target_mode,
+                       target_percentage, allocation_weight, average_dividend_5y,
+                       {active_expression}, created_at
+                FROM asset_accumulation_goals_legacy
+            """)
+            cursor.execute("DROP TABLE asset_accumulation_goals_legacy")
+
+        legacy_goal_settings_exists = cursor.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'accumulation_goal_settings'"
+        ).fetchone()
+        legacy_share_quantity_enabled = None
+        if legacy_goal_settings_exists:
+            legacy_row = cursor.execute(
+                "SELECT enabled FROM accumulation_goal_settings WHERE id = 1"
+            ).fetchone()
+            legacy_share_quantity_enabled = legacy_row[0] if legacy_row else None
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS goal_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                reinvest_dividends_enabled INTEGER NOT NULL DEFAULT 1
+                    CHECK (reinvest_dividends_enabled IN (0, 1)),
+                share_quantity_enabled INTEGER NOT NULL DEFAULT 0
+                    CHECK (share_quantity_enabled IN (0, 1))
+            )
+        """)
+        default_share_quantity_enabled = (
+            int(legacy_share_quantity_enabled)
+            if legacy_share_quantity_enabled is not None
+            else int(
+                cursor.execute("SELECT 1 FROM asset_accumulation_goals LIMIT 1").fetchone()
+                is not None
+            )
+        )
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO goal_settings (
+                id, reinvest_dividends_enabled, share_quantity_enabled
+            ) VALUES (1, 1, ?)
+            """,
+            (default_share_quantity_enabled,),
+        )
 
         # Run retrocompatibility schema migrations
         with suppress(sqlite3.OperationalError):

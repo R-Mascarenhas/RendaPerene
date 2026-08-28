@@ -2,6 +2,7 @@ import pytest
 import os
 import pandas as pd
 from core.database import db, DatabaseManager
+from core.daos.planning_dao import PlanningDAO
 from core.utils.market_data import MarketData
 
 TEST_PERSONAL_DB = "/tmp/test_portfolio.db"
@@ -47,7 +48,9 @@ def mock_db(monkeypatch):
 
     # Wire default test adapters at the test environment composition edge
     from services.assets_service import AssetService
+    from services.goals_service import GoalService
     from services.planning_service import SimulationService
+    from services.share_quantity_goal_service import ShareQuantityGoalService
     from core.utils.b3_parser import B3ExcelParserAdapter
     AssetService.set_adapters(
         portfolio_repo=None,
@@ -57,6 +60,18 @@ def mock_db(monkeypatch):
         planning_provider=SimulationService.get_default(),
     )
     SimulationService.set_adapters(portfolio_provider=AssetService.get_default())
+    GoalService.set_adapters(
+        settings_repo=PlanningDAO(),
+        portfolio_provider=AssetService.get_default(),
+        planning_provider=SimulationService.get_default(),
+    )
+    ShareQuantityGoalService.set_adapters(
+        goal_repo=PlanningDAO(),
+        settings_repo=PlanningDAO(),
+        portfolio_provider=AssetService.get_default(),
+        market_data_api=MarketData,
+        planning_provider=SimulationService.get_default(),
+    )
 
     yield
 

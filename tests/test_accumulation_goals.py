@@ -584,7 +584,7 @@ def test_saved_target_is_not_rebased_again_for_prior_corporate_action(mock_db):
     assert result[0:2] == (200.0, 250.0)
 
 
-def test_same_day_post_save_corporate_action_rebases_saved_target(mock_db):
+def test_same_day_pre_save_corporate_action_does_not_rebase_saved_target(mock_db):
     portfolio = StubPortfolioProvider(
         [{"ticker": "BBAS3", "quantity": 200}],
         transactions={
@@ -607,7 +607,7 @@ def test_same_day_post_save_corporate_action_rebases_saved_target(mock_db):
         "2026-01-03",
     )
 
-    assert result[0:2] == (200.0, 500.0)
+    assert result[0:2] == (200.0, 250.0)
 
 
 def test_zero_weight_market_failure_does_not_block_plan_save(mock_db):
@@ -872,16 +872,15 @@ def test_missing_dividend_history_does_not_block_saving_other_goals(mock_db):
     )
 
     plan = service.get_portfolio_goal_plan()
-    saved_goals = service.save_portfolio_goal_plan({"NEW3": 100})
-    stored_goal = PlanningDAO().list_accumulation_goals()[0]
+    with pytest.raises(ValueError, match="peso zero"):
+        service.save_portfolio_goal_plan({"NEW3": 100})
 
     assert pd.isna(plan["rows"].iloc[0][ShareQuantityGoalService.PLAN_TARGET_QUANTITY])
     assert (
         "Sem histórico de proventos"
         in plan["rows"].iloc[0][ShareQuantityGoalService.PLAN_HISTORY_NOTE]
     )
-    assert stored_goal["average_dividend_5y"] == 0
-    assert saved_goals == []
+    assert PlanningDAO().list_accumulation_goals() == []
 
 
 def test_custom_portfolio_weights_recalculate_rows_and_must_total_one_hundred(mock_db):

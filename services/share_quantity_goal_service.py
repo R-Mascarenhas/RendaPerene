@@ -227,7 +227,7 @@ class ShareQuantityGoalService:
                     adjusted_baseline *= factor
                     if (
                         target_action_cutoff is None
-                        or str(transaction[DATE]) >= target_action_cutoff
+                        or str(transaction[DATE]) > target_action_cutoff
                     ):
                         adjusted_target *= factor
                     adjusted_acquisition_delta *= factor
@@ -238,7 +238,7 @@ class ShareQuantityGoalService:
             elif transaction_type == "GROUP" and quantity_before_action > 0:
                 factor = quantity / quantity_before_action
                 adjusted_baseline *= factor
-                if target_action_cutoff is None or str(transaction[DATE]) >= target_action_cutoff:
+                if target_action_cutoff is None or str(transaction[DATE]) > target_action_cutoff:
                     adjusted_target *= factor
                 adjusted_acquisition_delta *= factor
                 quantity_before_action = quantity
@@ -540,6 +540,18 @@ class ShareQuantityGoalService:
         if plan.get("has_unavailable_market_data"):
             raise ValueError(
                 "Dados de mercado indisponíveis; as metas não foram alteradas. Tente novamente."
+            )
+        unavailable_weight = (
+            plan["rows"]
+            .loc[
+                (plan["rows"][self.PLAN_ACTIVE]) & (plan["rows"][self.PLAN_AVERAGE_DIVIDEND] <= 0),
+                self.PLAN_WEIGHT,
+            ]
+            .sum()
+        )
+        if unavailable_weight > 0:
+            raise ValueError(
+                "Ativos sem histórico de proventos devem ter peso zero antes de salvar."
             )
 
         for _, row in plan["rows"].iterrows():

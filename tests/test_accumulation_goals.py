@@ -345,6 +345,8 @@ def test_paid_acquisitions_are_rebased_after_corporate_actions(mock_db):
     progress = service.list_goals_with_progress(datetime.date(2026, 8, 28))[0]
 
     assert progress["current_quantity"] == 225
+    assert progress["start_quantity"] == 200
+    assert progress["target_quantity"] == 300
     assert progress["progress_percentage"] == 25
 
 
@@ -486,6 +488,8 @@ def test_same_day_corporate_action_is_processed_before_paid_purchase(mock_db):
     progress = service.list_goals_with_progress(datetime.date(2026, 8, 28))[0]
 
     assert progress["progress_percentage"] == 25
+    assert progress["start_quantity"] == 200
+    assert progress["target_quantity"] == 300
 
 
 def test_dashboard_excludes_goals_for_assets_no_longer_held(mock_db):

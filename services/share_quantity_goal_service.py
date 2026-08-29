@@ -189,8 +189,8 @@ class ShareQuantityGoalService:
 
     def _get_corporate_action_adjusted_progress(
         self, goal: dict, year_start_date: str
-    ) -> float | None:
-        """Calculates progress in share units rebased through corporate actions."""
+    ) -> tuple[float, float, float] | None:
+        """Calculates progress and goal quantities rebased through corporate actions."""
         transactions = self._portfolio_provider.get_raw_transactions_for_chart(goal[TICKER])
         if transactions.empty:
             return None
@@ -240,8 +240,10 @@ class ShareQuantityGoalService:
 
         incremental_target = adjusted_target - adjusted_baseline
         if incremental_target <= 0:
-            return 100.0 if adjusted_acquisition_delta >= incremental_target else 0.0
-        return max(0.0, adjusted_acquisition_delta / incremental_target * 100)
+            progress = 100.0 if adjusted_acquisition_delta >= incremental_target else 0.0
+        else:
+            progress = max(0.0, adjusted_acquisition_delta / incremental_target * 100)
+        return adjusted_baseline, adjusted_target, progress
 
     @hybridmethod
     def list_available_tickers(self) -> list[str]:
@@ -693,10 +695,15 @@ class ShareQuantityGoalService:
                 )
                 results.append(goal)
             elif (
-                corporate_action_progress := self._get_corporate_action_adjusted_progress(
+                corporate_action_result := self._get_corporate_action_adjusted_progress(
                     goal, year_start_date
                 )
             ) is not None:
+                adjusted_baseline, adjusted_target, corporate_action_progress = (
+                    corporate_action_result
+                )
+                goal["start_quantity"] = adjusted_baseline
+                goal["target_quantity"] = adjusted_target
                 goal["current_quantity"] = current_quantities.get(goal[TICKER], 0.0)
                 goal["progress_percentage"] = corporate_action_progress
                 results.append(goal)

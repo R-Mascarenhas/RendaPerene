@@ -67,6 +67,7 @@ def test_views_and_services_sanity():
     assert hasattr(PortfolioView, "render")
 
     from views.market_view import MarketView
+    from views.goals_view import GoalsView
 
     assert hasattr(MarketView, "render")
 
@@ -512,12 +513,14 @@ def test_views_and_widgets_import_integrity():
     from views.operations_view import OperationsView
     from views.assets_view import AssetsView
     from views.market_view import MarketView
+    from views.goals_view import GoalsView
 
     # Verify instantiations don't raise syntax/import-time failures
     assert ProjectionChartWidget is not None
     assert DashboardCharts is not None
     assert PlanningView is not None
     assert DashboardView is not None
+    assert GoalsView is not None
 
 
 def test_planning_view_start_date_change_callback(mock_db, monkeypatch):

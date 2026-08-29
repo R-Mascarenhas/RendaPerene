@@ -226,6 +226,34 @@ class SimulationService:
         return sim["required_monthly_contribution"] if sim else 0.0
 
     @staticmethod
+    def calculate_planned_dividends_for_year(projection: pd.DataFrame, year: int) -> float:
+        """Extracts one calendar year's planned dividends from a cumulative projection."""
+        from core.constants import MONTH_STR, PLANNED_DIVIDENDS
+
+        if projection.empty or MONTH_STR not in projection or PLANNED_DIVIDENDS not in projection:
+            return 0.0
+
+        ordered = projection.sort_values(MONTH_STR)
+        year_prefix = f"{year}-"
+        year_rows = ordered[ordered[MONTH_STR].str.startswith(year_prefix)]
+        if year_rows.empty:
+            return 0.0
+
+        prior_rows = ordered[ordered[MONTH_STR] < f"{year}-01"]
+        starting_value = (
+            float(prior_rows.iloc[-1][PLANNED_DIVIDENDS]) if not prior_rows.empty else 0.0
+        )
+        ending_value = float(year_rows.iloc[-1][PLANNED_DIVIDENDS])
+        return max(0.0, ending_value - starting_value)
+
+    @hybridmethod
+    def get_planned_annual_dividends(self, year: int | None = None) -> float:
+        """Returns planned dividends generated during one calendar year."""
+        selected_year = year or datetime.date.today().year
+        projection = self.get_projection_chart_dataset()
+        return self.calculate_planned_dividends_for_year(projection, selected_year)
+
+    @staticmethod
     def build_projection_dataframe(
         current_age,
         simulation_months,

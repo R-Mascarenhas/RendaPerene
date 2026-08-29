@@ -4,6 +4,7 @@ import streamlit as st
 
 from core.strings import MSG_PORTFOLIO_EMPTY
 from services.assets_service import AssetService
+from views.components.accumulation_goals import AccumulationGoalProgressWidget
 from views.components.annual_planning import AnnualPlanningWidget
 from views.components.charts import DashboardCharts
 from views.components.detailed_holdings import DetailedHoldingsWidget
@@ -23,6 +24,7 @@ class DashboardView:
 
         # 2. Render target annual progress bar (At the very top)
         AnnualPlanningWidget().render(current_year, ytd_dividends)
+        AccumulationGoalProgressWidget().render()
 
         st.markdown("---")
         st.header("Resumo Patrimonial")

@@ -103,6 +103,12 @@ MARKET_AVG_DIV_5Y = "avg_dividend_5y"
 MARKET_AVG_DY_5Y = "avg_dy_5y"
 MARKET_DIVIDENDS_5Y = "dividends_5y"
 MARKET_DIVIDENDS_HISTORY = "dividends_history"
+MARKET_DIVIDEND_AVERAGE_YEARS = "dividend_average_years"
+MARKET_DIVIDEND_HISTORY_STATUS = "dividend_history_status"
+
+# Persisted investment goal setting keys
+GOAL_REINVEST_DIVIDENDS = "reinvest_dividends"
+GOAL_SHARE_QUANTITY = "share_quantity"
 
 # Price-Ceiling Model Selection and custom params database configuration keys
 CEILING_MODEL_SELECTION = "ceiling_model_selection"

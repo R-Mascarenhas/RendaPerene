@@ -1,10 +1,47 @@
-import pytest
+import datetime
+
 import pandas as pd
+import pytest
 import yfinance as yf
 from core.utils.market_data import MarketData
 from core.database import db
 from core.strings import MODEL_CLASSIC, MODEL_IPCA_SPREAD, MODEL_SELIC
 from services.assets_service import AssetService
+
+
+def test_new_asset_dividend_average_uses_only_listed_years_and_zero_payment_years(
+    monkeypatch,
+):
+    current_year = datetime.date.today().year
+    listing_year = current_year - 3
+    listing_timestamp = datetime.datetime(
+        listing_year, 1, 2, tzinfo=datetime.timezone.utc
+    ).timestamp()
+
+    class MockTicker:
+        def __init__(self, ticker_name):
+            self.info = {
+                "longName": "Empresa Nova S.A.",
+                "firstTradeDateEpochUtc": listing_timestamp,
+            }
+            self.fast_info = {"lastPrice": 10.0}
+            self.dividends = pd.Series(
+                [1.0, 3.0],
+                index=pd.to_datetime([f"{listing_year}-12-01", f"{current_year - 1}-12-01"]),
+                name="Dividends",
+            ).rename_axis("Date")
+
+        def history(self, period, interval, auto_adjust):
+            return pd.DataFrame()
+
+    monkeypatch.setattr(yf, "Ticker", MockTicker)
+
+    analysis = MarketData.get_ticker_market_analysis("NEW3")
+
+    assert analysis["dividend_average_years"] == 3
+    assert analysis["dividends_5y"][current_year - 2] == 0
+    assert analysis["avg_dividend_5y"] == pytest.approx(4 / 3)
+    assert analysis["dividend_history_status"] == "partial"
 
 
 def test_get_ticker_market_analysis(monkeypatch):

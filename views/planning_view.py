@@ -53,6 +53,7 @@ from views.cached_market_data import StreamlitCachedMarketData as MarketData
 from views.components.projection_chart import ProjectionChartWidget
 from views.components.simulation_results import SimulationResultsWidget
 from views.components.time_metrics import TimeMetricsWidget
+from views.goals_view import GoalsView
 
 
 class PlanningView:
@@ -60,6 +61,22 @@ class PlanningView:
 
     def render(self):
         st.header("🎯 Planejamento de Aposentadoria e Independência Financeira")
+        selected_subtab = st.segmented_control(
+            "Navegação Planejamento",
+            options=["Aposentadoria", "Metas"],
+            default="Aposentadoria",
+            label_visibility="collapsed",
+        )
+        if not selected_subtab:
+            selected_subtab = "Aposentadoria"
+
+        if selected_subtab == "Aposentadoria":
+            self._render_retirement_planning()
+        elif selected_subtab == "Metas":
+            GoalsView().render()
+
+    def _render_retirement_planning(self):
+        """Renders retirement inputs and projections inside the planning tab."""
         st.write(MSG_PLANNING_DESC)
 
         # Renders the Sandbox Simulation expander (in-memory play zone)

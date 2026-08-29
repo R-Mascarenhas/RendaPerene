@@ -107,7 +107,9 @@ st.set_page_config(page_title=f"Renda Perene v{get_app_version()}", page_icon="ð
 # Configure dependency injection adapters for Streamlit presentation environment
 from core.utils.b3_parser import B3ExcelParserAdapter
 from services.assets_service import AssetService
+from services.goals_service import GoalService
 from services.planning_service import SimulationService
+from services.share_quantity_goal_service import ShareQuantityGoalService
 from views.cached_market_data import StreamlitCachedMarketData
 
 AssetService.set_adapters(
@@ -116,6 +118,15 @@ AssetService.set_adapters(
     planning_provider=SimulationService.get_default(),
 )
 SimulationService.set_adapters(portfolio_provider=AssetService.get_default())
+GoalService.set_adapters(
+    portfolio_provider=AssetService.get_default(),
+    planning_provider=SimulationService.get_default(),
+)
+ShareQuantityGoalService.set_adapters(
+    portfolio_provider=AssetService.get_default(),
+    market_data_api=StreamlitCachedMarketData,
+    planning_provider=SimulationService.get_default(),
+)
 
 # Session state must be initialized before rendering any view
 SessionManager.initialize()

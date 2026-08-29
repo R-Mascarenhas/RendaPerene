@@ -24,6 +24,7 @@ A interface e a documentação do projeto estão em português brasileiro (PT-BR
 - **Regras de movimentação:** cálculo do preço médio ponderado incluindo taxas; tratamento de desdobramentos/bonificações, grupamentos, resgates e importações duplicadas.
 - **Detalhes dos ativos e monitor de mercado:** acompanhamento dos ativos em carteira e dos selecionados manualmente, histórico de preços e dividendos, modelos de preço-teto de Bazin e consulta Raio-X de todo o catálogo, com indicadores de valuation e dividend yields anuais calculados a partir do preço de fechamento de cada ano.
 - **Planejamento de aposentadoria:** cálculo do aporte mensal vitalício e do aporte corrigido ao longo do tempo por meio da fórmula de anuidade antecipada, com projeções baseadas no plano salvo e no histórico da carteira.
+- **Metas de investimento:** a tela de Planejamento possui uma aba `Metas` para ativar independentemente o reinvestimento de dividendos e as metas de quantidade por ação. A base anual das metas por ação é a quantidade mantida em 1º de janeiro; o Dashboard exibe uma barra ponderada pelos pesos, com detalhes por ticker ao passar o cursor e em uma seção expansível. Peso 0% desativa o ativo, o progresso pode superar 100% e históricos parciais ou indisponíveis exibem uma observação sem inventar uma meta.
 - **Múltiplas carteiras locais:** seleção de uma base de dados existente ou criação de uma nova carteira local pela barra lateral.
 
 ## Dados e privacidade

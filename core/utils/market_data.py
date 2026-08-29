@@ -12,6 +12,30 @@ class MarketData:
     """Class responsible for integrations with market and financial APIs."""
 
     @staticmethod
+    def _listing_year(info: dict) -> int | None:
+        """Returns Yahoo's first trading year when that metadata is available."""
+        for key in ("firstTradeDateEpochUtc", "firstTradeDate"):
+            value = info.get(key)
+            if value is None:
+                continue
+            try:
+                timestamp = float(value)
+                if timestamp > 10_000_000_000:
+                    timestamp /= 1000
+                return datetime.datetime.fromtimestamp(timestamp, tz=datetime.timezone.utc).year
+            except (OSError, TypeError, ValueError):
+                continue
+        return None
+
+    @staticmethod
+    def _dividend_average_period(current_year: int, listing_year: int | None) -> list[int]:
+        """Returns up to five completed years in which the asset was already listed."""
+        completed_years = [current_year - offset for offset in range(1, 6)]
+        if listing_year is None:
+            return completed_years
+        return [year for year in completed_years if year >= listing_year]
+
+    @staticmethod
     def get_batch_quotes(tickers: list) -> dict:
         """Fetches batch quotes from Yahoo Finance with a 10-minute cache."""
         quotes = {}
@@ -177,6 +201,7 @@ class MarketData:
             annual_closing_prices = {}
             dividend_events = []
             current_year = datetime.date.today().year
+            listing_year = MarketData._listing_year(info)
             last_5_years = [current_year - i for i in range(1, 6)]
             last_10_years = [current_year - i for i in range(1, 11)]
 
@@ -230,10 +255,27 @@ class MarketData:
                     annual_closing_prices = get_annual_closing_prices(
                         annual_price_history, last_10_years
                     )
+                    if listing_year is None and not annual_price_history.empty:
+                        listing_year = int(annual_price_history.index.min().year)
                 except Exception:
                     annual_closing_prices = {}
 
-            avg_dividend_5y = sum(div_by_year.values()) / 5 if div_by_year else 0.0
+            dividend_average_period = MarketData._dividend_average_period(
+                current_year, listing_year
+            )
+            dividend_average_years = len(dividend_average_period)
+            avg_dividend_5y = (
+                sum(div_by_year[year] for year in dividend_average_period) / dividend_average_years
+                if dividend_average_years
+                else 0.0
+            )
+            dividend_history_status = (
+                "complete"
+                if dividend_average_years == 5
+                else "partial"
+                if dividend_average_years > 0
+                else "unavailable"
+            )
             return {
                 "name": info.get("longName", f"Asset {ticker}"),
                 "current_price": current_price,
@@ -251,6 +293,8 @@ class MarketData:
                 "annual_closing_prices": annual_closing_prices,
                 "dividend_events": dividend_events,
                 "avg_dividend_5y": avg_dividend_5y,
+                "dividend_average_years": dividend_average_years,
+                "dividend_history_status": dividend_history_status,
             }
         except Exception:
             return {}

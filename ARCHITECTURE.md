@@ -38,6 +38,8 @@ A direção das dependências é `views` → `services` → contratos e adaptado
 
 - `AssetService` é a fonte única da verdade para transações, dividendos, posições dos ativos, evolução histórica, lista de ativos monitorados, registros normalizados do catálogo e definição do dividend yield alvo do modelo de Bazin com base em dados de mercado.
 - `SimulationService` controla as configurações de aposentadoria e os cálculos de anuidade antecipada. Os consumidores devem usar `get_current_simulation()` em vez de reimplementar o cálculo dos aportes.
+- `GoalService`, em `services/goals_service.py`, controla as metas gerais da carteira, incluindo o reinvestimento opcional de dividendos e o progresso dos aportes anuais. Ele consome os valores planejados de `SimulationService` por meio de `PlanningProviderPort`, sem duplicar os cálculos de aposentadoria.
+- `ShareQuantityGoalService`, em `services/share_quantity_goal_service.py`, controla a meta anual de quantidade de cotas por ticker. A base é a quantidade mantida em 1º de janeiro do ano corrente; o progresso mede as aquisições pagas desde essa data, excluindo ações corporativas. O serviço distribui os proventos planejados entre pesos iguais ou personalizados, considera peso zero como inatividade, calcula a meta de cotas a partir do histórico de proventos e informa o crescimento planejado da posição, permitindo progresso acima de 100%.
 - `ValuationService` contém as regras puras do dividend yield alvo e do preço-teto de Bazin; não possui dependências do Streamlit, do banco de dados ou dos dados de mercado.
 
 ### Portas e adaptadores
@@ -55,6 +57,8 @@ O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita
 | `tracked_market_assets` | Tickers acompanhados manualmente. Os ativos em carteira são combinados com essa lista no monitor de mercado. |
 | `dividend_corrections` | Ajustes de dividendos por ticker e por ano, identificados por `(ticker, year)`. |
 | `planning_configuration` | Configuração única (`id = 1`): data de nascimento, idade de aposentadoria, dados de renda, taxa de juros anual, salário mínimo, patrimônio inicial, modalidade de renda, parâmetros do modelo de Bazin e data opcional de início do planejamento. |
+| `asset_accumulation_goals` | Uma meta de quantidade por ticker: base anual persistida, quantidade-alvo e modalidade, percentual-alvo opcional, peso editável (incluindo zero), estado ativo, média de proventos de cinco anos e data de criação. A aplicação atualiza a base efetiva para 1º de janeiro no carregamento, sem depender de salvar novamente a cada virada de ano. |
+| `goal_settings` | Preferências únicas da carteira para reinvestimento de dividendos e metas de quantidade de ações. O reinvestimento é ativado por padrão; as metas por ação permanecem desativadas até serem habilitadas. |
 | `assets.csv` | Catálogo estático da B3 com metadados dos tickers. Tickers desconhecidos encontrados na importação podem ser adicionados como registros alternativos do catálogo. |
 
 O SQLite não declara chaves estrangeiras entre esses armazenamentos. Os serviços preservam programaticamente a consistência necessária.
@@ -74,6 +78,7 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
 ## Integrações externas
 
 - O `yfinance` fornece cotações da B3, histórico de preços e dados de dividendos e valuation. Os tickers são consultados com o sufixo `.SA`. Quando a cotação atual está ausente, é zero ou não é finita, a integração utiliza o último fechamento diário positivo e finito antes de aplicar as regras de valuation.
+- A integração calcula médias de proventos usando os anos disponíveis desde a listagem; anos listados sem pagamento contam como zero. Sem histórico utilizável, o planejamento mostra uma observação e não inventa uma meta de cotas.
 - Os endpoints SGS do Banco Central do Brasil (BCB) fornecem valores de IPCA, Selic e salário mínimo. A integração desacoplada da interface utiliza valores alternativos quando uma requisição falha.
 - O adaptador do Streamlit mantém cotações e análises detalhadas dos ativos em cache por 10 minutos, históricos de preço por uma hora e indicadores do BCB por 30 dias. A análise detalhada inclui até dez anos completos do histórico anual de dividendos usado na consulta Raio-X. O dividend yield histórico de cada ano utiliza o último preço de fechamento não ajustado daquele ano, e não a cotação atual.
 
@@ -85,7 +90,8 @@ O código, seus identificadores, o SQL e os comentários técnicos estão em ing
 
 - **Dashboard** apresenta o progresso dos aportes anuais, o resumo da carteira, os gráficos e as posições detalhadas.
 - **Ativos** coordena três subtelas: detalhes da carteira, monitoramento de mercado e valuation de Bazin (incluindo a consulta Raio-X de todo o catálogo) e operações manuais/importadas da B3. Na tela Mercado, `MarketView` apenas controla a navegação secundária; `MarketMonitoringView` e `AssetDeepDiveView` renderizam uma aba cada.
-- **Planejamento** permite editar os parâmetros persistidos da aposentadoria, oferece uma simulação isolada e apresenta componentes de prazo, aporte necessário e projeção.
+- **Planejamento** possui as abas internas `Aposentadoria` e `Metas`. `PlanningView` controla os parâmetros e projeções da aposentadoria; `GoalsView` controla a seleção de metas. O usuário pode ativar independentemente o reinvestimento de dividendos e as metas de quantidade por ação. A tabela de metas aparece apenas quando habilitada, e peso 0% desativa o ativo sem um controle separado por linha.
+- **Metas no Dashboard** consolida o progresso das metas por ação em uma barra ponderada pelos pesos, com detalhes por ticker ao passar o cursor e em uma seção expansível. A barra usa azul até 100% e uma camada verde para o excedente.
 - **`ChartThemeAdapter`** aplica aos gráficos do dashboard e do planejamento a paleta escura compartilhada do Plotly, tipografia, grade, legenda, margens, marcações monetárias e comportamento unificado ao passar o cursor. Cada componente de gráfico continua responsável por seus próprios dados e eixos específicos.
 
 ## Validação

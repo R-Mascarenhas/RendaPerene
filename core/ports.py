@@ -53,6 +53,8 @@ class PortfolioPort(Protocol):
 
     def get_quantity_on_date(self, ticker: str, date_str: str, conn: Any = None) -> int: ...
 
+    def get_raw_transactions_for_chart(self, ticker: str) -> pd.DataFrame: ...
+
     def get_transactions_by_ticker(self, ticker: str) -> pd.DataFrame: ...
 
     def get_transactions_by_ticker_desc(self, ticker: str) -> pd.DataFrame: ...
@@ -148,6 +150,34 @@ class PlanningConfigPort(Protocol):
     def get_min_transaction_date(self) -> str: ...
 
 
+class AccumulationGoalPort(Protocol):
+    """Outbound port for per-asset accumulation goal persistence."""
+
+    def list_accumulation_goals(self) -> list[dict]: ...
+
+    def upsert_accumulation_goal(
+        self,
+        ticker: str,
+        start_quantity: float,
+        target_quantity: float,
+        target_mode: str,
+        target_percentage: float | None,
+        allocation_weight: float,
+        average_dividend_5y: float,
+        is_active: bool = True,
+    ) -> None: ...
+
+    def delete_accumulation_goal(self, ticker: str) -> bool: ...
+
+
+class GoalSettingsPort(Protocol):
+    """Outbound port for portfolio-wide investment goal preferences."""
+
+    def get_goal_settings(self) -> dict[str, bool]: ...
+
+    def set_goal_enabled(self, goal_type: str, enabled: bool) -> None: ...
+
+
 class TableSchemaPort(Protocol):
     """Outbound Port interface defining database table schema self-registration and initialization (DIP compliant)."""
 
@@ -175,8 +205,18 @@ class PortfolioProviderPort(Protocol):
 
     def calculate_historical_evolution(self, start_date: Any = None) -> pd.DataFrame: ...
 
+    def get_ytd_contributions(self, current_year: int) -> float: ...
+
+    def get_quantity_on_date(self, ticker: str, date_str: str, conn: Any = None) -> int: ...
+
+    def get_raw_transactions_for_chart(self, ticker: str) -> pd.DataFrame: ...
+
 
 class PlanningProviderPort(Protocol):
     """Outbound Port interface defining required simulation and planning operations (DIP compliant)."""
 
     def get_current_simulation(self) -> dict | None: ...
+
+    def get_planned_annual_dividends(self, year: int | None = None) -> float: ...
+
+    def get_updated_required_contribution(self) -> float: ...

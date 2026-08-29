@@ -170,17 +170,21 @@ class AccumulationGoalPlanningWidget:
         )
         if no_active_goals and weights_are_valid:
             st.info("Nenhuma meta de acumulação está ativa.")
-        elif weights_are_valid:
-            st.success(f"Soma dos pesos: {total_weight:.2f}%")
         elif not weights_are_numeric:
             st.error("Preencha os pesos com valores entre zero e 100%.")
+        elif plan.get("has_unavailable_market_data"):
+            st.warning(
+                "Dados de mercado indisponíveis; salve as metas quando a consulta for restaurada."
+            )
+        elif weights_are_valid:
+            st.success(f"Soma dos pesos: {total_weight:.2f}%")
         else:
             st.error(f"A soma dos pesos deve ser 100%. Soma atual: {total_weight:.2f}%.")
 
         if st.button(
             "Salvar metas anuais",
             type="primary",
-            disabled=not weights_are_valid,
+            disabled=not weights_are_valid or plan.get("has_unavailable_market_data", False),
             key=f"save_accumulation_plan_{active_database}",
         ):
             try:

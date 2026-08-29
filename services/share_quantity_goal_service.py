@@ -187,27 +187,49 @@ class ShareQuantityGoalService:
             for ticker in tickers
         }
 
-    def _get_qualifying_accumulation_quantities(
-        self, tickers: list[str], year_start_date: str
-    ) -> dict[str, float]:
-        """Returns net paid acquisitions since January 1, excluding corporate actions."""
-        quantities = {}
-        for ticker in tickers:
-            transactions = self._portfolio_provider.get_raw_transactions_for_chart(ticker)
-            if transactions.empty:
+    def _get_corporate_action_adjusted_progress(
+        self, goal: dict, year_start_date: str
+    ) -> float | None:
+        """Calculates progress in share units rebased through corporate actions."""
+        transactions = self._portfolio_provider.get_raw_transactions_for_chart(goal[TICKER])
+        if transactions.empty:
+            return None
+
+        baseline = float(goal["start_quantity"])
+        target = float(goal["target_quantity"])
+        quantity_before_action = baseline
+        adjusted_baseline = baseline
+        adjusted_target = target
+        adjusted_acquisition_delta = 0.0
+        for _, transaction in transactions.iterrows():
+            if str(transaction[DATE]) <= year_start_date:
                 continue
-            net_quantity = 0.0
-            for _, transaction in transactions.iterrows():
-                if str(transaction[DATE]) <= year_start_date:
-                    continue
-                quantity = float(transaction[QUANTITY])
-                transaction_type = transaction[TRANSACTION_TYPE]
-                if transaction_type == "BUY" and float(transaction[UNIT_PRICE]) > 0:
-                    net_quantity += quantity
-                elif transaction_type == "SELL":
-                    net_quantity -= quantity
-            quantities[ticker] = net_quantity
-        return quantities
+            quantity = float(transaction[QUANTITY])
+            transaction_type = transaction[TRANSACTION_TYPE]
+            if transaction_type == "BUY":
+                unit_price = float(transaction[UNIT_PRICE])
+                if math.isfinite(unit_price) and unit_price > 0:
+                    adjusted_acquisition_delta += quantity
+                elif quantity_before_action > 0:
+                    factor = (quantity_before_action + quantity) / quantity_before_action
+                    adjusted_baseline *= factor
+                    adjusted_target *= factor
+                    adjusted_acquisition_delta *= factor
+                quantity_before_action += quantity
+            elif transaction_type == "SELL":
+                adjusted_acquisition_delta -= quantity
+                quantity_before_action = max(0.0, quantity_before_action - quantity)
+            elif transaction_type == "GROUP" and quantity_before_action > 0:
+                factor = quantity / quantity_before_action
+                adjusted_baseline *= factor
+                adjusted_target *= factor
+                adjusted_acquisition_delta *= factor
+                quantity_before_action = quantity
+
+        incremental_target = adjusted_target - adjusted_baseline
+        if incremental_target <= 0:
+            return 100.0 if adjusted_acquisition_delta >= incremental_target else 0.0
+        return max(0.0, adjusted_acquisition_delta / incremental_target * 100)
 
     @hybridmethod
     def list_available_tickers(self) -> list[str]:
@@ -354,6 +376,7 @@ class ShareQuantityGoalService:
         expected_tickers = set(tickers)
         equal_weight = 100 / len(tickers)
         stored_goals = {goal[TICKER]: goal for goal in self._goal_repo.list_accumulation_goals()}
+        has_unavailable_market_data = False
         stored_weights = {
             ticker: (
                 float(stored_goals[ticker]["allocation_weight"])
@@ -406,6 +429,14 @@ class ShareQuantityGoalService:
                 MARKET_DIVIDEND_HISTORY_STATUS,
                 "complete" if average_years == 5 else "unavailable",
             )
+            market_data_available = bool(market_analysis)
+            stored_goal = stored_goals.get(ticker)
+            if not market_data_available:
+                has_unavailable_market_data = True
+                if stored_goal is not None and bool(stored_goal.get("is_active", 1)):
+                    average_dividend_5y = float(stored_goal["average_dividend_5y"])
+                    average_years = 5 if average_dividend_5y > 0 else 0
+                    history_status = "complete" if average_dividend_5y > 0 else "unavailable"
             allocated_dividends = (
                 planned_annual_dividends * weight / 100 if weight_is_valid and is_active else 0.0
             )
@@ -440,6 +471,17 @@ class ShareQuantityGoalService:
                     "Sem posição em 01/01; o crescimento percentual não pode ser calculado."
                 )
                 history_note = f"{history_note} {growth_note}" if history_note else growth_note
+            if not market_data_available:
+                if stored_goal is not None and bool(stored_goal.get("is_active", 1)):
+                    target_quantity = float(stored_goal["target_quantity"])
+                    target_growth_percentage = self.calculate_target_growth(
+                        year_start_quantity, target_quantity
+                    )
+                    history_note = (
+                        f"{history_note} Dados de mercado indisponíveis; meta salva preservada."
+                    )
+                else:
+                    history_note = f"{history_note} Dados de mercado indisponíveis; tente novamente mais tarde."
             rows.append(
                 {
                     self.PLAN_TICKER: ticker,
@@ -459,6 +501,7 @@ class ShareQuantityGoalService:
             "planned_annual_dividends": planned_annual_dividends,
             "allocation_weights": weights,
             "active_tickers": selected_active_tickers,
+            "has_unavailable_market_data": has_unavailable_market_data,
             "rows": pd.DataFrame(rows),
         }
 
@@ -475,6 +518,10 @@ class ShareQuantityGoalService:
         expected_tickers = set(positions[TICKER].tolist())
         normalized_weights = self.validate_allocation_weights(allocation_weights, expected_tickers)
         plan = self.get_portfolio_goal_plan(normalized_weights, today_date)
+        if plan.get("has_unavailable_market_data"):
+            raise ValueError(
+                "Dados de mercado indisponíveis; as metas não foram alteradas. Tente novamente."
+            )
 
         for _, row in plan["rows"].iterrows():
             ticker = row[self.PLAN_TICKER]
@@ -556,20 +603,12 @@ class ShareQuantityGoalService:
         return result
 
     @staticmethod
-    def _build_progress(
-        goal: dict,
-        current_quantities: dict[str, float],
-        progress_quantities: dict[str, float] | None = None,
-    ) -> dict:
+    def _build_progress(goal: dict, current_quantities: dict[str, float]) -> dict:
         current_quantity = current_quantities.get(goal[TICKER], 0.0)
-        if progress_quantities is None or goal[TICKER] not in progress_quantities:
-            progress_quantity = current_quantity
-        else:
-            progress_quantity = goal["start_quantity"] + progress_quantities[goal[TICKER]]
         result = dict(goal)
         result["current_quantity"] = current_quantity
         result["progress_percentage"] = ShareQuantityGoalService.calculate_progress(
-            goal["start_quantity"], progress_quantity, goal["target_quantity"]
+            goal["start_quantity"], current_quantity, goal["target_quantity"]
         )
         return result
 
@@ -602,9 +641,6 @@ class ShareQuantityGoalService:
         )
         reference_date = today_date or datetime.date.today()
         year_start_date = f"{reference_date.year}-01-01"
-        progress_quantities = self._get_qualifying_accumulation_quantities(
-            [goal[TICKER] for goal in goals], year_start_date
-        )
         results = []
         for stored_goal in goals:
             goal = dict(stored_goal)
@@ -628,8 +664,16 @@ class ShareQuantityGoalService:
                     100.0 if current_quantity >= goal["target_quantity"] else 0.0
                 )
                 results.append(goal)
+            elif (
+                corporate_action_progress := self._get_corporate_action_adjusted_progress(
+                    goal, year_start_date
+                )
+            ) is not None:
+                goal["current_quantity"] = current_quantities.get(goal[TICKER], 0.0)
+                goal["progress_percentage"] = corporate_action_progress
+                results.append(goal)
             else:
-                results.append(self._build_progress(goal, current_quantities, progress_quantities))
+                results.append(self._build_progress(goal, current_quantities))
         return results
 
     @hybridmethod

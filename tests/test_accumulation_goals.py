@@ -84,6 +84,16 @@ class GrowthExamplePlanningProvider:
 class EmptyMarketData:
     @staticmethod
     def get_ticker_market_analysis(ticker, target_yield_pct=6.0):
+        return {
+            "avg_dividend_5y": 0.0,
+            "dividend_average_years": 0,
+            "dividend_history_status": "unavailable",
+        }
+
+
+class FailedMarketData:
+    @staticmethod
+    def get_ticker_market_analysis(ticker, target_yield_pct=6.0):
         return {}
 
 
@@ -291,7 +301,7 @@ def test_corporate_actions_do_not_count_as_accumulation_progress(mock_db):
     assert progress["progress_percentage"] == 0
 
 
-def test_paid_acquisitions_are_added_to_the_annual_baseline_for_progress(mock_db):
+def test_paid_acquisitions_are_rebased_after_corporate_actions(mock_db):
     repository = PlanningDAO()
     repository.upsert_accumulation_goal(
         ticker="BBAS3",
@@ -303,12 +313,19 @@ def test_paid_acquisitions_are_added_to_the_annual_baseline_for_progress(mock_db
         average_dividend_5y=2.0,
     )
     portfolio = StubPortfolioProvider(
-        [{"ticker": "BBAS3", "quantity": 125}],
+        [{"ticker": "BBAS3", "quantity": 225}],
         year_start_quantities={"BBAS3": 100},
         transactions={
             "BBAS3": [
                 {
                     "date": "2026-01-02",
+                    "transaction_type": "BUY",
+                    "quantity": 100,
+                    "unit_price": 0.0,
+                    "fees": 0.0,
+                },
+                {
+                    "date": "2026-01-03",
                     "transaction_type": "BUY",
                     "quantity": 25,
                     "unit_price": 10.0,
@@ -326,7 +343,8 @@ def test_paid_acquisitions_are_added_to_the_annual_baseline_for_progress(mock_db
 
     progress = service.list_goals_with_progress(datetime.date(2026, 8, 28))[0]
 
-    assert progress["progress_percentage"] == 50
+    assert progress["current_quantity"] == 225
+    assert progress["progress_percentage"] == 25
 
 
 def test_unavailable_dividend_plan_is_not_activated_on_save(mock_db):
@@ -343,6 +361,36 @@ def test_unavailable_dividend_plan_is_not_activated_on_save(mock_db):
     stored_goal = repository.list_accumulation_goals()[0]
     assert goals == []
     assert stored_goal["is_active"] == 0
+
+
+def test_market_data_failure_preserves_an_existing_goal(mock_db):
+    repository = PlanningDAO()
+    repository.upsert_accumulation_goal(
+        ticker="BBAS3",
+        start_quantity=100,
+        target_quantity=150,
+        target_mode=ShareQuantityGoalService.MODE_DIVIDEND_INCOME,
+        target_percentage=None,
+        allocation_weight=100,
+        average_dividend_5y=2.0,
+    )
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=StubPortfolioProvider([{"ticker": "BBAS3", "quantity": 100}]),
+        market_data_api=FailedMarketData,
+        planning_provider=GrowthExamplePlanningProvider(),
+    )
+
+    plan = service.get_portfolio_goal_plan()
+    with pytest.raises(ValueError, match="Dados de mercado indisponíveis"):
+        service.save_portfolio_goal_plan({"BBAS3": 100})
+
+    row = plan["rows"].iloc[0]
+    stored_goal = repository.list_accumulation_goals()[0]
+    assert row[ShareQuantityGoalService.PLAN_TARGET_QUANTITY] == 150
+    assert "meta salva preservada" in row[ShareQuantityGoalService.PLAN_HISTORY_NOTE]
+    assert stored_goal["is_active"] == 1
+    assert stored_goal["average_dividend_5y"] == 2.0
 
 
 def test_dashboard_renders_one_weighted_bar_with_asset_details(monkeypatch):

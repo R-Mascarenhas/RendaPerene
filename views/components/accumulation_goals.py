@@ -151,7 +151,8 @@ class AccumulationGoalPlanningWidget:
             for ticker in edited_weights
             if math.isfinite(edited_weights.get(ticker, math.nan)) and edited_weights[ticker] > 0
         }
-        if edited_weights != plan["allocation_weights"]:
+        weights_are_finite = all(math.isfinite(weight) for weight in edited_weights.values())
+        if edited_weights != plan["allocation_weights"] and weights_are_finite:
             st.session_state[weights_key] = edited_weights
             st.rerun()
 

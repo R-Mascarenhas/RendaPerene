@@ -291,6 +291,44 @@ def test_corporate_actions_do_not_count_as_accumulation_progress(mock_db):
     assert progress["progress_percentage"] == 0
 
 
+def test_paid_acquisitions_are_added_to_the_annual_baseline_for_progress(mock_db):
+    repository = PlanningDAO()
+    repository.upsert_accumulation_goal(
+        ticker="BBAS3",
+        start_quantity=100,
+        target_quantity=150,
+        target_mode=ShareQuantityGoalService.MODE_QUANTITY,
+        target_percentage=None,
+        allocation_weight=100,
+        average_dividend_5y=2.0,
+    )
+    portfolio = StubPortfolioProvider(
+        [{"ticker": "BBAS3", "quantity": 125}],
+        year_start_quantities={"BBAS3": 100},
+        transactions={
+            "BBAS3": [
+                {
+                    "date": "2026-01-02",
+                    "transaction_type": "BUY",
+                    "quantity": 25,
+                    "unit_price": 10.0,
+                    "fees": 0.0,
+                },
+            ]
+        },
+    )
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=portfolio,
+        market_data_api=StubMarketData,
+        planning_provider=GrowthExamplePlanningProvider(),
+    )
+
+    progress = service.list_goals_with_progress(datetime.date(2026, 8, 28))[0]
+
+    assert progress["progress_percentage"] == 50
+
+
 def test_unavailable_dividend_plan_is_not_activated_on_save(mock_db):
     repository = PlanningDAO()
     service = ShareQuantityGoalService(

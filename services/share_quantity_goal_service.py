@@ -562,11 +562,10 @@ class ShareQuantityGoalService:
         progress_quantities: dict[str, float] | None = None,
     ) -> dict:
         current_quantity = current_quantities.get(goal[TICKER], 0.0)
-        progress_quantity = (
-            progress_quantities.get(goal[TICKER], current_quantity)
-            if progress_quantities is not None
-            else current_quantity
-        )
+        if progress_quantities is None or goal[TICKER] not in progress_quantities:
+            progress_quantity = current_quantity
+        else:
+            progress_quantity = goal["start_quantity"] + progress_quantities[goal[TICKER]]
         result = dict(goal)
         result["current_quantity"] = current_quantity
         result["progress_percentage"] = ShareQuantityGoalService.calculate_progress(

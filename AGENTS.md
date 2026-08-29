@@ -16,7 +16,7 @@ Read `ARCHITECTURE.md` when a task changes module boundaries, persistence, data 
 
 ## Development rules
 
-- Write code, identifiers, SQL, comments, and developer documentation in English. Keep all user-visible UI text, chart labels, tooltips, and rendered tables in Brazilian Portuguese (PT-BR).
+- Write code, identifiers, SQL, and comments in English. Keep `README.md`, `ARCHITECTURE.md`, all user-visible UI text, chart labels, tooltips, and rendered tables in Brazilian Portuguese (PT-BR).
 - Keep views focused on rendering and interaction. Put business rules, DataFrame transformations, and persistence behind services, DAOs, or adapters.
 - Depend on protocols in `core/ports.py` at boundaries. Wire production implementations in `app.py`; inject fakes or mocks in tests.
 - Preserve the existing service ownership. Use `SimulationService.get_current_simulation()` for required-contribution values; do not duplicate retirement math in views or other services.

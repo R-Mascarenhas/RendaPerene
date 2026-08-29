@@ -627,17 +627,19 @@ class ShareQuantityGoalService:
     @hybridmethod
     def list_goals_with_progress(self, today_date: datetime.date | None = None) -> list[dict]:
         """Combines stored baselines and targets with current portfolio quantities."""
+        positions = self._get_positions()
+        held_tickers = set(positions[TICKER].tolist()) if not positions.empty else set()
         goals = [
             goal
             for goal in self._goal_repo.list_accumulation_goals()
             if bool(goal.get("is_active", 1))
+            and goal[TICKER] in held_tickers
             and (
                 goal["target_mode"] != self.MODE_DIVIDEND_INCOME or goal["average_dividend_5y"] > 0
             )
         ]
         if not goals:
             return []
-        positions = self._get_positions()
         current_quantities = (
             dict(zip(positions[TICKER], positions[QUANTITY], strict=False))
             if not positions.empty

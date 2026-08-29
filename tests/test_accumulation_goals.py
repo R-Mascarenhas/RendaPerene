@@ -488,6 +488,27 @@ def test_same_day_corporate_action_is_processed_before_paid_purchase(mock_db):
     assert progress["progress_percentage"] == 25
 
 
+def test_dashboard_excludes_goals_for_assets_no_longer_held(mock_db):
+    repository = PlanningDAO()
+    repository.upsert_accumulation_goal(
+        ticker="BBAS3",
+        start_quantity=100,
+        target_quantity=150,
+        target_mode=ShareQuantityGoalService.MODE_QUANTITY,
+        target_percentage=None,
+        allocation_weight=100,
+        average_dividend_5y=2.0,
+    )
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=StubPortfolioProvider([]),
+        market_data_api=StubMarketData,
+        planning_provider=GrowthExamplePlanningProvider(),
+    )
+
+    assert service.list_goals_with_progress(datetime.date(2026, 8, 28)) == []
+
+
 def test_dashboard_renders_one_weighted_bar_with_asset_details(monkeypatch):
     goals = [
         {
@@ -601,10 +622,7 @@ def test_dividend_income_goal_freezes_baseline_and_uses_equal_initial_allocation
     assert updated["progress_percentage"] == 50.0
 
     portfolio.positions = []
-    sold_position = service.list_goals_with_progress()[0]
-
-    assert sold_position["current_quantity"] == 0
-    assert sold_position["progress_percentage"] == 0.0
+    assert service.list_goals_with_progress() == []
 
 
 def test_suggested_goal_uses_planned_dividends_for_the_year_instead_of_retirement_income(

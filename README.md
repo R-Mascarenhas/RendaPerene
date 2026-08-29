@@ -2,7 +2,7 @@
 
 # 💼 RendaPerene
 
-**Local-first portfolio tracking and retirement planning for Brazilian investors**
+**Acompanhamento local de carteira e planejamento de aposentadoria para investidores brasileiros**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat&logo=streamlit&logoColor=white)](https://streamlit.io/)
@@ -11,41 +11,41 @@
 
 </div>
 
-## Overview
+## Visão geral
 
-RendaPerene is a Streamlit application for recording Brazilian (B3) investment portfolios and simulating retirement. It stores the portfolio and planning configuration in local SQLite files, while using existing public integrations to obtain current market and macroeconomic data.
+O RendaPerene é uma aplicação Streamlit para registrar carteiras de investimentos brasileiros (B3) e simular a aposentadoria. A carteira e as configurações do planejamento são armazenadas em arquivos SQLite locais, enquanto integrações públicas existentes fornecem dados atuais do mercado e indicadores macroeconômicos.
 
-The interface is in Brazilian Portuguese (PT-BR); source code and developer documentation are in English.
+A interface e a documentação do projeto estão em português brasileiro (PT-BR); o código-fonte, seus identificadores e comentários técnicos permanecem em inglês.
 
-## Features
+## Funcionalidades
 
-- **Portfolio dashboard:** portfolio totals, annual contribution progress, performance metrics, holdings tables, and Plotly charts.
-- **Manual operations and B3 import:** record purchases, sales, dividends, JCP, and yields manually, or import the official B3 `.xlsx` export.
-- **Ledger rules:** calculates weighted average price including fees; handles splits/bonuses, reverse splits, redemptions, and duplicate imports.
-- **Asset details and market monitor:** follows owned and manually selected assets, displays price history and dividend information, supports Bazin ceiling-price models, and includes a catalog-wide Raio-X consultation with valuation metrics and annual dividend yields based on each year's closing price.
-- **Retirement planning:** calculates lifetime and course-corrected monthly contributions using annuity-due math, with projections based on the stored plan and portfolio history.
-- **Multiple local portfolios:** select an existing portfolio database or create a new local portfolio from the sidebar.
+- **Dashboard da carteira:** totais da carteira, progresso dos aportes anuais, indicadores de desempenho, tabelas de posições e gráficos Plotly.
+- **Operações manuais e importação da B3:** registro manual de compras, vendas, dividendos, JCP e rendimentos, ou importação do arquivo `.xlsx` oficial da B3.
+- **Regras de movimentação:** cálculo do preço médio ponderado incluindo taxas; tratamento de desdobramentos/bonificações, grupamentos, resgates e importações duplicadas.
+- **Detalhes dos ativos e monitor de mercado:** acompanhamento dos ativos em carteira e dos selecionados manualmente, histórico de preços e dividendos, modelos de preço-teto de Bazin e consulta Raio-X de todo o catálogo, com indicadores de valuation e dividend yields anuais calculados a partir do preço de fechamento de cada ano.
+- **Planejamento de aposentadoria:** cálculo do aporte mensal vitalício e do aporte corrigido ao longo do tempo por meio da fórmula de anuidade antecipada, com projeções baseadas no plano salvo e no histórico da carteira.
+- **Múltiplas carteiras locais:** seleção de uma base de dados existente ou criação de uma nova carteira local pela barra lateral.
 
-## Data and privacy
+## Dados e privacidade
 
-Portfolio data is stored locally in SQLite databases under `database/`. The application does not use a cloud database, accounts, or telemetry, and it does not scrape the B3 portal.
+Os dados da carteira são armazenados localmente em bancos SQLite no diretório `database/`. A aplicação não utiliza banco de dados em nuvem, contas de usuário ou telemetria, nem realiza scraping do portal da B3.
 
-Fresh market data requires network access:
+O acesso à rede é necessário para obter dados atualizados:
 
-- Yahoo Finance (`yfinance`) provides B3 prices, market metrics, price history, and dividend data. If a live quote is unavailable, the application uses the latest valid daily close for the asset analysis.
-- Banco Central do Brasil (BCB) provides IPCA, Selic, and minimum-wage indicators.
+- O Yahoo Finance (`yfinance`) fornece cotações da B3, indicadores de mercado, histórico de preços e dados de dividendos. Se uma cotação em tempo real não estiver disponível, a análise do ativo utiliza o último fechamento diário válido.
+- O Banco Central do Brasil (BCB) fornece indicadores de IPCA, Selic e salário mínimo.
 
-The B3 import is user-directed: download the official Excel export from the B3 Investor Portal and upload it in the application. Local databases and personal spreadsheets are ignored by Git; do not commit them.
+A importação da B3 é iniciada pelo usuário: baixe a planilha oficial no Portal do Investidor da B3 e envie-a pela aplicação. Bancos locais e planilhas pessoais são ignorados pelo Git; não faça commit desses arquivos.
 
-## Requirements
+## Requisitos
 
-- Python 3.10 or newer
+- Python 3.10 ou mais recente
 - `pip`
-- Network access only when requesting fresh Yahoo Finance or BCB data
+- Acesso à rede apenas para consultar dados atualizados do Yahoo Finance ou do BCB
 
-## Installation
+## Instalação
 
-Clone the repository, create a virtual environment, and install the application:
+Clone o repositório, crie um ambiente virtual e instale a aplicação:
 
 ```bash
 git clone https://github.com/R-Mascarenhas/RendaPerene.git
@@ -56,31 +56,31 @@ source venv/bin/activate
 python -m pip install .
 ```
 
-For development, install the optional test and lint dependencies:
+Para desenvolvimento, instale também as dependências opcionais de testes e lint:
 
 ```bash
 python -m pip install -e ".[dev]"
 ```
 
-On Windows PowerShell, activate the environment with:
+No Windows PowerShell, ative o ambiente com:
 
 ```powershell
 .\venv\Scripts\Activate.ps1
 ```
 
-## Run
+## Execução
 
-Start the Streamlit application:
+Inicie a aplicação Streamlit:
 
 ```bash
 venv/bin/streamlit run app.py
 ```
 
-If the environment is activated, `streamlit run app.py` is equivalent. The first run creates and initializes `database/portfolio.db` when it does not already exist.
+Se o ambiente virtual estiver ativo, `streamlit run app.py` é equivalente. Na primeira execução, a aplicação cria e inicializa `database/portfolio.db` caso o arquivo ainda não exista.
 
-## Validation
+## Validação
 
-Run the regression suite and lint checks:
+Execute os testes de regressão e as verificações de lint:
 
 ```bash
 venv/bin/pytest
@@ -88,19 +88,18 @@ venv/bin/ruff check .
 venv/bin/ruff format --check .
 ```
 
-Ruff targets Python 3.10, uses a 100-character line length, and intentionally excludes `tests/` from its configured scope.
-GitHub Actions runs the three validation commands independently for pull requests targeting `main` and pushes to `main`.
+O Ruff usa Python 3.10 como versão-alvo, limita as linhas a 100 caracteres e exclui intencionalmente `tests/` do escopo configurado. O GitHub Actions executa os três comandos de validação de forma independente em pull requests destinados à `main` e em pushes para a `main`.
 
-## Architecture
+## Arquitetura
 
-The application is divided into three layers:
+A aplicação é dividida em três camadas:
 
-- `core/`: database infrastructure, DAO implementations, ports, formatting, B3 parsing, and headless market-data integration.
-- `services/`: framework-agnostic portfolio, planning, and valuation rules.
-- `views/`: Streamlit views and presentation components.
+- `core/`: infraestrutura de banco de dados, implementações de DAOs, portas, formatação, processamento de arquivos da B3 e integração de dados de mercado desacoplada da interface.
+- `services/`: regras de carteira, planejamento e valuation independentes de framework.
+- `views/`: telas e componentes de apresentação do Streamlit.
 
-`app.py` is the composition root that initializes persistence, wires production adapters, initializes session state, and routes the Dashboard, Assets, and Planning views. See [ARCHITECTURE.md](ARCHITECTURE.md) for the persistence model, dependency boundaries, financial rules, and integrations.
+O `app.py` é a raiz de composição: inicializa a persistência, conecta os adaptadores de produção, prepara o estado da sessão e direciona para as telas Dashboard, Ativos e Planejamento. Consulte o [ARCHITECTURE.md](ARCHITECTURE.md) para conhecer o modelo de persistência, os limites entre dependências, as regras financeiras e as integrações.
 
-## License
+## Licença
 
-This project is distributed under the [GNU Affero General Public License v3.0](LICENSE).
+Este projeto é distribuído sob a [GNU Affero General Public License v3.0](LICENSE).

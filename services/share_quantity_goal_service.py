@@ -227,7 +227,7 @@ class ShareQuantityGoalService:
                     adjusted_baseline *= factor
                     if (
                         target_action_cutoff is None
-                        or str(transaction[DATE]) > target_action_cutoff
+                        or str(transaction[DATE]) >= target_action_cutoff
                     ):
                         adjusted_target *= factor
                     adjusted_acquisition_delta *= factor
@@ -238,7 +238,7 @@ class ShareQuantityGoalService:
             elif transaction_type == "GROUP" and quantity_before_action > 0:
                 factor = quantity / quantity_before_action
                 adjusted_baseline *= factor
-                if target_action_cutoff is None or str(transaction[DATE]) > target_action_cutoff:
+                if target_action_cutoff is None or str(transaction[DATE]) >= target_action_cutoff:
                     adjusted_target *= factor
                 adjusted_acquisition_delta *= factor
                 quantity_before_action = quantity

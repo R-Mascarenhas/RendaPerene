@@ -560,6 +560,32 @@ def test_saved_target_is_not_rebased_again_for_prior_corporate_action(mock_db):
     assert result[0:2] == (200.0, 250.0)
 
 
+def test_same_day_post_save_corporate_action_rebases_saved_target(mock_db):
+    portfolio = StubPortfolioProvider(
+        [{"ticker": "BBAS3", "quantity": 200}],
+        transactions={
+            "BBAS3": [
+                {
+                    "date": "2026-01-03",
+                    "transaction_type": "BUY",
+                    "quantity": 100,
+                    "unit_price": 0.0,
+                    "fees": 0.0,
+                }
+            ]
+        },
+    )
+    service = ShareQuantityGoalService(portfolio_provider=portfolio)
+
+    result = service._get_corporate_action_adjusted_progress(
+        {"ticker": "BBAS3", "start_quantity": 100, "target_quantity": 250},
+        "2026-01-01",
+        "2026-01-03",
+    )
+
+    assert result[0:2] == (200.0, 500.0)
+
+
 def test_zero_weight_market_failure_does_not_block_plan_save(mock_db):
     repository = PlanningDAO()
     service = ShareQuantityGoalService(

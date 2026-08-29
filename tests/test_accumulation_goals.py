@@ -529,6 +529,30 @@ def test_dashboard_excludes_goals_for_assets_no_longer_held(mock_db):
     assert service.list_goals_with_progress(datetime.date(2026, 8, 28)) == []
 
 
+def test_goal_below_year_start_shows_position_excess_over_target(mock_db):
+    repository = PlanningDAO()
+    repository.upsert_accumulation_goal(
+        ticker="CSMG3",
+        start_quantity=4283,
+        target_quantity=5000,
+        target_mode=ShareQuantityGoalService.MODE_DIVIDEND_INCOME,
+        target_percentage=None,
+        allocation_weight=5,
+        average_dividend_5y=2.0,
+    )
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=StubPortfolioProvider([{"ticker": "CSMG3", "quantity": 4541}]),
+        market_data_api=StubMarketData,
+        planning_provider=GrowthExamplePlanningProvider(),
+    )
+
+    progress = service.list_goals_with_progress(datetime.date(2026, 8, 28))[0]
+
+    assert progress["target_quantity"] == 8
+    assert progress["progress_percentage"] == pytest.approx(4541 / 8 * 100)
+
+
 def test_saved_target_is_not_rebased_again_for_prior_corporate_action(mock_db):
     portfolio = StubPortfolioProvider(
         [{"ticker": "BBAS3", "quantity": 200}],

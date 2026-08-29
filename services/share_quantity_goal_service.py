@@ -705,7 +705,9 @@ class ShareQuantityGoalService:
                 current_quantity = current_quantities.get(goal[TICKER], 0.0)
                 goal["current_quantity"] = current_quantity
                 goal["progress_percentage"] = (
-                    100.0 if current_quantity >= goal["target_quantity"] else 0.0
+                    max(0.0, current_quantity / goal["target_quantity"] * 100)
+                    if goal["target_quantity"] > 0
+                    else 0.0
                 )
                 results.append(goal)
             elif corporate_action_result is not None:

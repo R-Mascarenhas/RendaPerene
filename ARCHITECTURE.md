@@ -62,7 +62,9 @@ as views não calculam caminhos do sistema operacional.
 As raízes graváveis padrão são `%LOCALAPPDATA%\RendaPerene` no Windows e
 `$XDG_DATA_HOME/RendaPerene` no Linux, com fallback para `~/.local/share/RendaPerene`. O executável
 e seus recursos podem ser substituídos sem mover as carteiras. Sessões da demonstração hospedada
-usam uma raiz temporária própria por sessão.
+usam uma raiz temporária própria por sessão. O caminho do banco demo é resolvido a cada conexão
+SQLite a partir do contexto atual do Streamlit, sem armazenar o identificador de uma sessão no
+singleton compartilhado de persistência.
 
 Quando existem bancos `portfolio*.db` na antiga pasta `database/` ao lado da aplicação, a barra
 lateral oferece sua importação. A migração valida a origem, copia (sem mover) um backup para

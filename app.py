@@ -16,7 +16,8 @@ is_cloud = (
     or "/mount/" in os.path.abspath(".")
 )
 
-app_paths = ApplicationPaths.discover()
+runtime_paths = ApplicationPaths.discover()
+app_paths = runtime_paths
 if is_cloud:
     if "session_id" not in st.session_state:
         st.session_state["session_id"] = str(uuid.uuid4())
@@ -134,7 +135,16 @@ if not is_cloud:
 else:
     current_active_db = "portfolio.db"
 
-db.personal_db = app_paths.portfolio_database(current_active_db)
+if is_cloud:
+
+    def resolve_demo_database():
+        """Resolve the database from the Streamlit context of the current connection."""
+        session_paths = runtime_paths.for_demo_session(st.session_state["session_id"])
+        return session_paths.portfolio_database("portfolio.db")
+
+    db.personal_db = resolve_demo_database
+else:
+    db.personal_db = app_paths.portfolio_database(current_active_db)
 MarketData.configure_catalog(app_paths.catalog_file)
 
 db.init_personal_db()

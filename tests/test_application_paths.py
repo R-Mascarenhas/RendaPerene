@@ -1,4 +1,5 @@
 import sqlite3
+from contextvars import ContextVar
 from pathlib import Path
 
 from core.application_paths import ApplicationPaths
@@ -173,3 +174,33 @@ def test_demo_session_uses_an_isolated_seeded_database(tmp_path, monkeypatch):
     assert demo_paths.data_root == tmp_path / "RendaPerene" / "demo" / "session-123"
     assert destination.exists()
     assert destination.read_bytes() == source.read_bytes()
+
+
+def test_database_manager_resolves_the_current_session_path_for_each_connection(tmp_path):
+    session_database = ContextVar("session_database")
+    manager = DatabaseManager(lambda: session_database.get())
+    first_database = tmp_path / "first" / "portfolio.db"
+    second_database = tmp_path / "second" / "portfolio.db"
+
+    session_database.set(first_database)
+    first_connection = manager.get_personal_connection()
+    first_connection.execute("CREATE TABLE session_marker (value TEXT NOT NULL)")
+    first_connection.execute("INSERT INTO session_marker VALUES ('first')")
+    first_connection.commit()
+    first_connection.close()
+
+    session_database.set(second_database)
+    second_connection = manager.get_personal_connection()
+    second_connection.execute("CREATE TABLE session_marker (value TEXT NOT NULL)")
+    second_connection.execute("INSERT INTO session_marker VALUES ('second')")
+    second_connection.commit()
+    second_connection.close()
+
+    session_database.set(first_database)
+    first_connection = manager.get_personal_connection()
+    try:
+        assert first_connection.execute("SELECT value FROM session_marker").fetchone() == (
+            "first",
+        )
+    finally:
+        first_connection.close()

@@ -45,7 +45,8 @@ class DatabaseManager:
         import sqlite3
         from pathlib import Path
 
-        db_file = Path(self.personal_db)
+        configured_database = self.personal_db() if callable(self.personal_db) else self.personal_db
+        db_file = Path(configured_database)
         db_file.parent.mkdir(parents=True, exist_ok=True)
         return sqlite3.connect(db_file)
 

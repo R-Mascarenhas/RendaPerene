@@ -61,10 +61,15 @@ class PlanningView:
 
     def render(self):
         st.header("🎯 Planejamento de Aposentadoria e Independência Financeira")
-        retirement_tab, goals_tab = st.tabs(["Aposentadoria", "Metas"])
-        with retirement_tab:
+        selected_section = st.radio(
+            "Seção do planejamento",
+            ["Aposentadoria", "Metas"],
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        if selected_section == "Aposentadoria":
             self._render_retirement_planning()
-        with goals_tab:
+        else:
             GoalsView().render()
 
     def _render_retirement_planning(self):

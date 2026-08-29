@@ -188,7 +188,7 @@ class ShareQuantityGoalService:
         }
 
     def _get_corporate_action_adjusted_progress(
-        self, goal: dict, year_start_date: str
+        self, goal: dict, year_start_date: str, target_action_cutoff: str | None = None
     ) -> tuple[float, float, float] | None:
         """Calculates progress and goal quantities rebased through corporate actions."""
         transactions = self._portfolio_provider.get_raw_transactions_for_chart(goal[TICKER])
@@ -225,7 +225,11 @@ class ShareQuantityGoalService:
                 elif quantity_before_action > 0:
                     factor = (quantity_before_action + quantity) / quantity_before_action
                     adjusted_baseline *= factor
-                    adjusted_target *= factor
+                    if (
+                        target_action_cutoff is None
+                        or str(transaction[DATE]) > target_action_cutoff
+                    ):
+                        adjusted_target *= factor
                     adjusted_acquisition_delta *= factor
                 quantity_before_action += quantity
             elif transaction_type == "SELL":
@@ -234,7 +238,8 @@ class ShareQuantityGoalService:
             elif transaction_type == "GROUP" and quantity_before_action > 0:
                 factor = quantity / quantity_before_action
                 adjusted_baseline *= factor
-                adjusted_target *= factor
+                if target_action_cutoff is None or str(transaction[DATE]) > target_action_cutoff:
+                    adjusted_target *= factor
                 adjusted_acquisition_delta *= factor
                 quantity_before_action = quantity
 
@@ -445,7 +450,7 @@ class ShareQuantityGoalService:
             )
             market_data_available = bool(market_analysis)
             stored_goal = stored_goals.get(ticker)
-            if not market_data_available:
+            if not market_data_available and is_active:
                 has_unavailable_market_data = True
                 if stored_goal is not None and bool(stored_goal.get("is_active", 1)):
                     average_dividend_5y = float(stored_goal["average_dividend_5y"])
@@ -688,7 +693,9 @@ class ShareQuantityGoalService:
                     )
                 )
             corporate_action_result = self._get_corporate_action_adjusted_progress(
-                goal, year_start_date
+                goal,
+                year_start_date,
+                str(goal.get("created_at", ""))[:10] or None,
             )
             if corporate_action_result is not None:
                 adjusted_baseline, adjusted_target, _ = corporate_action_result

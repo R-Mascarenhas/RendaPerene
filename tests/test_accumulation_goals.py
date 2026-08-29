@@ -98,6 +98,12 @@ class FailedMarketData:
         return {}
 
 
+class PartialFailedMarketData:
+    @staticmethod
+    def get_ticker_market_analysis(ticker, target_yield_pct=6.0):
+        return {"avg_dividend_5y": 2.0} if ticker == "BBAS3" else {}
+
+
 class PartialHistoryMarketData:
     @staticmethod
     def get_ticker_market_analysis(ticker, target_yield_pct=6.0):
@@ -138,6 +144,13 @@ def build_service(positions):
         market_data_api=StubMarketData,
         planning_provider=StubPlanningProvider(),
     )
+
+
+def set_goal_created_at(repository, created_at):
+    conn = repository.get_personal_connection()
+    conn.execute("UPDATE asset_accumulation_goals SET created_at = ?", (created_at,))
+    conn.commit()
+    conn.close()
 
 
 def test_dividend_income_target_uses_annual_income_weight_and_five_year_average():
@@ -274,6 +287,7 @@ def test_corporate_actions_do_not_count_as_accumulation_progress(mock_db):
         allocation_weight=100,
         average_dividend_5y=2.0,
     )
+    set_goal_created_at(repository, "2025-12-31")
     portfolio = StubPortfolioProvider(
         [{"ticker": "BBAS3", "quantity": 200}],
         year_start_quantities={"BBAS3": 100},
@@ -313,6 +327,7 @@ def test_paid_acquisitions_are_rebased_after_corporate_actions(mock_db):
         allocation_weight=100,
         average_dividend_5y=2.0,
     )
+    set_goal_created_at(repository, "2025-12-31")
     portfolio = StubPortfolioProvider(
         [{"ticker": "BBAS3", "quantity": 225}],
         year_start_quantities={"BBAS3": 100},
@@ -456,6 +471,7 @@ def test_same_day_corporate_action_is_processed_before_paid_purchase(mock_db):
         allocation_weight=100,
         average_dividend_5y=2.0,
     )
+    set_goal_created_at(repository, "2025-12-31")
     portfolio = StubPortfolioProvider(
         [{"ticker": "BBAS3", "quantity": 225}],
         year_start_quantities={"BBAS3": 100},
@@ -511,6 +527,53 @@ def test_dashboard_excludes_goals_for_assets_no_longer_held(mock_db):
     )
 
     assert service.list_goals_with_progress(datetime.date(2026, 8, 28)) == []
+
+
+def test_saved_target_is_not_rebased_again_for_prior_corporate_action(mock_db):
+    portfolio = StubPortfolioProvider(
+        [{"ticker": "BBAS3", "quantity": 200}],
+        transactions={
+            "BBAS3": [
+                {
+                    "date": "2026-01-02",
+                    "transaction_type": "BUY",
+                    "quantity": 100,
+                    "unit_price": 0.0,
+                    "fees": 0.0,
+                }
+            ]
+        },
+    )
+    service = ShareQuantityGoalService(portfolio_provider=portfolio)
+
+    result = service._get_corporate_action_adjusted_progress(
+        {
+            "ticker": "BBAS3",
+            "start_quantity": 100,
+            "target_quantity": 250,
+            "created_at": "2026-01-03 10:00:00",
+        },
+        "2026-01-01",
+        "2026-01-03",
+    )
+
+    assert result[0:2] == (200.0, 250.0)
+
+
+def test_zero_weight_market_failure_does_not_block_plan_save(mock_db):
+    repository = PlanningDAO()
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=StubPortfolioProvider(
+            [{"ticker": "BBAS3", "quantity": 100}, {"ticker": "TAEE11", "quantity": 100}]
+        ),
+        market_data_api=PartialFailedMarketData,
+        planning_provider=StubPlanningProvider(),
+    )
+
+    plan = service.get_portfolio_goal_plan({"BBAS3": 100, "TAEE11": 0})
+
+    assert plan["has_unavailable_market_data"] is False
 
 
 def test_dashboard_renders_one_weighted_bar_with_asset_details(monkeypatch):

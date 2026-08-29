@@ -1,10 +1,13 @@
-import glob
 import os
+import uuid
 
 import streamlit as st
 
+from core.application_paths import ApplicationPaths
+from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.database import DatabaseManager, db
 from core.utils import SessionManager, get_app_version
+from core.utils.market_data import MarketData
 
 # Detect if running in public shared cloud environments
 is_cloud = (
@@ -13,23 +16,53 @@ is_cloud = (
     or "/mount/" in os.path.abspath(".")
 )
 
-# 1. Scan for available databases inside 'database/' folder (if not in public cloud)
-db_files = []
+app_paths = ApplicationPaths.discover()
+if is_cloud:
+    if "session_id" not in st.session_state:
+        st.session_state["session_id"] = str(uuid.uuid4())
+    app_paths = app_paths.for_demo_session(st.session_state["session_id"])
+    app_paths.prepare(app_paths.bundled_resource("database/portfolio_demo.db"))
+else:
+    app_paths.prepare()
+
+    legacy_sources = list(app_paths.migration_candidates())
+    if legacy_sources:
+        st.sidebar.warning(
+            "Carteiras de uma versão anterior foram encontradas. "
+            "Você pode copiá-las com segurança para o novo armazenamento local."
+        )
+        selected_legacy = st.sidebar.multiselect(
+            "Carteiras antigas para importar",
+            options=legacy_sources,
+            default=legacy_sources,
+            format_func=lambda path: path.name,
+        )
+        if st.sidebar.button("Importar carteiras antigas", use_container_width=True):
+            for source in selected_legacy:
+                result = app_paths.migrate_legacy_database(source)
+                if result.migrated:
+                    st.sidebar.success(f"{source.name}: {result.message}")
+                else:
+                    st.sidebar.error(f"{source.name}: {result.message}")
+
+inventory = app_paths.inspect_portfolios()
+if inventory.invalid:
+    invalid_names = ", ".join(path.name for path in inventory.invalid)
+    st.sidebar.error(
+        f"Bancos SQLite inválidos foram ignorados: {invalid_names}. "
+        "Restaure uma cópia válida a partir da pasta de backups."
+    )
+
+db_files = [path.name for path in inventory.valid]
+default_database = app_paths.portfolio_database("portfolio.db")
+if not default_database.exists():
+    db_files.append("portfolio.db")
+if not db_files:
+    st.error("Nenhuma carteira SQLite válida está disponível.")
+    st.stop()
+db_files = sorted(set(db_files))
+
 if not is_cloud:
-    if os.path.exists("database"):
-        all_dbs = glob.glob("database/*.db")
-        for d in all_dbs:
-            name = os.path.basename(d)
-            # Exclude temp, bkp, and specific reference demo files
-            if name.endswith(".db") and "demo" not in name:
-                db_files.append(name)
-
-    # Ensure at least 'portfolio.db' is listed
-    if "portfolio.db" not in db_files:
-        db_files.append("portfolio.db")
-
-    db_files = sorted(list(set(db_files)))
-
     # 2. Sidebar Selector
     st.sidebar.markdown("### 🗃️ Gerenciar Carteiras")
 
@@ -66,7 +99,7 @@ if not is_cloud:
         clean_name = "".join([c for c in new_db_name if c.isalnum() or c in ("_", "-")]).strip()
         if clean_name:
             new_filename = f"portfolio_{clean_name.lower()}.db"
-            new_filepath = f"database/{new_filename}"
+            new_filepath = app_paths.portfolio_database(new_filename)
             # Initialize tables
             temp_db = DatabaseManager(personal_db=new_filepath)
             temp_db.init_personal_db()
@@ -98,7 +131,11 @@ if not is_cloud:
         st.rerun()
 
     current_active_db = st.session_state.get("active_db", "portfolio.db")
-    db.personal_db = f"database/{current_active_db}"
+else:
+    current_active_db = "portfolio.db"
+
+db.personal_db = app_paths.portfolio_database(current_active_db)
+MarketData.configure_catalog(app_paths.catalog_file)
 
 db.init_personal_db()
 
@@ -113,6 +150,7 @@ from services.share_quantity_goal_service import ShareQuantityGoalService
 from views.cached_market_data import StreamlitCachedMarketData
 
 AssetService.set_adapters(
+    catalog_repo=AssetsCatalogDAO(app_paths.catalog_file),
     market_data_api=StreamlitCachedMarketData,
     excel_parser=B3ExcelParserAdapter(),
     planning_provider=SimulationService.get_default(),

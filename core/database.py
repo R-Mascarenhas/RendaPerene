@@ -41,38 +41,12 @@ class DatabaseManager:
             conn.close()
 
     def get_personal_connection(self):
-        """Returns a new connection to the personal transactional database, isolating sessions in cloud demo mode."""
-        import os
-        import shutil
+        """Returns a new connection to the configured personal transactional database."""
         import sqlite3
+        from pathlib import Path
 
-        db_file = self.personal_db
-        try:
-            import streamlit as st
-
-            # Detect if running in public shared cloud environments (Streamlit Cloud uses '/mount/src/...')
-            is_cloud = (
-                "STREAMLIT_SHARING_MODE" in os.environ
-                or os.path.abspath(".").startswith("/mount")
-                or "/mount/" in os.path.abspath(".")
-            )
-            if st.runtime.exists() and is_cloud:
-                if "session_id" not in st.session_state:
-                    import uuid
-
-                    st.session_state["session_id"] = str(uuid.uuid4())
-                db_file = f"database/portfolio_{st.session_state['session_id']}.db"
-
-                # If the guest DB does not exist yet, clone the demo db
-                if not os.path.exists(db_file):
-                    os.makedirs(os.path.dirname(db_file), exist_ok=True)
-                    demo_template = "database/portfolio_demo.db"
-                    if os.path.exists(demo_template):
-                        shutil.copy(demo_template, db_file)
-        except Exception:
-            pass
-
-        os.makedirs(os.path.dirname(db_file), exist_ok=True)
+        db_file = Path(self.personal_db)
+        db_file.parent.mkdir(parents=True, exist_ok=True)
         return sqlite3.connect(db_file)
 
 

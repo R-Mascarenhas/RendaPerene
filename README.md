@@ -29,7 +29,27 @@ A interface e a documentação do projeto estão em português brasileiro (PT-BR
 
 ## Dados e privacidade
 
-Os dados da carteira são armazenados localmente em bancos SQLite no diretório `database/`. A aplicação não utiliza banco de dados em nuvem, contas de usuário ou telemetria, nem realiza scraping do portal da B3.
+Os dados da carteira são armazenados localmente em bancos SQLite fora da pasta da aplicação.
+Assim, uma versão descompactada em uma nova pasta encontra as mesmas carteiras sem exigir cópias
+manuais. Os diretórios padrão são:
+
+- Windows: `%LOCALAPPDATA%\RendaPerene`;
+- Linux: `$XDG_DATA_HOME/RendaPerene` ou, quando a variável não estiver definida,
+  `~/.local/share/RendaPerene`.
+
+Dentro desse diretório, `database/` contém as carteiras, `catalog/assets.csv` contém o catálogo
+gravável, `backups/` preserva cópias de recuperação e `logs/` é reservado para registros locais.
+A aplicação não utiliza banco de dados em nuvem, contas de usuário ou telemetria, nem realiza
+scraping do portal da B3.
+
+Na primeira execução com o novo layout, a barra lateral oferece a importação de bancos
+`portfolio*.db` encontrados na antiga pasta `database/` ao lado da aplicação. A origem é mantida,
+uma cópia de recuperação é criada em `backups/legacy-import/` e cada cópia é validada como SQLite
+antes de ficar disponível. Repetir a operação é seguro e um arquivo existente com conteúdo
+diferente nunca é sobrescrito. Caso o primeiro carregamento já tenha criado uma carteira principal
+somente com os valores padrão, ela pode ser substituída com segurança; qualquer dado ou configuração
+alterada impede essa substituição. Os bancos da demonstração hospedada continuam isolados por
+sessão em armazenamento temporário.
 
 O acesso à rede é necessário para obter dados atualizados:
 
@@ -77,7 +97,9 @@ Inicie a aplicação Streamlit:
 venv/bin/streamlit run app.py
 ```
 
-Se o ambiente virtual estiver ativo, `streamlit run app.py` é equivalente. Na primeira execução, a aplicação cria e inicializa `database/portfolio.db` caso o arquivo ainda não exista.
+Se o ambiente virtual estiver ativo, `streamlit run app.py` é equivalente. Na primeira execução,
+a aplicação cria e inicializa `portfolio.db` no diretório de dados do usuário descrito acima caso
+o arquivo ainda não exista.
 
 ## Validação
 

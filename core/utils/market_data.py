@@ -11,6 +11,13 @@ from services.valuation_service import ValuationService
 class MarketData:
     """Class responsible for integrations with market and financial APIs."""
 
+    _catalog_path = "assets.csv"
+
+    @classmethod
+    def configure_catalog(cls, catalog_path) -> None:
+        """Configure the writable catalog selected at the application composition root."""
+        cls._catalog_path = catalog_path
+
     @staticmethod
     def _listing_year(info: dict) -> int | None:
         """Returns Yahoo's first trading year when that metadata is available."""
@@ -328,7 +335,7 @@ class MarketData:
         """Loads the B3 assets static catalog from assets.csv into memory RAM (Vastly faster!)."""
         from core.daos.assets_catalog_dao import AssetsCatalogDAO
 
-        return AssetsCatalogDAO().load_catalog()
+        return AssetsCatalogDAO(MarketData._catalog_path).load_catalog()
 
     @staticmethod
     def get_current_ipca_l12m() -> float:

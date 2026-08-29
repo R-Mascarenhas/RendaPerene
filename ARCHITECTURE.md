@@ -16,7 +16,11 @@ O `app.py` é a raiz de composição. Ele:
 4. inicializa o estado da sessão; e
 5. direciona para as três telas principais: Dashboard, Ativos e Planejamento.
 
-Em uma execução local normal, o banco ativo é `database/portfolio.db` ou outro arquivo `portfolio_*.db` selecionado na barra lateral. Quando um ambiente de hospedagem compartilhada do Streamlit é detectado, a aplicação cria para a sessão um banco clonado de `database/portfolio_demo.db`; esse recurso serve apenas para demonstração e não representa o modelo principal de persistência.
+Em uma execução local normal, o banco ativo é `portfolio.db` ou outro arquivo `portfolio*.db`
+selecionado na barra lateral, sempre dentro do diretório gravável do usuário. Quando um ambiente de
+hospedagem compartilhada do Streamlit é detectado, a aplicação cria para a sessão um banco clonado
+do recurso `database/portfolio_demo.db` em um diretório temporário isolado; esse recurso serve
+apenas para demonstração e não representa o modelo principal de persistência.
 
 Execute a aplicação com:
 
@@ -48,7 +52,32 @@ O arquivo `core/ports.py` define as fronteiras para persistência da carteira, a
 
 ## Persistência
 
-O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa; o catálogo estático de ativos é mantido separadamente no arquivo `assets.csv`.
+`ApplicationPaths`, em `core/application_paths.py`, é o módulo profundo que separa os recursos
+descartáveis do pacote dos dados graváveis. Sua interface resolve os recursos incluídos no pacote,
+a raiz de dados, o diretório das carteiras, o catálogo, os logs e os backups. Também prepara o
+layout, inventaria apenas bancos SQLite válidos e concentra a migração das versões antigas. A raiz
+de composição `app.py` conecta esses caminhos ao `DatabaseManager`, ao catálogo e aos adaptadores;
+as views não calculam caminhos do sistema operacional.
+
+As raízes graváveis padrão são `%LOCALAPPDATA%\RendaPerene` no Windows e
+`$XDG_DATA_HOME/RendaPerene` no Linux, com fallback para `~/.local/share/RendaPerene`. O executável
+e seus recursos podem ser substituídos sem mover as carteiras. Sessões da demonstração hospedada
+usam uma raiz temporária própria por sessão.
+
+Quando existem bancos `portfolio*.db` na antiga pasta `database/` ao lado da aplicação, a barra
+lateral oferece sua importação. A migração valida a origem, copia (sem mover) um backup para
+`backups/legacy-import/`, valida novamente a cópia temporária e somente então publica o banco em
+`database/`. A operação é idempotente e recusa qualquer sobrescrita quando há conteúdo diferente.
+Bancos principais inicializados automaticamente apenas com os valores padrão podem ser substituídos
+durante a importação; qualquer dado ou configuração do usuário torna o destino não substituível. A
+cópia recuperável relevante permanece em `backups/legacy-import/`.
+Bancos inválidos não ficam disponíveis para seleção. Nomes de arquivos de carteiras e dados
+financeiros não são escritos em logs.
+
+O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO
+registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa; o
+catálogo estático incluído no pacote é copiado para o arquivo gravável `catalog/assets.csv` na
+primeira execução.
 
 | Armazenamento | Finalidade |
 | --- | --- |
@@ -59,7 +88,7 @@ O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita
 | `planning_configuration` | Configuração única (`id = 1`): data de nascimento, idade de aposentadoria, dados de renda, taxa de juros anual, salário mínimo, patrimônio inicial, modalidade de renda, parâmetros do modelo de Bazin e data opcional de início do planejamento. |
 | `asset_accumulation_goals` | Uma meta de quantidade por ticker: base anual persistida, quantidade-alvo e modalidade, percentual-alvo opcional, peso editável (incluindo zero), estado ativo, média de proventos de cinco anos e data de criação. A aplicação atualiza a base efetiva para 1º de janeiro no carregamento, sem depender de salvar novamente a cada virada de ano. |
 | `goal_settings` | Preferências únicas da carteira para reinvestimento de dividendos e metas de quantidade de ações. O reinvestimento é ativado por padrão; as metas por ação permanecem desativadas até serem habilitadas. |
-| `assets.csv` | Catálogo estático da B3 com metadados dos tickers. Tickers desconhecidos encontrados na importação podem ser adicionados como registros alternativos do catálogo. |
+| `catalog/assets.csv` | Cópia gravável do catálogo estático da B3 com metadados dos tickers. Tickers desconhecidos encontrados na importação podem ser adicionados como registros alternativos do catálogo. |
 
 O SQLite não declara chaves estrangeiras entre esses armazenamentos. Os serviços preservam programaticamente a consistência necessária.
 

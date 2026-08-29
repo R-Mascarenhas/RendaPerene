@@ -39,12 +39,21 @@ else:
             format_func=lambda path: path.name,
         )
         if st.sidebar.button("Importar carteiras antigas", use_container_width=True):
+            migrated_databases = []
             for source in selected_legacy:
                 result = app_paths.migrate_legacy_database(source)
                 if result.migrated:
+                    migrated_databases.append(source.name)
                     st.sidebar.success(f"{source.name}: {result.message}")
                 else:
                     st.sidebar.error(f"{source.name}: {result.message}")
+            if migrated_databases:
+                requested_db = st.session_state.get("active_db", "portfolio.db")
+                st.session_state["active_db"] = (
+                    requested_db if requested_db in migrated_databases else migrated_databases[0]
+                )
+                SessionManager.reset_portfolio_state()
+                st.rerun()
 
 inventory = app_paths.inspect_portfolios()
 if inventory.invalid:
@@ -112,24 +121,7 @@ if not is_cloud:
     # 3. Handle database switch
     if selected_db != active_db:
         st.session_state["active_db"] = selected_db
-        # Purge current session loaded state & values to trigger fresh load
-        for key in [
-            "db_loaded",
-            "birth_date",
-            "retirement_age",
-            "desired_income_mw",
-            "annual_interest_rate",
-            "mw_value",
-            "initial_equity",
-            "desired_income_type",
-            "desired_income_fixed",
-            "ceiling_model_selection",
-            "bazin_target_yield",
-            "bazin_target_spread",
-            "planning_start_date",
-            "planning_start_date_enabled",
-        ]:
-            st.session_state.pop(key, None)
+        SessionManager.reset_portfolio_state()
         st.rerun()
 
     current_active_db = active_db

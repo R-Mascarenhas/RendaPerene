@@ -8,6 +8,7 @@ from core.database import db
 from core.utils.formatter import Formatter
 from core.utils.session import get_app_version, monitor_active_sessions, SessionManager
 
+
 def test_formatter_colored_cell_style_dry_sanity():
     """
     Verifies that Formatter.get_colored_cell_style and Formatter.get_trend_cell_style
@@ -59,6 +60,7 @@ def test_format_integer_compacts_millions_and_billions():
     assert Formatter.format_integer(2_500_000_000) == "2,50 bi"
     assert Formatter.format_integer(-2_500_000_000) == "-2,50 bi"
 
+
 def test_get_app_version_sanity(monkeypatch, tmp_path):
     """
     Verifies that get_app_version() correctly reads version.txt from either
@@ -77,6 +79,7 @@ def test_get_app_version_sanity(monkeypatch, tmp_path):
 
     monkeypatch.setattr(sys, "_MEIPASS", mock_meipass, raising=False)
     assert get_app_version() == "2.3.4.5"
+
 
 def test_monitor_active_sessions_stop_trigger(monkeypatch):
     """
@@ -100,7 +103,7 @@ def test_monitor_active_sessions_stop_trigger(monkeypatch):
             self.call_count += 1
             if self.call_count == 1:
                 return [MockSession("session_1")]
-            return [] # 0 sessions
+            return []  # 0 sessions
 
     class MockRuntime:
         def __init__(self):
@@ -119,6 +122,7 @@ def test_monitor_active_sessions_stop_trigger(monkeypatch):
     monitor_active_sessions()
 
     assert mock_runtime.stopped is True
+
 
 def test_session_manager_initialization_on_empty_database(mock_db, monkeypatch):
     """
@@ -139,6 +143,7 @@ def test_session_manager_initialization_on_empty_database(mock_db, monkeypatch):
                 return self[name]
             except KeyError:
                 raise AttributeError(name)
+
         def __setattr__(self, name, value):
             self[name] = value
 
@@ -155,12 +160,90 @@ def test_session_manager_initialization_on_empty_database(mock_db, monkeypatch):
 
     # 4. Assert that defaults are correctly set in the mocked session state
     from core.constants import (
-        SESSION_BIRTH_DATE, SESSION_RETIREMENT_AGE,
-        SESSION_ANNUAL_INTEREST_RATE, SESSION_MW_VALUE, SESSION_INITIAL_EQUITY,
-        SESSION_PLANNING_START_DATE, SESSION_PLANNING_START_DATE_ENABLED
+        SESSION_BIRTH_DATE,
+        SESSION_RETIREMENT_AGE,
+        SESSION_ANNUAL_INTEREST_RATE,
+        SESSION_MW_VALUE,
+        SESSION_INITIAL_EQUITY,
+        SESSION_PLANNING_START_DATE,
+        SESSION_PLANNING_START_DATE_ENABLED,
     )
+
     assert mock_session[SESSION_BIRTH_DATE] == datetime.date(1992, 7, 9)
     assert mock_session[SESSION_RETIREMENT_AGE] == 65
     assert mock_session[SESSION_PLANNING_START_DATE] == datetime.date.today()
     assert mock_session[SESSION_PLANNING_START_DATE_ENABLED] is False
     assert mock_session.db_loaded is True
+
+
+def test_session_manager_resets_portfolio_state(monkeypatch):
+    """Portfolio replacement must invalidate values loaded from the previous database."""
+    from core.constants import (
+        SESSION_ANNUAL_INTEREST_RATE,
+        SESSION_BAZIN_TARGET_SPREAD,
+        SESSION_BAZIN_TARGET_YIELD,
+        SESSION_BIRTH_DATE,
+        SESSION_CALCULATED_EQUITY_CACHE,
+        SESSION_CEILING_MODEL_SELECTION,
+        SESSION_DESIRED_INCOME_FIXED,
+        SESSION_DESIRED_INCOME_MW,
+        SESSION_DESIRED_INCOME_TYPE,
+        SESSION_INITIAL_EQUITY,
+        SESSION_MW_VALUE,
+        SESSION_PLANNING_START_DATE,
+        SESSION_PLANNING_START_DATE_ENABLED,
+        SESSION_REQUIRED_CONTRIBUTION_CACHE,
+        SESSION_RETIREMENT_AGE,
+        WIDGET_BAZIN_SPREAD_INPUT,
+        WIDGET_BAZIN_YIELD_INPUT,
+        WIDGET_BIRTH_DATE,
+        WIDGET_CEILING_MODEL_SELECTOR,
+        WIDGET_INCOME_FIXED,
+        WIDGET_INCOME_MW,
+        WIDGET_INCOME_TYPE,
+        WIDGET_INITIAL_EQUITY,
+        WIDGET_INTEREST_RATE,
+        WIDGET_PLANNING_START_DATE,
+        WIDGET_PLANNING_START_DATE_ENABLED,
+        WIDGET_RETIREMENT_AGE,
+    )
+
+    portfolio_keys = {
+        "db_loaded",
+        SESSION_BIRTH_DATE,
+        SESSION_RETIREMENT_AGE,
+        SESSION_DESIRED_INCOME_MW,
+        SESSION_ANNUAL_INTEREST_RATE,
+        SESSION_MW_VALUE,
+        SESSION_INITIAL_EQUITY,
+        SESSION_DESIRED_INCOME_TYPE,
+        SESSION_DESIRED_INCOME_FIXED,
+        SESSION_CEILING_MODEL_SELECTION,
+        SESSION_BAZIN_TARGET_YIELD,
+        SESSION_BAZIN_TARGET_SPREAD,
+        SESSION_PLANNING_START_DATE,
+        SESSION_PLANNING_START_DATE_ENABLED,
+        SESSION_REQUIRED_CONTRIBUTION_CACHE,
+        SESSION_CALCULATED_EQUITY_CACHE,
+        WIDGET_BIRTH_DATE,
+        WIDGET_RETIREMENT_AGE,
+        WIDGET_INTEREST_RATE,
+        WIDGET_INCOME_TYPE,
+        WIDGET_INCOME_MW,
+        WIDGET_INCOME_FIXED,
+        WIDGET_CEILING_MODEL_SELECTOR,
+        WIDGET_BAZIN_YIELD_INPUT,
+        WIDGET_BAZIN_SPREAD_INPUT,
+        WIDGET_PLANNING_START_DATE,
+        WIDGET_PLANNING_START_DATE_ENABLED,
+        WIDGET_INITIAL_EQUITY,
+    }
+    mock_session = {key: "stale" for key in portfolio_keys}
+    mock_session.update({"active_db": "portfolio.db", "session_id": "keep-me"})
+    monkeypatch.setattr(st, "session_state", mock_session)
+
+    SessionManager.reset_portfolio_state()
+
+    assert portfolio_keys.isdisjoint(mock_session)
+    assert mock_session["active_db"] == "portfolio.db"
+    assert mock_session["session_id"] == "keep-me"

@@ -30,6 +30,18 @@ from core.constants import (
     SESSION_PLANNING_START_DATE_ENABLED,
     SESSION_REQUIRED_CONTRIBUTION_CACHE,
     SESSION_RETIREMENT_AGE,
+    WIDGET_BAZIN_SPREAD_INPUT,
+    WIDGET_BAZIN_YIELD_INPUT,
+    WIDGET_BIRTH_DATE,
+    WIDGET_CEILING_MODEL_SELECTOR,
+    WIDGET_INCOME_FIXED,
+    WIDGET_INCOME_MW,
+    WIDGET_INCOME_TYPE,
+    WIDGET_INITIAL_EQUITY,
+    WIDGET_INTEREST_RATE,
+    WIDGET_PLANNING_START_DATE,
+    WIDGET_PLANNING_START_DATE_ENABLED,
+    WIDGET_RETIREMENT_AGE,
 )
 from core.strings import MODEL_CLASSIC
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
@@ -37,6 +49,42 @@ from views.cached_market_data import StreamlitCachedMarketData as MarketData
 
 class SessionManager:
     """Manages the initialization of the application's global session state."""
+
+    @staticmethod
+    def reset_portfolio_state():
+        """Discard session values derived from the active portfolio database."""
+        portfolio_keys = (
+            "db_loaded",
+            SESSION_BIRTH_DATE,
+            SESSION_RETIREMENT_AGE,
+            SESSION_DESIRED_INCOME_MW,
+            SESSION_ANNUAL_INTEREST_RATE,
+            SESSION_MW_VALUE,
+            SESSION_INITIAL_EQUITY,
+            SESSION_DESIRED_INCOME_TYPE,
+            SESSION_DESIRED_INCOME_FIXED,
+            SESSION_CEILING_MODEL_SELECTION,
+            SESSION_BAZIN_TARGET_YIELD,
+            SESSION_BAZIN_TARGET_SPREAD,
+            SESSION_PLANNING_START_DATE,
+            SESSION_PLANNING_START_DATE_ENABLED,
+            SESSION_REQUIRED_CONTRIBUTION_CACHE,
+            SESSION_CALCULATED_EQUITY_CACHE,
+            WIDGET_BIRTH_DATE,
+            WIDGET_RETIREMENT_AGE,
+            WIDGET_INTEREST_RATE,
+            WIDGET_INCOME_TYPE,
+            WIDGET_INCOME_MW,
+            WIDGET_INCOME_FIXED,
+            WIDGET_CEILING_MODEL_SELECTOR,
+            WIDGET_BAZIN_YIELD_INPUT,
+            WIDGET_BAZIN_SPREAD_INPUT,
+            WIDGET_PLANNING_START_DATE,
+            WIDGET_PLANNING_START_DATE_ENABLED,
+            WIDGET_INITIAL_EQUITY,
+        )
+        for key in portfolio_keys:
+            st.session_state.pop(key, None)
 
     @staticmethod
     def initialize():

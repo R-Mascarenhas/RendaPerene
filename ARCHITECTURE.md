@@ -73,7 +73,9 @@ lateral oferece sua importação. A migração valida a origem, copia (sem mover
 `database/`. A operação é idempotente e recusa qualquer sobrescrita quando há conteúdo diferente.
 Bancos principais inicializados automaticamente apenas com os valores padrão podem ser substituídos
 durante a importação; qualquer dado ou configuração do usuário torna o destino não substituível. A
-cópia recuperável relevante permanece em `backups/legacy-import/`.
+cópia recuperável relevante permanece em `backups/legacy-import/`. Ao publicar uma carteira
+importada, a raiz de composição invalida o estado da sessão derivado do banco e reinicia a execução
+para carregar as configurações persistidas antes que a interface permita novas edições.
 Bancos inválidos não ficam disponíveis para seleção. Nomes de arquivos de carteiras e dados
 financeiros não são escritos em logs.
 

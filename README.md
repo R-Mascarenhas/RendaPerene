@@ -48,8 +48,9 @@ uma cópia de recuperação é criada em `backups/legacy-import/` e cada cópia 
 antes de ficar disponível. Repetir a operação é seguro e um arquivo existente com conteúdo
 diferente nunca é sobrescrito. Caso o primeiro carregamento já tenha criado uma carteira principal
 somente com os valores padrão, ela pode ser substituída com segurança; qualquer dado ou configuração
-alterada impede essa substituição. Os bancos da demonstração hospedada continuam isolados por
-sessão em armazenamento temporário.
+alterada impede essa substituição. Após uma importação bem-sucedida, a carteira importada é ativada
+e seus dados de planejamento são recarregados. Os bancos da demonstração hospedada continuam
+isolados por sessão em armazenamento temporário.
 
 O catálogo gravável é atualizado a partir do `assets.csv` incluído em cada nova versão. Metadados e
 tickers do pacote são incorporados sem remover os registros alternativos adicionados localmente para

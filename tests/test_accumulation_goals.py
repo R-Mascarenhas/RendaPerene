@@ -14,10 +14,13 @@ from views.components.goal_progress import GoalProgressBar
 
 
 class StubPortfolioProvider:
-    def __init__(self, positions, ytd_contributions=0.0, year_start_quantities=None):
+    def __init__(
+        self, positions, ytd_contributions=0.0, year_start_quantities=None, transactions=None
+    ):
         self.positions = positions
         self.ytd_contributions = ytd_contributions
         self.quantity_queries = []
+        self.transactions = transactions or {}
         self.year_start_quantities = year_start_quantities or {
             position["ticker"]: position["quantity"] for position in positions
         }
@@ -31,6 +34,15 @@ class StubPortfolioProvider:
     def get_quantity_on_date(self, ticker, date_str, conn=None):
         self.quantity_queries.append((ticker, date_str))
         return self.year_start_quantities.get(ticker, 0)
+
+    def get_raw_transactions_for_chart(self, ticker):
+        return pd.DataFrame(
+            self.transactions.get(
+                ticker,
+                [],
+            ),
+            columns=["date", "transaction_type", "quantity", "unit_price", "fees"],
+        )
 
 
 class StubMarketData:
@@ -240,6 +252,61 @@ def test_portfolio_progress_is_weighted_by_active_asset_allocation():
     assert progress == 90
 
 
+def test_corporate_actions_do_not_count_as_accumulation_progress(mock_db):
+    repository = PlanningDAO()
+    repository.upsert_accumulation_goal(
+        ticker="BBAS3",
+        start_quantity=100,
+        target_quantity=150,
+        target_mode=ShareQuantityGoalService.MODE_QUANTITY,
+        target_percentage=None,
+        allocation_weight=100,
+        average_dividend_5y=2.0,
+    )
+    portfolio = StubPortfolioProvider(
+        [{"ticker": "BBAS3", "quantity": 200}],
+        year_start_quantities={"BBAS3": 100},
+        transactions={
+            "BBAS3": [
+                {
+                    "date": "2026-01-02",
+                    "transaction_type": "BUY",
+                    "quantity": 100,
+                    "unit_price": 0.0,
+                    "fees": 0.0,
+                },
+            ]
+        },
+    )
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=portfolio,
+        market_data_api=StubMarketData,
+        planning_provider=GrowthExamplePlanningProvider(),
+    )
+
+    progress = service.list_goals_with_progress(datetime.date(2026, 8, 28))[0]
+
+    assert progress["current_quantity"] == 200
+    assert progress["progress_percentage"] == 0
+
+
+def test_unavailable_dividend_plan_is_not_activated_on_save(mock_db):
+    repository = PlanningDAO()
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=StubPortfolioProvider([{"ticker": "BBAS3", "quantity": 100}]),
+        market_data_api=StubMarketData,
+        planning_provider=EmptyPlanningProvider(),
+    )
+
+    goals = service.save_portfolio_goal_plan({"BBAS3": 100})
+
+    stored_goal = repository.list_accumulation_goals()[0]
+    assert goals == []
+    assert stored_goal["is_active"] == 0
+
+
 def test_dashboard_renders_one_weighted_bar_with_asset_details(monkeypatch):
     goals = [
         {
@@ -279,8 +346,12 @@ def test_dashboard_renders_one_weighted_bar_with_asset_details(monkeypatch):
 
     assert len(rendered_bars) == 1
     assert rendered_bars[0][0] == 90
-    assert "BBAS3 — 01/01: 100; atual: 125; meta: 150 cotas; 50,0% concluído" in rendered_bars[0][1]
-    assert "TAEE11 — 01/01: 50; atual: 75; meta: 75 cotas; 100,0% concluído" in rendered_bars[0][1]
+    assert (
+        "BBAS3 — 01/01: 100 | atual: 125 | meta: 150 cotas | 50,0% concluído" in rendered_bars[0][1]
+    )
+    assert (
+        "TAEE11 — 01/01: 50 | atual: 75 | meta: 75 cotas | 100,0% concluído" in rendered_bars[0][1]
+    )
 
 
 def test_dashboard_hides_goal_progress_when_portfolio_setting_is_disabled(monkeypatch):

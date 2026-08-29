@@ -5,12 +5,15 @@ from decimal import ROUND_CEILING, Decimal
 import pandas as pd
 
 from core.constants import (
+    DATE,
     GOAL_SHARE_QUANTITY,
     MARKET_AVG_DIV_5Y,
     MARKET_DIVIDEND_AVERAGE_YEARS,
     MARKET_DIVIDEND_HISTORY_STATUS,
     QUANTITY,
     TICKER,
+    TRANSACTION_TYPE,
+    UNIT_PRICE,
 )
 from core.daos.planning_dao import PlanningDAO
 from core.ports import (
@@ -183,6 +186,28 @@ class ShareQuantityGoalService:
             ticker: float(self._portfolio_provider.get_quantity_on_date(ticker, year_start_date))
             for ticker in tickers
         }
+
+    def _get_qualifying_accumulation_quantities(
+        self, tickers: list[str], year_start_date: str
+    ) -> dict[str, float]:
+        """Returns net paid acquisitions since January 1, excluding corporate actions."""
+        quantities = {}
+        for ticker in tickers:
+            transactions = self._portfolio_provider.get_raw_transactions_for_chart(ticker)
+            if transactions.empty:
+                continue
+            net_quantity = 0.0
+            for _, transaction in transactions.iterrows():
+                if str(transaction[DATE]) <= year_start_date:
+                    continue
+                quantity = float(transaction[QUANTITY])
+                transaction_type = transaction[TRANSACTION_TYPE]
+                if transaction_type == "BUY" and float(transaction[UNIT_PRICE]) > 0:
+                    net_quantity += quantity
+                elif transaction_type == "SELL":
+                    net_quantity -= quantity
+            quantities[ticker] = net_quantity
+        return quantities
 
     @hybridmethod
     def list_available_tickers(self) -> list[str]:
@@ -460,7 +485,7 @@ class ShareQuantityGoalService:
                 if math.isfinite(calculated_target)
                 else start_quantity + 1
             )
-            is_active = bool(row[self.PLAN_ACTIVE])
+            is_active = bool(row[self.PLAN_ACTIVE]) and math.isfinite(calculated_target)
             self._goal_repo.upsert_accumulation_goal(
                 ticker=ticker,
                 start_quantity=start_quantity,
@@ -518,6 +543,7 @@ class ShareQuantityGoalService:
             target_percentage=target_percentage,
             allocation_weight=suggestion["allocation_weight"],
             average_dividend_5y=suggestion[MARKET_AVG_DIV_5Y],
+            is_active=target_available,
         )
         stored_goal = next(
             goal
@@ -530,12 +556,21 @@ class ShareQuantityGoalService:
         return result
 
     @staticmethod
-    def _build_progress(goal: dict, current_quantities: dict[str, float]) -> dict:
+    def _build_progress(
+        goal: dict,
+        current_quantities: dict[str, float],
+        progress_quantities: dict[str, float] | None = None,
+    ) -> dict:
         current_quantity = current_quantities.get(goal[TICKER], 0.0)
+        progress_quantity = (
+            progress_quantities.get(goal[TICKER], current_quantity)
+            if progress_quantities is not None
+            else current_quantity
+        )
         result = dict(goal)
         result["current_quantity"] = current_quantity
         result["progress_percentage"] = ShareQuantityGoalService.calculate_progress(
-            goal["start_quantity"], current_quantity, goal["target_quantity"]
+            goal["start_quantity"], progress_quantity, goal["target_quantity"]
         )
         return result
 
@@ -566,6 +601,11 @@ class ShareQuantityGoalService:
         year_start_quantities = self._get_year_start_quantities(
             [goal[TICKER] for goal in goals], today_date
         )
+        reference_date = today_date or datetime.date.today()
+        year_start_date = f"{reference_date.year}-01-01"
+        progress_quantities = self._get_qualifying_accumulation_quantities(
+            [goal[TICKER] for goal in goals], year_start_date
+        )
         results = []
         for stored_goal in goals:
             goal = dict(stored_goal)
@@ -590,7 +630,7 @@ class ShareQuantityGoalService:
                 )
                 results.append(goal)
             else:
-                results.append(self._build_progress(goal, current_quantities))
+                results.append(self._build_progress(goal, current_quantities, progress_quantities))
         return results
 
     @hybridmethod

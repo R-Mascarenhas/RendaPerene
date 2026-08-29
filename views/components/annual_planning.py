@@ -31,15 +31,13 @@ class AnnualPlanningWidget:
                 Formatter.format_currency(goal["reinvestment_goal"]),
                 "Soma dos dividendos recebidos",
             )
-            metric_columns[-1].metric(
-                (
-                    "Meta Total Corrente (Aporte + Reinvestimento)"
-                    if goal["reinvestment_enabled"]
-                    else "Meta Anual de Aportes"
-                ),
-                Formatter.format_currency(goal["total_goal"]),
-                "Meta de Compras na B3",
-            )
+        metric_columns[-1].metric(
+            "Meta Total Corrente (Aporte + Reinvestimento)"
+            if goal["reinvestment_enabled"]
+            else "Meta Anual de Aportes",
+            Formatter.format_currency(goal["total_goal"]),
+            "Meta de Compras na B3",
+        )
 
         st.markdown(
             MSG_YTD_CONTRIBUTIONS.format(

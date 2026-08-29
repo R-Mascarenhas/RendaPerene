@@ -78,8 +78,15 @@ class AccumulationGoalPlanningWidget:
             st.info("Adicione ativos à carteira para criar metas de acumulação.")
             return
 
+        display_rows = plan["rows"].copy()
+        for column in (
+            ShareQuantityGoalService.PLAN_AVERAGE_DIVIDEND,
+            ShareQuantityGoalService.PLAN_ALLOCATED_DIVIDENDS,
+        ):
+            display_rows[column] = display_rows[column].map(Formatter.format_currency)
+
         edited_rows = st.data_editor(
-            plan["rows"],
+            display_rows,
             column_order=[
                 ShareQuantityGoalService.PLAN_TICKER,
                 ShareQuantityGoalService.PLAN_WEIGHT,
@@ -101,11 +108,11 @@ class AccumulationGoalPlanningWidget:
                     format="%.2f",
                     help="Use 0% para não aumentar a posição neste ativo.",
                 ),
-                ShareQuantityGoalService.PLAN_AVERAGE_DIVIDEND: st.column_config.NumberColumn(
-                    "Média anual de proventos", format="R$ %.2f"
+                ShareQuantityGoalService.PLAN_AVERAGE_DIVIDEND: st.column_config.TextColumn(
+                    "Média anual de proventos"
                 ),
-                ShareQuantityGoalService.PLAN_ALLOCATED_DIVIDENDS: st.column_config.NumberColumn(
-                    "Meta de proventos do ativo", format="R$ %.2f"
+                ShareQuantityGoalService.PLAN_ALLOCATED_DIVIDENDS: st.column_config.TextColumn(
+                    "Meta de proventos do ativo"
                 ),
                 ShareQuantityGoalService.PLAN_YEAR_START_QUANTITY: st.column_config.NumberColumn(
                     "Quantidade em 01/01", format="%.0f"

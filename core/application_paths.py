@@ -1,4 +1,6 @@
+import csv
 import hashlib
+import io
 import os
 import shutil
 import sqlite3
@@ -102,8 +104,11 @@ class ApplicationPaths:
             directory.mkdir(parents=True, exist_ok=True)
 
         bundled_catalog = self.bundled_resource("assets.csv")
-        if not self.catalog_file.exists() and bundled_catalog.is_file():
-            self._safe_copy(bundled_catalog, self.catalog_file, validate_sqlite=False)
+        if bundled_catalog.is_file():
+            if self.catalog_file.exists():
+                self._merge_catalog(bundled_catalog, self.catalog_file)
+            else:
+                self._safe_copy(bundled_catalog, self.catalog_file, validate_sqlite=False)
 
         if default_database_source is not None:
             destination = self.portfolio_database(DEFAULT_PORTFOLIO)
@@ -121,6 +126,17 @@ class ApplicationPaths:
         ):
             raise ValueError("Portfolio databases must use a 'portfolio*.db' filename.")
         return self.database_dir / filename
+
+    @staticmethod
+    def choose_portfolio(preferred: str, available: list[str]) -> str:
+        """Choose the preferred, principal, or first available valid portfolio."""
+        if not available:
+            raise ValueError("At least one valid portfolio must be available.")
+        if preferred in available:
+            return preferred
+        if DEFAULT_PORTFOLIO in available:
+            return DEFAULT_PORTFOLIO
+        return available[0]
 
     def inspect_portfolios(self) -> PortfolioInventory:
         """Return valid and invalid portfolio databases from the writable data directory."""
@@ -273,6 +289,44 @@ class ApplicationPaths:
             return checksum.hexdigest()
 
         return digest(first) == digest(second)
+
+    @staticmethod
+    def _merge_catalog(bundled_catalog: Path, writable_catalog: Path) -> None:
+        """Apply bundled metadata updates while retaining user-only fallback rows."""
+
+        def read_catalog(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+            with path.open(encoding="utf-8-sig", newline="") as catalog_file:
+                reader = csv.DictReader(catalog_file)
+                fieldnames = list(reader.fieldnames or [])
+                if "CÓDIGO" not in fieldnames:
+                    raise ValueError("The assets catalog must contain a CÓDIGO column.")
+                return fieldnames, list(reader)
+
+        bundled_fields, bundled_rows = read_catalog(bundled_catalog)
+        writable_fields, writable_rows = read_catalog(writable_catalog)
+        fieldnames = bundled_fields + [
+            field for field in writable_fields if field not in bundled_fields
+        ]
+        bundled_codes = {row["CÓDIGO"] for row in bundled_rows}
+        user_only_rows = [
+            row for row in writable_rows if row.get("CÓDIGO") and row["CÓDIGO"] not in bundled_codes
+        ]
+
+        text_buffer = io.StringIO(newline="")
+        writer = csv.DictWriter(text_buffer, fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows([*bundled_rows, *user_only_rows])
+        merged_contents = text_buffer.getvalue().encode("utf-8-sig")
+        if writable_catalog.read_bytes() == merged_contents:
+            return
+
+        temporary = writable_catalog.with_name(f".{writable_catalog.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_bytes(merged_contents)
+            os.replace(temporary, writable_catalog)
+        finally:
+            with suppress(FileNotFoundError):
+                temporary.unlink()
 
     @classmethod
     def _is_pristine_database(cls, path: Path) -> bool:

@@ -18,6 +18,11 @@ class MarketData:
         """Configure the writable catalog selected at the application composition root."""
         cls._catalog_path = catalog_path
 
+    @classmethod
+    def resolve_catalog_path(cls):
+        """Resolve the catalog path for the context performing the current operation."""
+        return cls._catalog_path() if callable(cls._catalog_path) else cls._catalog_path
+
     @staticmethod
     def _listing_year(info: dict) -> int | None:
         """Returns Yahoo's first trading year when that metadata is available."""
@@ -335,7 +340,7 @@ class MarketData:
         """Loads the B3 assets static catalog from assets.csv into memory RAM (Vastly faster!)."""
         from core.daos.assets_catalog_dao import AssetsCatalogDAO
 
-        return AssetsCatalogDAO(MarketData._catalog_path).load_catalog()
+        return AssetsCatalogDAO(MarketData.resolve_catalog_path()).load_catalog()
 
     @staticmethod
     def get_current_ipca_l12m() -> float:

@@ -62,9 +62,10 @@ as views não calculam caminhos do sistema operacional.
 As raízes graváveis padrão são `%LOCALAPPDATA%\RendaPerene` no Windows e
 `$XDG_DATA_HOME/RendaPerene` no Linux, com fallback para `~/.local/share/RendaPerene`. O executável
 e seus recursos podem ser substituídos sem mover as carteiras. Sessões da demonstração hospedada
-usam uma raiz temporária própria por sessão. O caminho do banco demo é resolvido a cada conexão
-SQLite a partir do contexto atual do Streamlit, sem armazenar o identificador de uma sessão no
-singleton compartilhado de persistência.
+usam uma raiz temporária própria por sessão. Os caminhos do banco e do catálogo demo são resolvidos
+a cada operação a partir do contexto atual do Streamlit, sem armazenar o identificador de uma
+sessão nos singletons compartilhados. O caminho resolvido do catálogo também integra a chave de
+cache, impedindo que leituras sejam reutilizadas entre sessões.
 
 Quando existem bancos `portfolio*.db` na antiga pasta `database/` ao lado da aplicação, a barra
 lateral oferece sua importação. A migração valida a origem, copia (sem mover) um backup para
@@ -79,7 +80,9 @@ financeiros não são escritos em logs.
 O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO
 registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa; o
 catálogo estático incluído no pacote é copiado para o arquivo gravável `catalog/assets.csv` na
-primeira execução.
+primeira execução. Nas versões seguintes, o baseline incluído no novo pacote atualiza metadados e
+adiciona tickers, enquanto registros alternativos existentes somente no catálogo do usuário são
+preservados pela mesclagem baseada em `CÓDIGO`.
 
 | Armazenamento | Finalidade |
 | --- | --- |

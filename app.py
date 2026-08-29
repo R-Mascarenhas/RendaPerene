@@ -67,9 +67,10 @@ if not is_cloud:
     # 2. Sidebar Selector
     st.sidebar.markdown("### 🗃️ Gerenciar Carteiras")
 
-    active_db = st.session_state.get("active_db", "portfolio.db")
-    if active_db not in db_files:
-        active_db = "portfolio.db"
+    requested_db = st.session_state.get("active_db", "portfolio.db")
+    active_db = app_paths.choose_portfolio(requested_db, db_files)
+    if active_db != requested_db:
+        st.session_state["active_db"] = active_db
 
     # User-friendly labels mapping for files
     labels = {
@@ -131,7 +132,7 @@ if not is_cloud:
             st.session_state.pop(key, None)
         st.rerun()
 
-    current_active_db = st.session_state.get("active_db", "portfolio.db")
+    current_active_db = active_db
 else:
     current_active_db = "portfolio.db"
 
@@ -143,9 +144,17 @@ if is_cloud:
         return session_paths.portfolio_database("portfolio.db")
 
     db.personal_db = resolve_demo_database
+
+    def resolve_demo_catalog():
+        """Resolve the catalog from the Streamlit context of the current operation."""
+        session_paths = runtime_paths.for_demo_session(st.session_state["session_id"])
+        return session_paths.catalog_file
+
+    catalog_path = resolve_demo_catalog
 else:
     db.personal_db = app_paths.portfolio_database(current_active_db)
-MarketData.configure_catalog(app_paths.catalog_file)
+    catalog_path = app_paths.catalog_file
+MarketData.configure_catalog(catalog_path)
 
 db.init_personal_db()
 
@@ -160,7 +169,7 @@ from services.share_quantity_goal_service import ShareQuantityGoalService
 from views.cached_market_data import StreamlitCachedMarketData
 
 AssetService.set_adapters(
-    catalog_repo=AssetsCatalogDAO(app_paths.catalog_file),
+    catalog_repo=AssetsCatalogDAO(catalog_path),
     market_data_api=StreamlitCachedMarketData,
     excel_parser=B3ExcelParserAdapter(),
     planning_provider=SimulationService.get_default(),

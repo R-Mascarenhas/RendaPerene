@@ -51,6 +51,10 @@ somente com os valores padrão, ela pode ser substituída com segurança; qualqu
 alterada impede essa substituição. Os bancos da demonstração hospedada continuam isolados por
 sessão em armazenamento temporário.
 
+O catálogo gravável é atualizado a partir do `assets.csv` incluído em cada nova versão. Metadados e
+tickers do pacote são incorporados sem remover os registros alternativos adicionados localmente para
+ativos que ainda não fazem parte do catálogo oficial da aplicação.
+
 O acesso à rede é necessário para obter dados atualizados:
 
 - O Yahoo Finance (`yfinance`) fornece cotações da B3, indicadores de mercado, histórico de preços e dados de dividendos. Se uma cotação em tempo real não estiver disponível, a análise do ativo utiliza o último fechamento diário válido.

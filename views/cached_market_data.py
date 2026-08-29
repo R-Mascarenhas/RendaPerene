@@ -60,9 +60,18 @@ class StreamlitCachedMarketData:
 
     @staticmethod
     @st.cache_data
+    def _load_assets_catalog(catalog_path: str) -> pd.DataFrame:
+        """Cache one session-resolved B3 catalog without sharing it across demo sessions."""
+        from core.daos.assets_catalog_dao import AssetsCatalogDAO
+
+        return AssetsCatalogDAO(catalog_path).load_catalog()
+
+    @staticmethod
     def load_assets_catalog() -> pd.DataFrame:
-        """Loads the B3 assets static catalog from assets.csv into memory RAM (Vastly faster!)."""
-        return MarketData.load_assets_catalog()
+        """Load the B3 catalog using its current context-aware path as the cache key."""
+        return StreamlitCachedMarketData._load_assets_catalog(
+            str(MarketData.resolve_catalog_path())
+        )
 
     @staticmethod
     @st.cache_data(ttl=2592000)

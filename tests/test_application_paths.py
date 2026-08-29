@@ -3,7 +3,9 @@ from contextvars import ContextVar
 from pathlib import Path
 
 from core.application_paths import ApplicationPaths
+from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.database import DatabaseManager
+from core.utils.market_data import MarketData
 
 
 def create_database(path: Path, value: str = "original") -> None:
@@ -15,6 +17,18 @@ def create_database(path: Path, value: str = "original") -> None:
         connection.commit()
     finally:
         connection.close()
+
+
+def write_catalog(path: Path, rows: list[tuple[str, str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = (
+        "CÓDIGO,NOME,IMAGEM,CNPJ,SETOR ECONÔMICO,SUBSETOR ,"
+        "SEGMENTO / ADM / PAÍS,TIPO,SEGMENTO\n"
+    )
+    contents = header + "".join(
+        f"{ticker},{name},,,,Outros,,Ação,\n" for ticker, name in rows
+    )
+    path.write_text(contents, encoding="utf-8-sig")
 
 
 def test_discovers_linux_xdg_data_directory(monkeypatch, tmp_path):
@@ -204,3 +218,74 @@ def test_database_manager_resolves_the_current_session_path_for_each_connection(
         )
     finally:
         first_connection.close()
+
+
+def test_catalog_repository_resolves_the_current_demo_session_for_each_operation(tmp_path):
+    from views.cached_market_data import StreamlitCachedMarketData
+
+    session_catalog = ContextVar("session_catalog")
+    repository = AssetsCatalogDAO(lambda: session_catalog.get())
+    first_catalog = tmp_path / "first" / "assets.csv"
+    second_catalog = tmp_path / "second" / "assets.csv"
+    write_catalog(first_catalog, [("BASE3", "Base")])
+    write_catalog(second_catalog, [("BASE3", "Base")])
+    original_catalog_path = MarketData._catalog_path
+    MarketData.configure_catalog(lambda: session_catalog.get())
+
+    try:
+        session_catalog.set(first_catalog)
+        repository.add_fallback_asset("FIRST3")
+        assert MarketData.resolve_catalog_path() == first_catalog
+        session_catalog.set(second_catalog)
+        repository.add_fallback_asset("SECOND3")
+        assert MarketData.resolve_catalog_path() == second_catalog
+
+        session_catalog.set(first_catalog)
+        first_tickers = set(repository.load_catalog().index)
+        first_cached_tickers = set(StreamlitCachedMarketData.load_assets_catalog().index)
+        session_catalog.set(second_catalog)
+        second_tickers = set(repository.load_catalog().index)
+        second_cached_tickers = set(StreamlitCachedMarketData.load_assets_catalog().index)
+    finally:
+        MarketData.configure_catalog(original_catalog_path)
+
+    assert "FIRST3" in first_tickers
+    assert "SECOND3" not in first_tickers
+    assert "SECOND3" in second_tickers
+    assert "FIRST3" not in second_tickers
+    assert first_cached_tickers == first_tickers
+    assert second_cached_tickers == second_tickers
+
+
+def test_prepare_merges_new_catalog_baseline_while_preserving_user_rows(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    bundled_catalog = resource_root / "assets.csv"
+    write_catalog(bundled_catalog, [("BASE3", "Old metadata")])
+    paths.prepare()
+    catalog_repository = AssetsCatalogDAO(paths.catalog_file)
+    catalog_repository.add_fallback_asset("USER3")
+
+    write_catalog(
+        bundled_catalog,
+        [("BASE3", "Updated metadata"), ("NEW3", "New bundled asset")],
+    )
+    paths.prepare()
+
+    catalog = catalog_repository.load_catalog()
+    assert catalog.loc["BASE3", "NOME"] == "Updated metadata"
+    assert catalog.loc["NEW3", "NOME"] == "New bundled asset"
+    assert "USER3" in catalog.index
+
+
+def test_choose_portfolio_falls_back_to_a_valid_alternative_when_default_is_invalid(tmp_path):
+    paths = ApplicationPaths(tmp_path, tmp_path / "user-data", tmp_path)
+    paths.prepare()
+    paths.portfolio_database("portfolio.db").write_text("invalid", encoding="utf-8")
+    alternative = paths.portfolio_database("portfolio_family.db")
+    create_database(alternative)
+    inventory = paths.inspect_portfolios()
+
+    selected = paths.choose_portfolio("portfolio.db", [path.name for path in inventory.valid])
+
+    assert selected == "portfolio_family.db"

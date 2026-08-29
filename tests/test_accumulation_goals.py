@@ -1,14 +1,15 @@
 import contextlib
 import datetime
+import sqlite3
+
 import pandas as pd
 import pytest
-import sqlite3
 
 from core.daos.planning_dao import PlanningDAO
 from core.database import DatabaseManager
 from services.goals_service import GoalService
-from services.share_quantity_goal_service import ShareQuantityGoalService
 from services.planning_service import SimulationService
+from services.share_quantity_goal_service import ShareQuantityGoalService
 from views.components.accumulation_goals import AccumulationGoalProgressWidget
 from views.components.goal_progress import GoalProgressBar
 
@@ -391,6 +392,100 @@ def test_market_data_failure_preserves_an_existing_goal(mock_db):
     assert "meta salva preservada" in row[ShareQuantityGoalService.PLAN_HISTORY_NOTE]
     assert stored_goal["is_active"] == 1
     assert stored_goal["average_dividend_5y"] == 2.0
+
+
+def test_dashboard_hides_dividend_goal_when_current_projection_is_unavailable(mock_db):
+    repository = PlanningDAO()
+    repository.upsert_accumulation_goal(
+        ticker="BBAS3",
+        start_quantity=100,
+        target_quantity=150,
+        target_mode=ShareQuantityGoalService.MODE_DIVIDEND_INCOME,
+        target_percentage=None,
+        allocation_weight=100,
+        average_dividend_5y=2.0,
+    )
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=StubPortfolioProvider([{"ticker": "BBAS3", "quantity": 100}]),
+        market_data_api=StubMarketData,
+        planning_provider=EmptyPlanningProvider(),
+    )
+
+    assert service.list_goals_with_progress(datetime.date(2026, 8, 28)) == []
+
+
+def test_percentage_goal_recomputes_target_from_new_year_baseline(mock_db):
+    repository = PlanningDAO()
+    repository.upsert_accumulation_goal(
+        ticker="BBAS3",
+        start_quantity=100,
+        target_quantity=110,
+        target_mode=ShareQuantityGoalService.MODE_PERCENTAGE,
+        target_percentage=10,
+        allocation_weight=100,
+        average_dividend_5y=2.0,
+    )
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=StubPortfolioProvider(
+            [{"ticker": "BBAS3", "quantity": 110}],
+            year_start_quantities={"BBAS3": 105},
+        ),
+        market_data_api=StubMarketData,
+        planning_provider=GrowthExamplePlanningProvider(),
+    )
+
+    progress = service.list_goals_with_progress(datetime.date(2026, 8, 28))[0]
+
+    assert progress["start_quantity"] == 105
+    assert progress["target_quantity"] == 116
+    assert progress["progress_percentage"] == pytest.approx(45.45454545)
+
+
+def test_same_day_corporate_action_is_processed_before_paid_purchase(mock_db):
+    repository = PlanningDAO()
+    repository.upsert_accumulation_goal(
+        ticker="BBAS3",
+        start_quantity=100,
+        target_quantity=150,
+        target_mode=ShareQuantityGoalService.MODE_QUANTITY,
+        target_percentage=None,
+        allocation_weight=100,
+        average_dividend_5y=2.0,
+    )
+    portfolio = StubPortfolioProvider(
+        [{"ticker": "BBAS3", "quantity": 225}],
+        year_start_quantities={"BBAS3": 100},
+        transactions={
+            "BBAS3": [
+                {
+                    "date": "2026-01-02",
+                    "transaction_type": "BUY",
+                    "quantity": 25,
+                    "unit_price": 10.0,
+                    "fees": 0.0,
+                },
+                {
+                    "date": "2026-01-02",
+                    "transaction_type": "BUY",
+                    "quantity": 100,
+                    "unit_price": 0.0,
+                    "fees": 0.0,
+                },
+            ]
+        },
+    )
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=portfolio,
+        market_data_api=StubMarketData,
+        planning_provider=GrowthExamplePlanningProvider(),
+    )
+
+    progress = service.list_goals_with_progress(datetime.date(2026, 8, 28))[0]
+
+    assert progress["progress_percentage"] == 25
 
 
 def test_dashboard_renders_one_weighted_bar_with_asset_details(monkeypatch):

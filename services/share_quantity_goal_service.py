@@ -195,6 +195,18 @@ class ShareQuantityGoalService:
         if transactions.empty:
             return None
 
+        transactions = transactions.copy()
+        transactions["_action_priority"] = transactions.apply(
+            lambda row: (
+                0
+                if row[TRANSACTION_TYPE] == "GROUP"
+                or (row[TRANSACTION_TYPE] == "BUY" and float(row[UNIT_PRICE]) <= 0)
+                else 1
+            ),
+            axis=1,
+        )
+        transactions = transactions.sort_values([DATE, "_action_priority"], kind="stable")
+
         baseline = float(goal["start_quantity"])
         target = float(goal["target_quantity"])
         quantity_before_action = baseline
@@ -643,6 +655,11 @@ class ShareQuantityGoalService:
         year_start_date = f"{reference_date.year}-01-01"
         results = []
         for stored_goal in goals:
+            if (
+                stored_goal["target_mode"] == self.MODE_DIVIDEND_INCOME
+                and planned_annual_dividends <= 0
+            ):
+                continue
             goal = dict(stored_goal)
             goal["start_quantity"] = year_start_quantities[goal[TICKER]]
             if (
@@ -655,6 +672,15 @@ class ShareQuantityGoalService:
                         planned_annual_dividends,
                         goal["allocation_weight"],
                         goal["average_dividend_5y"],
+                    )
+                )
+            elif (
+                goal["target_mode"] == self.MODE_PERCENTAGE
+                and goal.get("target_percentage") is not None
+            ):
+                goal["target_quantity"] = float(
+                    self.calculate_percentage_target(
+                        goal["start_quantity"], float(goal["target_percentage"])
                     )
                 )
             if goal["target_quantity"] <= goal["start_quantity"]:

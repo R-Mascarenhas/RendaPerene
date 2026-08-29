@@ -687,6 +687,13 @@ class ShareQuantityGoalService:
                         goal["start_quantity"], float(goal["target_percentage"])
                     )
                 )
+            corporate_action_result = self._get_corporate_action_adjusted_progress(
+                goal, year_start_date
+            )
+            if corporate_action_result is not None:
+                adjusted_baseline, adjusted_target, _ = corporate_action_result
+                goal["start_quantity"] = adjusted_baseline
+                goal["target_quantity"] = adjusted_target
             if goal["target_quantity"] <= goal["start_quantity"]:
                 current_quantity = current_quantities.get(goal[TICKER], 0.0)
                 goal["current_quantity"] = current_quantity
@@ -694,16 +701,8 @@ class ShareQuantityGoalService:
                     100.0 if current_quantity >= goal["target_quantity"] else 0.0
                 )
                 results.append(goal)
-            elif (
-                corporate_action_result := self._get_corporate_action_adjusted_progress(
-                    goal, year_start_date
-                )
-            ) is not None:
-                adjusted_baseline, adjusted_target, corporate_action_progress = (
-                    corporate_action_result
-                )
-                goal["start_quantity"] = adjusted_baseline
-                goal["target_quantity"] = adjusted_target
+            elif corporate_action_result is not None:
+                _, _, corporate_action_progress = corporate_action_result
                 goal["current_quantity"] = current_quantities.get(goal[TICKER], 0.0)
                 goal["progress_percentage"] = corporate_action_progress
                 results.append(goal)

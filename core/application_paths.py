@@ -2,6 +2,7 @@ import csv
 import hashlib
 import io
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -104,13 +105,14 @@ class ApplicationPaths:
             directory.mkdir(parents=True, exist_ok=True)
 
         bundled_catalog = self.bundled_resource("assets.csv")
-        legacy_catalog = self.legacy_root / "assets.csv"
         current_catalog_paths = {bundled_catalog.resolve(), self.catalog_file.resolve()}
-        if legacy_catalog.is_file() and legacy_catalog.resolve() not in current_catalog_paths:
-            if self.catalog_file.exists():
-                self._merge_catalog(legacy_catalog, self.catalog_file)
-            else:
-                self._safe_copy(legacy_catalog, self.catalog_file, validate_sqlite=False)
+        for legacy_root in reversed(self._legacy_roots()):
+            legacy_catalog = legacy_root / "assets.csv"
+            if legacy_catalog.is_file() and legacy_catalog.resolve() not in current_catalog_paths:
+                if self.catalog_file.exists():
+                    self._merge_catalog(legacy_catalog, self.catalog_file)
+                else:
+                    self._safe_copy(legacy_catalog, self.catalog_file, validate_sqlite=False)
 
         if bundled_catalog.is_file():
             if self.catalog_file.exists():
@@ -154,15 +156,43 @@ class ApplicationPaths:
         return PortfolioInventory(valid=valid, invalid=invalid)
 
     def legacy_databases(self) -> tuple[Path, ...]:
-        """Discover legacy databases stored beside a source tree or packaged executable."""
-        legacy_database_dir = self.legacy_root / "database"
-        if legacy_database_dir.resolve() == self.database_dir.resolve():
-            return ()
-        return tuple(
-            path
-            for path in sorted(legacy_database_dir.glob("portfolio*.db"))
-            if "demo" not in path.name
-        )
+        """Discover legacy databases beside this executable or in an earlier release."""
+        databases_by_name: dict[str, Path] = {}
+        for legacy_root in self._legacy_roots():
+            legacy_database_dir = legacy_root / "database"
+            if legacy_database_dir.resolve() == self.database_dir.resolve():
+                continue
+            for path in sorted(legacy_database_dir.glob("portfolio*.db")):
+                if "demo" not in path.name:
+                    databases_by_name.setdefault(path.name, path)
+        return tuple(databases_by_name[name] for name in sorted(databases_by_name))
+
+    def _legacy_roots(self) -> tuple[Path, ...]:
+        """Return the current install and versioned sibling installs, newest first."""
+        current_root = self.legacy_root.resolve()
+        release_prefix = f"{APP_NAME}-v".casefold()
+        if not current_root.name.casefold().startswith(release_prefix):
+            return (current_root,)
+
+        try:
+            siblings = [
+                path.resolve()
+                for path in current_root.parent.iterdir()
+                if path.is_dir()
+                and path.resolve() != current_root
+                and path.name.casefold().startswith(release_prefix)
+                and self._release_version(path)
+            ]
+        except OSError:
+            return (current_root,)
+
+        siblings.sort(key=self._release_version, reverse=True)
+        return (current_root, *siblings)
+
+    @staticmethod
+    def _release_version(path: Path) -> tuple[int, ...]:
+        """Extract numeric version components from a packaged release directory."""
+        return tuple(int(component) for component in re.findall(r"\d+", path.name))
 
     def migration_candidates(self) -> tuple[Path, ...]:
         """Return legacy databases that can be imported without replacing user data."""

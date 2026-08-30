@@ -1,4 +1,5 @@
 import sqlite3
+import sys
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -58,6 +59,41 @@ def test_discovers_windows_local_app_data_directory(monkeypatch, tmp_path):
 
     assert paths.data_root == local_app_data / "RendaPerene"
     assert paths.database_dir == local_app_data / "RendaPerene" / "database"
+
+
+def test_frozen_windows_discovers_portfolios_in_previous_release_directory(monkeypatch, tmp_path):
+    releases_root = tmp_path / "releases"
+    previous_release = releases_root / "RendaPerene-v2.0.0"
+    current_release = releases_root / "RendaPerene-v2.1.0"
+    legacy_database = previous_release / "database" / "portfolio.db"
+    create_database(legacy_database, "previous-release")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(current_release / "RendaPerene-v2.1.0.exe"))
+    monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+    monkeypatch.setattr(
+        "platformdirs.windows.get_win_folder",
+        lambda _name: str(tmp_path / "AppData" / "Local"),
+    )
+
+    paths = ApplicationPaths.discover(system="win32")
+
+    assert legacy_database in paths.legacy_databases()
+    assert legacy_database in paths.migration_candidates()
+
+
+def test_legacy_discovery_prefers_newest_release_for_duplicate_portfolio_names(tmp_path):
+    releases_root = tmp_path / "releases"
+    older_database = releases_root / "RendaPerene-v2.9.0" / "database" / "portfolio.db"
+    newer_database = releases_root / "RendaPerene-v2.10.0" / "database" / "portfolio.db"
+    create_database(older_database, "older")
+    create_database(newer_database, "newer")
+    paths = ApplicationPaths(
+        tmp_path / "bundle",
+        tmp_path / "user-data",
+        releases_root / "RendaPerene-v3.0.0",
+    )
+
+    assert paths.legacy_databases() == (newer_database,)
 
 
 def test_successful_legacy_migration_is_copy_only_backed_up_and_idempotent(tmp_path):
@@ -273,10 +309,12 @@ def test_prepare_merges_new_catalog_baseline_while_preserving_user_rows(tmp_path
 
 def test_prepare_preserves_legacy_catalog_rows_before_applying_bundled_baseline(tmp_path):
     resource_root = tmp_path / "bundle"
-    legacy_root = tmp_path / "legacy-install"
-    paths = ApplicationPaths(resource_root, tmp_path / "user-data", legacy_root)
+    releases_root = tmp_path / "releases"
+    previous_release = releases_root / "RendaPerene-v2.0.0"
+    current_release = releases_root / "RendaPerene-v2.1.0"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", current_release)
     write_catalog(
-        legacy_root / "assets.csv",
+        previous_release / "assets.csv",
         [("BASE3", "Legacy metadata"), ("LEGACY3", "Legacy fallback")],
     )
     write_catalog(

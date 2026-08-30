@@ -67,13 +67,15 @@ a cada operação a partir do contexto atual do Streamlit, sem armazenar o ident
 sessão nos singletons compartilhados. O caminho resolvido do catálogo também integra a chave de
 cache, impedindo que leituras sejam reutilizadas entre sessões.
 
-Ao preparar o armazenamento gravável, `ApplicationPaths` incorpora primeiro o antigo `assets.csv`
-ao lado do executável e depois aplica o catálogo incluído na versão atual. Assim, a baseline mais
-nova prevalece para tickers oficiais, enquanto tickers alternativos existentes apenas no catálogo
-legado são preservados.
+Ao preparar o armazenamento gravável, `ApplicationPaths` incorpora primeiro os antigos `assets.csv`
+ao lado do executável e nas pastas irmãs `RendaPerene-v*`, em ordem de versão, e depois aplica o
+catálogo incluído na versão atual. Assim, a baseline mais nova prevalece para tickers oficiais,
+enquanto tickers alternativos existentes apenas nos catálogos legados são preservados.
 
-Quando existem bancos `portfolio*.db` na antiga pasta `database/` ao lado da aplicação, a barra
-lateral oferece sua importação. A migração valida a origem, copia (sem mover) um backup para
+Quando existem bancos `portfolio*.db` na antiga pasta `database/` ao lado da aplicação ou em pastas
+irmãs de releases anteriores chamadas `RendaPerene-v*`, a barra lateral oferece sua importação. Se
+mais de uma versão contém o mesmo nome de carteira, a versão mais recente prevalece. A migração
+valida a origem, copia (sem mover) um backup para
 `backups/legacy-import/`, valida novamente a cópia temporária e somente então publica o banco em
 `database/`. A operação é idempotente e recusa qualquer sobrescrita quando há conteúdo diferente.
 Bancos principais inicializados automaticamente apenas com os valores padrão podem ser substituídos

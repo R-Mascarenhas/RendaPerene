@@ -43,19 +43,21 @@ A aplicação não utiliza banco de dados em nuvem, contas de usuário ou teleme
 scraping do portal da B3.
 
 Na primeira execução com o novo layout, a barra lateral oferece a importação de bancos
-`portfolio*.db` encontrados na antiga pasta `database/` ao lado da aplicação. A origem é mantida,
-uma cópia de recuperação é criada em `backups/legacy-import/` e cada cópia é validada como SQLite
-antes de ficar disponível. Repetir a operação é seguro e um arquivo existente com conteúdo
+`portfolio*.db` encontrados na antiga pasta `database/`, tanto ao lado da aplicação quanto em
+pastas irmãs de releases anteriores chamadas `RendaPerene-v*`. Quando o mesmo nome existe em mais
+de uma versão, a mais recente é oferecida. A origem é mantida, uma cópia de recuperação é criada em
+`backups/legacy-import/` e cada cópia é validada como SQLite antes de ficar disponível. Repetir a
+operação é seguro e um arquivo existente com conteúdo
 diferente nunca é sobrescrito. Caso o primeiro carregamento já tenha criado uma carteira principal
 somente com os valores padrão, ela pode ser substituída com segurança; qualquer dado ou configuração
 alterada impede essa substituição. Após uma importação bem-sucedida, a carteira importada é ativada
 e seus dados de planejamento são recarregados. Os bancos da demonstração hospedada continuam
 isolados por sessão em armazenamento temporário.
 
-Na primeira migração, o catálogo gravável também incorpora os registros alternativos do
-`assets.csv` antigo ao lado da aplicação. Depois, ele é atualizado a partir do catálogo incluído em
-cada nova versão: metadados e tickers do pacote são incorporados sem remover registros locais de
-ativos que ainda não fazem parte do catálogo oficial.
+Na primeira migração, o catálogo gravável também incorpora os registros alternativos dos
+`assets.csv` encontrados na instalação atual e nas pastas de releases anteriores. Depois, ele é
+atualizado a partir do catálogo incluído em cada nova versão: metadados e tickers do pacote são
+incorporados sem remover registros locais de ativos que ainda não fazem parte do catálogo oficial.
 
 O acesso à rede é necessário para obter dados atualizados:
 

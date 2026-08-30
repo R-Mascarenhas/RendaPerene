@@ -145,6 +145,8 @@ WIDGET_BAZIN_SPREAD_INPUT = "bazin_target_spread_input"
 WIDGET_PLANNING_START_DATE = "planning_start_date_input"
 WIDGET_PLANNING_START_DATE_ENABLED = "planning_start_date_enabled_input"
 WIDGET_INITIAL_EQUITY = "initial_equity_input_widget"
+WIDGET_REINVESTMENT_GOAL_PREFIX = "enable_dividend_reinvestment_goal_"
+WIDGET_SHARE_QUANTITY_GOAL_PREFIX = "enable_share_quantity_goal_"
 
 WEIGHT_PCT = "weight_pct"
 CEILING_PRICE_GRID = "ceiling_price_grid"

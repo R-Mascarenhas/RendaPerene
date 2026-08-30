@@ -96,6 +96,22 @@ def test_legacy_discovery_prefers_newest_release_for_duplicate_portfolio_names(t
     assert paths.legacy_databases() == (newer_database,)
 
 
+def test_legacy_discovery_uses_older_valid_duplicate_when_newest_is_invalid(tmp_path):
+    releases_root = tmp_path / "releases"
+    older_database = releases_root / "RendaPerene-v2.9.0" / "database" / "portfolio.db"
+    newer_database = releases_root / "RendaPerene-v2.10.0" / "database" / "portfolio.db"
+    create_database(older_database, "valid")
+    newer_database.parent.mkdir(parents=True)
+    newer_database.write_text("invalid", encoding="utf-8")
+    paths = ApplicationPaths(
+        tmp_path / "bundle",
+        tmp_path / "user-data",
+        releases_root / "RendaPerene-v3.0.0",
+    )
+
+    assert paths.legacy_databases() == (older_database,)
+
+
 def test_successful_legacy_migration_is_copy_only_backed_up_and_idempotent(tmp_path):
     resource_root = tmp_path / "application"
     data_root = tmp_path / "user-data"
@@ -337,6 +353,21 @@ def test_choose_portfolio_falls_back_to_a_valid_alternative_when_default_is_inva
     create_database(alternative)
     inventory = paths.inspect_portfolios()
 
-    selected = paths.choose_portfolio("portfolio.db", [path.name for path in inventory.valid])
+    options = paths.portfolio_options(inventory)
+    selected = paths.choose_portfolio("portfolio.db", list(options))
 
+    assert options == ("portfolio_family.db",)
     assert selected == "portfolio_family.db"
+
+
+def test_portfolio_options_offer_recovery_when_only_principal_is_invalid(tmp_path):
+    paths = ApplicationPaths(tmp_path, tmp_path / "user-data", tmp_path)
+    paths.prepare()
+    invalid_principal = paths.portfolio_database("portfolio.db")
+    invalid_principal.write_text("invalid", encoding="utf-8")
+    inventory = paths.inspect_portfolios()
+
+    options = paths.portfolio_options(inventory)
+
+    assert options == ("portfolio_recovery.db",)
+    assert invalid_principal.read_text(encoding="utf-8") == "invalid"

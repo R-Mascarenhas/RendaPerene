@@ -74,9 +74,10 @@ enquanto tickers alternativos existentes apenas nos catálogos legados são pres
 
 Quando existem bancos `portfolio*.db` na antiga pasta `database/` ao lado da aplicação ou em pastas
 irmãs de releases anteriores chamadas `RendaPerene-v*`, a barra lateral oferece sua importação. Se
-mais de uma versão contém o mesmo nome de carteira, a versão mais recente prevalece. A migração
-valida a origem, copia (sem mover) um backup para
-`backups/legacy-import/`, valida novamente a cópia temporária e somente então publica o banco em
+mais de uma versão contém o mesmo nome de carteira, a versão válida mais recente prevalece; uma
+cópia inválida mais nova não oculta uma cópia válida anterior. A migração valida a origem, copia
+(sem mover) um backup para `backups/legacy-import/`, valida novamente a cópia temporária e somente
+então publica o banco em
 `database/`. A operação é idempotente e recusa qualquer sobrescrita quando há conteúdo diferente.
 Bancos principais inicializados automaticamente apenas com os valores padrão podem ser substituídos
 durante a importação; qualquer dado ou configuração do usuário torna o destino não substituível. A
@@ -85,8 +86,10 @@ importada, a raiz de composição invalida o estado da sessão derivado do banco
 para carregar as configurações persistidas antes que a interface permita novas edições.
 Bancos inválidos não ficam disponíveis para seleção. Se a carteira ativa desaparecer ou se tornar
 inválida, a seleção automática de uma alternativa também invalida o estado derivado da carteira
-anterior antes de reiniciar a interface. Nomes de arquivos de carteiras e dados financeiros não são
-escritos em logs.
+anterior antes de reiniciar a interface. Quando não existe alternativa válida, a aplicação usa um
+novo nome `portfolio_recovery*.db`, preservando o arquivo inválido. O reset da carteira também
+remove chaves de widgets de metas vinculadas ao banco anterior. Nomes de arquivos de carteiras e
+dados financeiros não são escritos em logs.
 
 O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO
 registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa; o

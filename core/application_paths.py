@@ -155,17 +155,41 @@ class ApplicationPaths:
         invalid = tuple(path for path in candidates if path not in valid)
         return PortfolioInventory(valid=valid, invalid=invalid)
 
+    def portfolio_options(self, inventory: PortfolioInventory) -> tuple[str, ...]:
+        """Return valid portfolio names or a safe new database name for startup recovery."""
+        available = [path.name for path in inventory.valid]
+        default_database = self.portfolio_database(DEFAULT_PORTFOLIO)
+        if not default_database.exists():
+            available.append(DEFAULT_PORTFOLIO)
+        if available:
+            return tuple(sorted(set(available)))
+
+        recovery_index = 1
+        while True:
+            suffix = "" if recovery_index == 1 else f"_{recovery_index}"
+            recovery_name = f"portfolio_recovery{suffix}.db"
+            if not self.portfolio_database(recovery_name).exists():
+                return (recovery_name,)
+            recovery_index += 1
+
     def legacy_databases(self) -> tuple[Path, ...]:
         """Discover legacy databases beside this executable or in an earlier release."""
-        databases_by_name: dict[str, Path] = {}
+        databases_by_name: dict[str, list[Path]] = {}
         for legacy_root in self._legacy_roots():
             legacy_database_dir = legacy_root / "database"
             if legacy_database_dir.resolve() == self.database_dir.resolve():
                 continue
             for path in sorted(legacy_database_dir.glob("portfolio*.db")):
                 if "demo" not in path.name:
-                    databases_by_name.setdefault(path.name, path)
-        return tuple(databases_by_name[name] for name in sorted(databases_by_name))
+                    databases_by_name.setdefault(path.name, []).append(path)
+
+        selected_databases = []
+        for name in sorted(databases_by_name):
+            sources = databases_by_name[name]
+            selected_databases.append(
+                next((source for source in sources if self.is_valid_sqlite(source)), sources[0])
+            )
+        return tuple(selected_databases)
 
     def _legacy_roots(self) -> tuple[Path, ...]:
         """Return the current install and versioned sibling installs, newest first."""

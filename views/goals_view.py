@@ -1,5 +1,6 @@
 import streamlit as st
 
+from core.constants import WIDGET_REINVESTMENT_GOAL_PREFIX, WIDGET_SHARE_QUANTITY_GOAL_PREFIX
 from services.goals_service import GoalService
 from services.share_quantity_goal_service import ShareQuantityGoalService
 from views.components.accumulation_goals import AccumulationGoalPlanningWidget
@@ -30,7 +31,7 @@ class GoalsView:
             "Reinvestir dividendos",
             value=stored_enabled,
             help="Inclui os proventos recebidos na meta anual exibida no Dashboard.",
-            key=f"enable_dividend_reinvestment_goal_{active_database}",
+            key=f"{WIDGET_REINVESTMENT_GOAL_PREFIX}{active_database}",
         )
         if enabled != stored_enabled:
             GoalService.set_reinvestment_goal_enabled(enabled)
@@ -43,7 +44,7 @@ class GoalsView:
             "Meta por quantidade de ações",
             value=stored_enabled,
             help="Distribui os proventos planejados e calcula uma meta de cotas por ativo.",
-            key=f"enable_share_quantity_goal_{active_database}",
+            key=f"{WIDGET_SHARE_QUANTITY_GOAL_PREFIX}{active_database}",
         )
         if enabled != stored_enabled:
             ShareQuantityGoalService.set_goal_enabled(enabled)

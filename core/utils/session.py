@@ -41,7 +41,9 @@ from core.constants import (
     WIDGET_INTEREST_RATE,
     WIDGET_PLANNING_START_DATE,
     WIDGET_PLANNING_START_DATE_ENABLED,
+    WIDGET_REINVESTMENT_GOAL_PREFIX,
     WIDGET_RETIREMENT_AGE,
+    WIDGET_SHARE_QUANTITY_GOAL_PREFIX,
 )
 from core.strings import MODEL_CLASSIC
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
@@ -92,8 +94,15 @@ class SessionManager:
             WIDGET_PLANNING_START_DATE_ENABLED,
             WIDGET_INITIAL_EQUITY,
         )
-        for key in portfolio_keys:
-            st.session_state.pop(key, None)
+        portfolio_prefixes = (
+            WIDGET_REINVESTMENT_GOAL_PREFIX,
+            WIDGET_SHARE_QUANTITY_GOAL_PREFIX,
+        )
+        for key in list(st.session_state):
+            if key in portfolio_keys or (
+                isinstance(key, str) and key.startswith(portfolio_prefixes)
+            ):
+                st.session_state.pop(key, None)
 
     @staticmethod
     def initialize():

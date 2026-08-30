@@ -63,14 +63,21 @@ if inventory.invalid:
         "Restaure uma cópia válida a partir da pasta de backups."
     )
 
-db_files = [path.name for path in inventory.valid]
-default_database = app_paths.portfolio_database("portfolio.db")
-if not default_database.exists():
-    db_files.append("portfolio.db")
-if not db_files:
-    st.error("Nenhuma carteira SQLite válida está disponível.")
-    st.stop()
-db_files = sorted(set(db_files))
+db_files = list(app_paths.portfolio_options(inventory))
+recovery_database = next(
+    (
+        filename
+        for filename in db_files
+        if filename.startswith("portfolio_recovery")
+        and not app_paths.portfolio_database(filename).exists()
+    ),
+    None,
+)
+if recovery_database:
+    st.sidebar.warning(
+        "Nenhuma carteira válida está disponível. Uma nova carteira de recuperação será criada; "
+        "o arquivo inválido será preservado para restauração manual ou por backup."
+    )
 
 if not is_cloud:
     # 2. Sidebar Selector
@@ -87,6 +94,8 @@ if not is_cloud:
         f: (
             "Carteira Principal"
             if f == "portfolio.db"
+            else "Carteira de Recuperação"
+            if f.startswith("portfolio_recovery")
             else f"Carteira: {f[10:-3].title()}"
             if f.startswith("portfolio_")
             else f

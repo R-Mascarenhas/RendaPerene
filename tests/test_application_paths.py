@@ -22,12 +22,9 @@ def create_database(path: Path, value: str = "original") -> None:
 def write_catalog(path: Path, rows: list[tuple[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     header = (
-        "CÓDIGO,NOME,IMAGEM,CNPJ,SETOR ECONÔMICO,SUBSETOR ,"
-        "SEGMENTO / ADM / PAÍS,TIPO,SEGMENTO\n"
+        "CÓDIGO,NOME,IMAGEM,CNPJ,SETOR ECONÔMICO,SUBSETOR ,SEGMENTO / ADM / PAÍS,TIPO,SEGMENTO\n"
     )
-    contents = header + "".join(
-        f"{ticker},{name},,,,Outros,,Ação,\n" for ticker, name in rows
-    )
+    contents = header + "".join(f"{ticker},{name},,,,Outros,,Ação,\n" for ticker, name in rows)
     path.write_text(contents, encoding="utf-8-sig")
 
 
@@ -55,9 +52,7 @@ def test_discovers_linux_home_fallback(monkeypatch, tmp_path):
 
 def test_discovers_windows_local_app_data_directory(monkeypatch, tmp_path):
     local_app_data = tmp_path / "AppData" / "Local"
-    monkeypatch.setattr(
-        "platformdirs.windows.get_win_folder", lambda _name: str(local_app_data)
-    )
+    monkeypatch.setattr("platformdirs.windows.get_win_folder", lambda _name: str(local_app_data))
 
     paths = ApplicationPaths.discover(system="win32")
 
@@ -213,9 +208,7 @@ def test_database_manager_resolves_the_current_session_path_for_each_connection(
     session_database.set(first_database)
     first_connection = manager.get_personal_connection()
     try:
-        assert first_connection.execute("SELECT value FROM session_marker").fetchone() == (
-            "first",
-        )
+        assert first_connection.execute("SELECT value FROM session_marker").fetchone() == ("first",)
     finally:
         first_connection.close()
 
@@ -276,6 +269,26 @@ def test_prepare_merges_new_catalog_baseline_while_preserving_user_rows(tmp_path
     assert catalog.loc["BASE3", "NOME"] == "Updated metadata"
     assert catalog.loc["NEW3", "NOME"] == "New bundled asset"
     assert "USER3" in catalog.index
+
+
+def test_prepare_preserves_legacy_catalog_rows_before_applying_bundled_baseline(tmp_path):
+    resource_root = tmp_path / "bundle"
+    legacy_root = tmp_path / "legacy-install"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", legacy_root)
+    write_catalog(
+        legacy_root / "assets.csv",
+        [("BASE3", "Legacy metadata"), ("LEGACY3", "Legacy fallback")],
+    )
+    write_catalog(
+        resource_root / "assets.csv",
+        [("BASE3", "Bundled metadata")],
+    )
+
+    paths.prepare()
+
+    catalog = AssetsCatalogDAO(paths.catalog_file).load_catalog()
+    assert catalog.loc["BASE3", "NOME"] == "Bundled metadata"
+    assert catalog.loc["LEGACY3", "NOME"] == "Legacy fallback"
 
 
 def test_choose_portfolio_falls_back_to_a_valid_alternative_when_default_is_invalid(tmp_path):

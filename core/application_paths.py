@@ -104,6 +104,14 @@ class ApplicationPaths:
             directory.mkdir(parents=True, exist_ok=True)
 
         bundled_catalog = self.bundled_resource("assets.csv")
+        legacy_catalog = self.legacy_root / "assets.csv"
+        current_catalog_paths = {bundled_catalog.resolve(), self.catalog_file.resolve()}
+        if legacy_catalog.is_file() and legacy_catalog.resolve() not in current_catalog_paths:
+            if self.catalog_file.exists():
+                self._merge_catalog(legacy_catalog, self.catalog_file)
+            else:
+                self._safe_copy(legacy_catalog, self.catalog_file, validate_sqlite=False)
+
         if bundled_catalog.is_file():
             if self.catalog_file.exists():
                 self._merge_catalog(bundled_catalog, self.catalog_file)

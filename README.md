@@ -52,9 +52,10 @@ alterada impede essa substituição. Após uma importação bem-sucedida, a cart
 e seus dados de planejamento são recarregados. Os bancos da demonstração hospedada continuam
 isolados por sessão em armazenamento temporário.
 
-O catálogo gravável é atualizado a partir do `assets.csv` incluído em cada nova versão. Metadados e
-tickers do pacote são incorporados sem remover os registros alternativos adicionados localmente para
-ativos que ainda não fazem parte do catálogo oficial da aplicação.
+Na primeira migração, o catálogo gravável também incorpora os registros alternativos do
+`assets.csv` antigo ao lado da aplicação. Depois, ele é atualizado a partir do catálogo incluído em
+cada nova versão: metadados e tickers do pacote são incorporados sem remover registros locais de
+ativos que ainda não fazem parte do catálogo oficial.
 
 O acesso à rede é necessário para obter dados atualizados:
 

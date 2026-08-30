@@ -67,6 +67,11 @@ a cada operação a partir do contexto atual do Streamlit, sem armazenar o ident
 sessão nos singletons compartilhados. O caminho resolvido do catálogo também integra a chave de
 cache, impedindo que leituras sejam reutilizadas entre sessões.
 
+Ao preparar o armazenamento gravável, `ApplicationPaths` incorpora primeiro o antigo `assets.csv`
+ao lado do executável e depois aplica o catálogo incluído na versão atual. Assim, a baseline mais
+nova prevalece para tickers oficiais, enquanto tickers alternativos existentes apenas no catálogo
+legado são preservados.
+
 Quando existem bancos `portfolio*.db` na antiga pasta `database/` ao lado da aplicação, a barra
 lateral oferece sua importação. A migração valida a origem, copia (sem mover) um backup para
 `backups/legacy-import/`, valida novamente a cópia temporária e somente então publica o banco em

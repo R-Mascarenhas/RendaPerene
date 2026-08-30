@@ -221,6 +221,29 @@ def test_legacy_main_cannot_replace_an_initialized_database_with_user_settings(t
     assert destination.read_bytes() == current_contents
 
 
+def test_migrated_pristine_portfolio_is_not_reoffered_after_schema_metadata_changes(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio.db"
+    DatabaseManager(source).init_personal_db()
+    paths.prepare()
+
+    result = paths.migrate_legacy_database(source)
+    connection = sqlite3.connect(result.destination)
+    try:
+        connection.execute("PRAGMA user_version = 1")
+    finally:
+        connection.close()
+
+    assert result.migrated is True
+    assert source.read_bytes() != result.destination.read_bytes()
+    assert paths._is_pristine_database(result.destination)
+    repeated = paths.migrate_legacy_database(source)
+    assert repeated.migrated is False
+    assert "já foi importada" in repeated.message
+    assert source not in paths.migration_candidates()
+
+
 def test_demo_session_uses_an_isolated_seeded_database(tmp_path, monkeypatch):
     resource_root = tmp_path / "application"
     source = resource_root / "database" / "portfolio_demo.db"
@@ -345,10 +368,69 @@ def test_prepare_preserves_legacy_catalog_rows_before_applying_bundled_baseline(
     assert catalog.loc["LEGACY3", "NOME"] == "Legacy fallback"
 
 
+def test_prepare_skips_malformed_legacy_catalog_and_uses_bundled_baseline(tmp_path):
+    resource_root = tmp_path / "bundle"
+    legacy_root = tmp_path / "legacy-install"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", legacy_root)
+    malformed_catalog = legacy_root / "assets.csv"
+    malformed_catalog.parent.mkdir(parents=True)
+    malformed_catalog.write_text("not,a,catalog\n", encoding="utf-8")
+    write_catalog(resource_root / "assets.csv", [("BASE3", "Bundled metadata")])
+
+    paths.prepare()
+
+    catalog = AssetsCatalogDAO(paths.catalog_file).load_catalog()
+    assert catalog.loc["BASE3", "NOME"] == "Bundled metadata"
+    assert malformed_catalog.read_text(encoding="utf-8") == "not,a,catalog\n"
+
+    paths.catalog_file.write_text("still,not,a,catalog\n", encoding="utf-8")
+    paths.prepare()
+
+    recovered_catalog = AssetsCatalogDAO(paths.catalog_file).load_catalog()
+    assert recovered_catalog.loc["BASE3", "NOME"] == "Bundled metadata"
+
+
+def test_sqlite_validation_reuses_result_for_unchanged_file(monkeypatch, tmp_path):
+    database = tmp_path / "portfolio.db"
+    create_database(database)
+    real_connect = sqlite3.connect
+    connection_count = 0
+
+    def counting_connect(*args, **kwargs):
+        nonlocal connection_count
+        connection_count += 1
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr("core.application_paths.sqlite3.connect", counting_connect)
+
+    assert ApplicationPaths.is_valid_sqlite(database) is True
+    assert ApplicationPaths.is_valid_sqlite(database) is True
+    assert connection_count == 1
+
+    database.write_text("invalid", encoding="utf-8")
+
+    assert ApplicationPaths.is_valid_sqlite(database) is False
+    assert connection_count == 2
+
+
 def test_choose_portfolio_falls_back_to_a_valid_alternative_when_default_is_invalid(tmp_path):
     paths = ApplicationPaths(tmp_path, tmp_path / "user-data", tmp_path)
     paths.prepare()
     paths.portfolio_database("portfolio.db").write_text("invalid", encoding="utf-8")
+    alternative = paths.portfolio_database("portfolio_family.db")
+    create_database(alternative)
+    inventory = paths.inspect_portfolios()
+
+    options = paths.portfolio_options(inventory)
+    selected = paths.choose_portfolio("portfolio.db", list(options))
+
+    assert options == ("portfolio_family.db",)
+    assert selected == "portfolio_family.db"
+
+
+def test_portfolio_options_do_not_recreate_missing_principal_when_alternative_exists(tmp_path):
+    paths = ApplicationPaths(tmp_path, tmp_path / "user-data", tmp_path)
+    paths.prepare()
     alternative = paths.portfolio_database("portfolio_family.db")
     create_database(alternative)
     inventory = paths.inspect_portfolios()

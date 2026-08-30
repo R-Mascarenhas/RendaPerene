@@ -10,6 +10,7 @@ import tempfile
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from platformdirs.unix import Unix
@@ -105,10 +106,19 @@ class ApplicationPaths:
             directory.mkdir(parents=True, exist_ok=True)
 
         bundled_catalog = self.bundled_resource("assets.csv")
+        if (
+            self.catalog_file.exists()
+            and not self._is_valid_catalog(self.catalog_file)
+            and self._is_valid_catalog(bundled_catalog)
+        ):
+            self._replace_with_validated_catalog(bundled_catalog, self.catalog_file)
+
         current_catalog_paths = {bundled_catalog.resolve(), self.catalog_file.resolve()}
         for legacy_root in reversed(self._legacy_roots()):
             legacy_catalog = legacy_root / "assets.csv"
-            if legacy_catalog.is_file() and legacy_catalog.resolve() not in current_catalog_paths:
+            if legacy_catalog.resolve() not in current_catalog_paths and self._is_valid_catalog(
+                legacy_catalog
+            ):
                 if self.catalog_file.exists():
                     self._merge_catalog(legacy_catalog, self.catalog_file)
                 else:
@@ -158,11 +168,12 @@ class ApplicationPaths:
     def portfolio_options(self, inventory: PortfolioInventory) -> tuple[str, ...]:
         """Return valid portfolio names or a safe new database name for startup recovery."""
         available = [path.name for path in inventory.valid]
-        default_database = self.portfolio_database(DEFAULT_PORTFOLIO)
-        if not default_database.exists():
-            available.append(DEFAULT_PORTFOLIO)
         if available:
             return tuple(sorted(set(available)))
+
+        default_database = self.portfolio_database(DEFAULT_PORTFOLIO)
+        if not default_database.exists():
+            return (DEFAULT_PORTFOLIO,)
 
         recovery_index = 1
         while True:
@@ -223,6 +234,13 @@ class ApplicationPaths:
         candidates = []
         for source in self.legacy_databases():
             destination = self.portfolio_database(source.name)
+            backup = self.backups_dir / "legacy-import" / source.name
+            if (
+                destination.exists()
+                and backup.exists()
+                and self._same_file_contents(source, backup)
+            ):
+                continue
             destination_is_replaceable = (
                 destination.exists()
                 and self._is_pristine_database(destination)
@@ -249,6 +267,15 @@ class ApplicationPaths:
                 None,
                 False,
                 "O arquivo de origem não é um banco SQLite válido.",
+            )
+
+        if destination.exists() and backup.exists() and self._same_file_contents(source, backup):
+            return MigrationResult(
+                source,
+                destination,
+                backup,
+                False,
+                "A carteira já foi importada anteriormente.",
             )
 
         if destination.exists():
@@ -327,10 +354,22 @@ class ApplicationPaths:
     def is_valid_sqlite(path: Path) -> bool:
         """Check SQLite integrity without creating or modifying the supplied file."""
         path = Path(path)
-        if not path.is_file() or path.stat().st_size == 0:
-            return False
         try:
-            connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+            metadata = path.stat()
+        except OSError:
+            return False
+        if not path.is_file() or metadata.st_size == 0:
+            return False
+        return ApplicationPaths._is_valid_sqlite_snapshot(
+            str(path.resolve()), metadata.st_size, metadata.st_mtime_ns
+        )
+
+    @staticmethod
+    @lru_cache(maxsize=256)
+    def _is_valid_sqlite_snapshot(path: str, _size: int, _mtime_ns: int) -> bool:
+        """Cache SQLite integrity for one immutable file metadata snapshot."""
+        try:
+            connection = sqlite3.connect(f"{Path(path).as_uri()}?mode=ro", uri=True)
             try:
                 return connection.execute("PRAGMA quick_check").fetchone() == ("ok",)
             finally:
@@ -355,17 +394,8 @@ class ApplicationPaths:
     @staticmethod
     def _merge_catalog(bundled_catalog: Path, writable_catalog: Path) -> None:
         """Apply bundled metadata updates while retaining user-only fallback rows."""
-
-        def read_catalog(path: Path) -> tuple[list[str], list[dict[str, str]]]:
-            with path.open(encoding="utf-8-sig", newline="") as catalog_file:
-                reader = csv.DictReader(catalog_file)
-                fieldnames = list(reader.fieldnames or [])
-                if "CÓDIGO" not in fieldnames:
-                    raise ValueError("The assets catalog must contain a CÓDIGO column.")
-                return fieldnames, list(reader)
-
-        bundled_fields, bundled_rows = read_catalog(bundled_catalog)
-        writable_fields, writable_rows = read_catalog(writable_catalog)
+        bundled_fields, bundled_rows = ApplicationPaths._read_catalog(bundled_catalog)
+        writable_fields, writable_rows = ApplicationPaths._read_catalog(writable_catalog)
         fieldnames = bundled_fields + [
             field for field in writable_fields if field not in bundled_fields
         ]
@@ -386,6 +416,35 @@ class ApplicationPaths:
         try:
             temporary.write_bytes(merged_contents)
             os.replace(temporary, writable_catalog)
+        finally:
+            with suppress(FileNotFoundError):
+                temporary.unlink()
+
+    @staticmethod
+    def _read_catalog(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+        with path.open(encoding="utf-8-sig", newline="") as catalog_file:
+            reader = csv.DictReader(catalog_file)
+            fieldnames = list(reader.fieldnames or [])
+            if "CÓDIGO" not in fieldnames:
+                raise ValueError("The assets catalog must contain a CÓDIGO column.")
+            return fieldnames, list(reader)
+
+    @classmethod
+    def _is_valid_catalog(cls, path: Path) -> bool:
+        try:
+            cls._read_catalog(path)
+            return True
+        except (OSError, UnicodeError, csv.Error, ValueError):
+            return False
+
+    @classmethod
+    def _replace_with_validated_catalog(cls, source: Path, destination: Path) -> None:
+        temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            shutil.copy2(source, temporary)
+            if not cls._is_valid_catalog(temporary):
+                raise ValueError("The copied file failed assets catalog validation.")
+            os.replace(temporary, destination)
         finally:
             with suppress(FileNotFoundError):
                 temporary.unlink()

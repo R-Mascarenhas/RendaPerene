@@ -70,7 +70,9 @@ cache, impedindo que leituras sejam reutilizadas entre sessões.
 Ao preparar o armazenamento gravável, `ApplicationPaths` incorpora primeiro os antigos `assets.csv`
 ao lado do executável e nas pastas irmãs `RendaPerene-v*`, em ordem de versão, e depois aplica o
 catálogo incluído na versão atual. Assim, a baseline mais nova prevalece para tickers oficiais,
-enquanto tickers alternativos existentes apenas nos catálogos legados são preservados.
+enquanto tickers alternativos existentes apenas nos catálogos legados são preservados. Catálogos
+legados malformados são ignorados, e uma cópia gravável inválida é substituída atomicamente pela
+baseline válida incluída no pacote.
 
 Quando existem bancos `portfolio*.db` na antiga pasta `database/` ao lado da aplicação ou em pastas
 irmãs de releases anteriores chamadas `RendaPerene-v*`, a barra lateral oferece sua importação. Se
@@ -79,6 +81,8 @@ cópia inválida mais nova não oculta uma cópia válida anterior. A migração
 (sem mover) um backup para `backups/legacy-import/`, valida novamente a cópia temporária e somente
 então publica o banco em
 `database/`. A operação é idempotente e recusa qualquer sobrescrita quando há conteúdo diferente.
+Bancos importados não são oferecidos novamente quando uma migração de esquema altera os bytes do
+destino: a cópia imutável em `backups/legacy-import/` identifica a origem já processada.
 Bancos principais inicializados automaticamente apenas com os valores padrão podem ser substituídos
 durante a importação; qualquer dado ou configuração do usuário torna o destino não substituível. A
 cópia recuperável relevante permanece em `backups/legacy-import/`. Ao publicar uma carteira
@@ -90,6 +94,10 @@ anterior antes de reiniciar a interface. Quando não existe alternativa válida,
 novo nome `portfolio_recovery*.db`, preservando o arquivo inválido. O reset da carteira também
 remove chaves de widgets de metas vinculadas ao banco anterior. Nomes de arquivos de carteiras e
 dados financeiros não são escritos em logs.
+
+A validação SQLite usa `PRAGMA quick_check` e mantém em memória o resultado por caminho, tamanho e
+data de modificação do arquivo. Reruns do Streamlit reutilizam a validação enquanto esses metadados
+não mudam; qualquer alteração no banco produz uma nova verificação de integridade.
 
 O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO
 registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa; o

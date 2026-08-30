@@ -63,6 +63,8 @@ Na primeira migração, o catálogo gravável também incorpora os registros alt
 `assets.csv` encontrados na instalação atual e nas pastas de releases anteriores. Depois, ele é
 atualizado a partir do catálogo incluído em cada nova versão: metadados e tickers do pacote são
 incorporados sem remover registros locais de ativos que ainda não fazem parte do catálogo oficial.
+Catálogos antigos sem o cabeçalho esperado são ignorados; se a cópia gravável estiver malformada,
+ela é recuperada a partir do catálogo válido incluído no pacote.
 
 O acesso à rede é necessário para obter dados atualizados:
 

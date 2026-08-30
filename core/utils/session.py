@@ -51,6 +51,15 @@ class SessionManager:
     """Manages the initialization of the application's global session state."""
 
     @staticmethod
+    def switch_portfolio(filename: str) -> bool:
+        """Activate another portfolio and invalidate state loaded from the previous one."""
+        if st.session_state.get("active_db") == filename:
+            return False
+        st.session_state["active_db"] = filename
+        SessionManager.reset_portfolio_state()
+        return True
+
+    @staticmethod
     def reset_portfolio_state():
         """Discard session values derived from the active portfolio database."""
         portfolio_keys = (

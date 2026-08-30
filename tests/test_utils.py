@@ -5,6 +5,7 @@ import time
 import sys
 import os
 from core.database import db
+from core.application_paths import ApplicationPaths
 from core.utils.formatter import Formatter
 from core.utils.session import get_app_version, monitor_active_sessions, SessionManager
 
@@ -246,4 +247,25 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
 
     assert portfolio_keys.isdisjoint(mock_session)
     assert mock_session["active_db"] == "portfolio.db"
+    assert mock_session["session_id"] == "keep-me"
+
+
+def test_session_manager_switches_to_valid_fallback_and_resets_loaded_state(monkeypatch):
+    from core.constants import SESSION_BIRTH_DATE
+
+    mock_session = {
+        "active_db": "portfolio_missing.db",
+        "db_loaded": True,
+        SESSION_BIRTH_DATE: "stale",
+        "session_id": "keep-me",
+    }
+    monkeypatch.setattr(st, "session_state", mock_session)
+    fallback = ApplicationPaths.choose_portfolio(mock_session["active_db"], ["portfolio_family.db"])
+
+    changed = SessionManager.switch_portfolio(fallback)
+
+    assert changed is True
+    assert mock_session["active_db"] == "portfolio_family.db"
+    assert "db_loaded" not in mock_session
+    assert SESSION_BIRTH_DATE not in mock_session
     assert mock_session["session_id"] == "keep-me"

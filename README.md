@@ -42,6 +42,10 @@ gravável, `backups/` preserva cópias de recuperação e `logs/` é reservado p
 A aplicação não utiliza banco de dados em nuvem, contas de usuário ou telemetria, nem realiza
 scraping do portal da B3.
 
+Bancos inválidos são ignorados na seleção. Se a carteira ativa for removida ou deixar de ser um
+SQLite válido, a aplicação seleciona outra carteira disponível e recarrega suas configurações sem
+reutilizar os dados de planejamento da anterior.
+
 Na primeira execução com o novo layout, a barra lateral oferece a importação de bancos
 `portfolio*.db` encontrados na antiga pasta `database/`, tanto ao lado da aplicação quanto em
 pastas irmãs de releases anteriores chamadas `RendaPerene-v*`. Quando o mesmo nome existe em mais

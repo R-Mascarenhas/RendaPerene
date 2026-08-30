@@ -79,7 +79,8 @@ if not is_cloud:
     requested_db = st.session_state.get("active_db", "portfolio.db")
     active_db = app_paths.choose_portfolio(requested_db, db_files)
     if active_db != requested_db:
-        st.session_state["active_db"] = active_db
+        SessionManager.switch_portfolio(active_db)
+        st.rerun()
 
     # User-friendly labels mapping for files
     labels = {
@@ -114,14 +115,13 @@ if not is_cloud:
             # Initialize tables
             temp_db = DatabaseManager(personal_db=new_filepath)
             temp_db.init_personal_db()
-            st.session_state["active_db"] = new_filename
+            SessionManager.switch_portfolio(new_filename)
             st.toast(f"✅ Carteira '{clean_name}' criada com sucesso!")
             st.rerun()
 
     # 3. Handle database switch
     if selected_db != active_db:
-        st.session_state["active_db"] = selected_db
-        SessionManager.reset_portfolio_state()
+        SessionManager.switch_portfolio(selected_db)
         st.rerun()
 
     current_active_db = active_db

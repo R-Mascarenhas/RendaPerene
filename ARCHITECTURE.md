@@ -83,8 +83,10 @@ durante a importação; qualquer dado ou configuração do usuário torna o dest
 cópia recuperável relevante permanece em `backups/legacy-import/`. Ao publicar uma carteira
 importada, a raiz de composição invalida o estado da sessão derivado do banco e reinicia a execução
 para carregar as configurações persistidas antes que a interface permita novas edições.
-Bancos inválidos não ficam disponíveis para seleção. Nomes de arquivos de carteiras e dados
-financeiros não são escritos em logs.
+Bancos inválidos não ficam disponíveis para seleção. Se a carteira ativa desaparecer ou se tornar
+inválida, a seleção automática de uma alternativa também invalida o estado derivado da carteira
+anterior antes de reiniciar a interface. Nomes de arquivos de carteiras e dados financeiros não são
+escritos em logs.
 
 O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO
 registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa; o

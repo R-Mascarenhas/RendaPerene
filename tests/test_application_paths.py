@@ -350,7 +350,7 @@ def test_legacy_main_cannot_replace_an_initialized_database_with_user_settings(t
         connection.close()
     current_contents = destination.read_bytes()
 
-    assert source not in paths.migration_candidates()
+    assert source in paths.migration_candidates()
 
     result = paths.migrate_legacy_database(source)
 

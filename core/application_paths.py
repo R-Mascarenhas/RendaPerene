@@ -23,7 +23,6 @@ APP_NAME = "RendaPerene"
 DEFAULT_PORTFOLIO = "portfolio.db"
 DEMO_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
 FILE_LOCK_TIMEOUT_SECONDS = 5
-FILE_LOCK_STALE_SECONDS = 300
 
 
 @contextmanager
@@ -45,10 +44,7 @@ def _exclusive_file_lock(lock: Path):
                         raise TimeoutError(f"Timed out waiting for {lock.name} readers.")
                     for reader in readers:
                         try:
-                            if (
-                                time.time() - reader.stat().st_mtime > FILE_LOCK_STALE_SECONDS
-                                and not _lock_owner_is_alive(reader)
-                            ):
+                            if not _lock_owner_is_alive(reader):
                                 reader.unlink()
                         except FileNotFoundError:
                             continue
@@ -56,11 +52,9 @@ def _exclusive_file_lock(lock: Path):
                 break
             except FileExistsError:
                 try:
-                    lock_age = time.time() - lock.stat().st_mtime
                     observed_owner = lock.read_text(encoding="ascii")
                     if (
-                        lock_age > FILE_LOCK_STALE_SECONDS
-                        and not _lock_owner_is_alive(lock)
+                        not _lock_owner_is_alive(lock)
                         and lock.exists()
                         and lock.read_text(encoding="ascii") == observed_owner
                     ):
@@ -125,10 +119,7 @@ def portfolio_database_reader_lock(database: Path):
     while time.monotonic() < deadline:
         if lock.exists():
             try:
-                if (
-                    time.time() - lock.stat().st_mtime > FILE_LOCK_STALE_SECONDS
-                    and not _lock_owner_is_alive(lock)
-                ):
+                if not _lock_owner_is_alive(lock):
                     observed_owner = lock.read_text(encoding="ascii")
                     if lock.exists() and lock.read_text(encoding="ascii") == observed_owner:
                         lock.unlink()

@@ -192,6 +192,16 @@ ShareQuantityGoalService.set_adapters(
     planning_provider=SimulationService.get_default(),
 )
 
+# Reload if another Streamlit session replaced the active portfolio on disk.
+resolved_database = app_paths.portfolio_database(current_active_db)
+if resolved_database.exists():
+    database_signature = (resolved_database.stat().st_size, resolved_database.stat().st_mtime_ns)
+else:
+    database_signature = (None, None)
+if st.session_state.get("active_database_signature") not in (None, database_signature):
+    SessionManager.reset_portfolio_state()
+st.session_state["active_database_signature"] = database_signature
+
 # Session state must be initialized before rendering any view
 SessionManager.initialize()
 

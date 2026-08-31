@@ -32,7 +32,7 @@ def _create_owned_file(path: Path, owner_token: str) -> int:
     descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     linked = False
     try:
-        encoded_token = owner_token.encode("ascii")
+        encoded_token = owner_token.encode("utf-8")
         offset = 0
         while offset < len(encoded_token):
             offset += os.write(descriptor, encoded_token[offset:])
@@ -76,11 +76,11 @@ def _exclusive_file_lock(lock: Path):
                 break
             except FileExistsError:
                 try:
-                    observed_owner = lock.read_text(encoding="ascii")
+                    observed_owner = lock.read_text(encoding="utf-8")
                     if (
                         not _owner_token_is_alive(observed_owner)
                         and lock.exists()
-                        and lock.read_text(encoding="ascii") == observed_owner
+                        and lock.read_text(encoding="utf-8") == observed_owner
                     ):
                         lock.unlink()
                         continue
@@ -94,7 +94,7 @@ def _exclusive_file_lock(lock: Path):
         if descriptor is not None:
             os.close(descriptor)
             try:
-                if lock.read_text(encoding="ascii") == owner_token:
+                if lock.read_text(encoding="utf-8") == owner_token:
                     lock.unlink()
             except (FileNotFoundError, UnicodeError):
                 pass
@@ -127,7 +127,7 @@ def _owner_token_is_alive(owner_token: str) -> bool:
 def _lock_owner_is_alive(lock: Path) -> bool:
     """Return whether a lock's recorded local-process owner is still running."""
     try:
-        owner_token = lock.read_text(encoding="ascii")
+        owner_token = lock.read_text(encoding="utf-8")
         return _owner_token_is_alive(owner_token)
     except (OSError, UnicodeError):
         return False
@@ -152,11 +152,11 @@ def portfolio_database_reader_lock(database: Path):
     while time.monotonic() < deadline:
         if lock.exists():
             try:
-                observed_owner = lock.read_text(encoding="ascii")
+                observed_owner = lock.read_text(encoding="utf-8")
                 if (
                     not _owner_token_is_alive(observed_owner)
                     and lock.exists()
-                    and lock.read_text(encoding="ascii") == observed_owner
+                    and lock.read_text(encoding="utf-8") == observed_owner
                 ):
                     lock.unlink()
                     continue
@@ -480,7 +480,16 @@ class ApplicationPaths:
             if self.is_valid_sqlite(destination) and self._same_sqlite_contents(
                 source, destination
             ):
-                if not backup.exists():
+                if backup.exists():
+                    if not self._same_sqlite_contents(source, backup):
+                        return MigrationResult(
+                            source,
+                            destination,
+                            backup,
+                            False,
+                            "Já existe um backup diferente com esse nome; a importação foi cancelada.",
+                        )
+                else:
                     try:
                         self._safe_copy(source, backup, validate_sqlite=True)
                     except (OSError, sqlite3.DatabaseError, ValueError):

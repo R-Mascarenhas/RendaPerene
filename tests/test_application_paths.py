@@ -453,6 +453,38 @@ def test_changed_legacy_source_is_not_hidden_by_an_old_completion_marker(tmp_pat
     assert "backup diferente" in repeated.message
 
 
+def test_migration_destination_matches_source_but_backup_differs_is_conflict(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio.db"
+    DatabaseManager(source).init_personal_db()
+    paths.prepare()
+
+    # Destination is identical to source
+    destination = paths.portfolio_database("portfolio.db")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(source.read_bytes())
+
+    # Create a different database for the backup to cause a conflict
+    backup = paths.backups_dir / "legacy-import" / "portfolio.db"
+    backup.parent.mkdir(parents=True, exist_ok=True)
+    DatabaseManager(backup).init_personal_db()
+    connection = sqlite3.connect(backup)
+    try:
+        connection.execute("UPDATE goal_settings SET reinvest_dividends_enabled = 0 WHERE id = 1")
+        connection.commit()
+    finally:
+        connection.close()
+
+    assert source in paths.migration_candidates()
+    result = paths.migrate_legacy_database(source)
+    assert result.migrated is False
+    assert "backup diferente" in result.message
+
+    completion_marker = backup.with_suffix(backup.suffix + ".done")
+    assert not completion_marker.exists()
+
+
 def test_demo_session_uses_an_isolated_seeded_database(tmp_path, monkeypatch):
     resource_root = tmp_path / "application"
     source = resource_root / "database" / "portfolio_demo.db"

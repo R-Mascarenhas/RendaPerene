@@ -56,9 +56,13 @@ def _exclusive_file_lock(lock: Path):
                 break
             except FileExistsError:
                 try:
+                    lock_age = time.time() - lock.stat().st_mtime
+                    observed_owner = lock.read_text(encoding="ascii")
                     if (
-                        time.time() - lock.stat().st_mtime > FILE_LOCK_STALE_SECONDS
+                        lock_age > FILE_LOCK_STALE_SECONDS
                         and not _lock_owner_is_alive(lock)
+                        and lock.exists()
+                        and lock.read_text(encoding="ascii") == observed_owner
                     ):
                         lock.unlink()
                         continue
@@ -281,6 +285,7 @@ class ApplicationPaths:
                 recovered_database = True
             elif not destination.exists():
                 self._safe_copy(default_database_source, destination, validate_sqlite=True)
+                recovered_database = True
         return recovered_database
 
     def portfolio_database(self, filename: str) -> Path:
@@ -392,13 +397,7 @@ class ApplicationPaths:
                 and self._completion_marker_matches(marker, source, backup)
             ):
                 continue
-            destination_is_replaceable = (
-                destination.exists()
-                and self._is_pristine_database(destination)
-                and not self._same_sqlite_contents(source, destination)
-            )
-            if not destination.exists() or destination_is_replaceable:
-                candidates.append(source)
+            candidates.append(source)
         return tuple(candidates)
 
     def migrate_legacy_database(self, source: Path) -> MigrationResult:

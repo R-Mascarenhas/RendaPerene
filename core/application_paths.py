@@ -444,6 +444,12 @@ class ApplicationPaths:
                     descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                     break
                 except FileExistsError:
+                    try:
+                        if time.time() - lock.stat().st_mtime > 300:
+                            lock.unlink()
+                            continue
+                    except FileNotFoundError:
+                        continue
                     time.sleep(0.01)
             if descriptor is None:
                 raise TimeoutError("Timed out waiting for assets catalog lock.")

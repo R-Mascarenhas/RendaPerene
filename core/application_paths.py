@@ -566,8 +566,7 @@ class ApplicationPaths:
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
         try:
-            wal_file = source.with_name(source.name + "-wal")
-            if validate_sqlite and wal_file.exists():
+            if validate_sqlite:
                 cls._snapshot_sqlite(source, temporary)
             else:
                 shutil.copy2(source, temporary)

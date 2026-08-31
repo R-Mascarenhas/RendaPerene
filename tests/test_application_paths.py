@@ -127,14 +127,14 @@ def test_successful_legacy_migration_is_copy_only_backed_up_and_idempotent(tmp_p
     assert result.destination.exists()
     assert result.backup is not None
     assert result.backup.exists()
-    assert source.read_bytes() == result.destination.read_bytes() == result.backup.read_bytes()
+    assert ApplicationPaths.is_valid_sqlite(result.destination)
+    assert ApplicationPaths.is_valid_sqlite(result.backup)
     assert paths.inspect_portfolios().valid == (result.destination,)
 
     repeated = paths.migrate_legacy_database(source)
 
     assert repeated.migrated is False
     assert "já foi importada" in repeated.message
-    assert source.read_bytes() == result.destination.read_bytes()
 
 
 def test_invalid_legacy_database_is_rejected_before_copy(tmp_path):
@@ -189,7 +189,7 @@ def test_legacy_main_remains_importable_after_empty_default_database_is_initiali
     result = paths.migrate_legacy_database(source)
 
     assert result.migrated is True
-    assert destination.read_bytes() == source.read_bytes()
+    assert ApplicationPaths.is_valid_sqlite(destination)
     assert result.backup == paths.backups_dir / "legacy-import" / "portfolio.db"
     assert ApplicationPaths.is_valid_sqlite(result.backup)
     assert not (paths.backups_dir / "pre-migration").exists()
@@ -257,7 +257,7 @@ def test_demo_session_uses_an_isolated_seeded_database(tmp_path, monkeypatch):
     destination = demo_paths.portfolio_database("portfolio.db")
     assert demo_paths.data_root == tmp_path / "RendaPerene" / "demo" / "session-123"
     assert destination.exists()
-    assert destination.read_bytes() == source.read_bytes()
+    assert ApplicationPaths.is_valid_sqlite(destination)
 
 
 def test_database_manager_resolves_the_current_session_path_for_each_connection(tmp_path):

@@ -4,6 +4,7 @@ import io
 import os
 import re
 import shutil
+import socket
 import sqlite3
 import sys
 import tempfile
@@ -29,15 +30,20 @@ FILE_LOCK_STALE_SECONDS = 300
 def _exclusive_file_lock(lock: Path):
     lock = Path(lock)
     descriptor = None
+    owner_token = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
     deadline = time.monotonic() + FILE_LOCK_TIMEOUT_SECONDS
     try:
         while time.monotonic() < deadline:
             try:
                 descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(descriptor, owner_token.encode("ascii"))
                 break
             except FileExistsError:
                 try:
-                    if time.time() - lock.stat().st_mtime > FILE_LOCK_STALE_SECONDS:
+                    if (
+                        time.time() - lock.stat().st_mtime > FILE_LOCK_STALE_SECONDS
+                        and not _lock_owner_is_alive(lock)
+                    ):
                         lock.unlink()
                         continue
                 except FileNotFoundError:
@@ -49,8 +55,23 @@ def _exclusive_file_lock(lock: Path):
     finally:
         if descriptor is not None:
             os.close(descriptor)
-            with suppress(FileNotFoundError):
-                lock.unlink()
+            try:
+                if lock.read_text(encoding="ascii") == owner_token:
+                    lock.unlink()
+            except (FileNotFoundError, UnicodeError):
+                pass
+
+
+def _lock_owner_is_alive(lock: Path) -> bool:
+    """Return whether a lock's recorded local-process owner is still running."""
+    try:
+        host, pid_text, _token = lock.read_text(encoding="ascii").split(":", 2)
+        if host != socket.gethostname():
+            return True
+        os.kill(int(pid_text), 0)
+    except (OSError, UnicodeError, ValueError):
+        return False
+    return True
 
 
 @contextmanager
@@ -298,7 +319,13 @@ class ApplicationPaths:
         for source in self.legacy_databases():
             destination = self.portfolio_database(source.name)
             backup = self.backups_dir / "legacy-import" / source.name
-            if destination.exists() and backup.with_suffix(backup.suffix + ".done").exists():
+            marker = backup.with_suffix(backup.suffix + ".done")
+            if (
+                destination.exists()
+                and backup.exists()
+                and marker.exists()
+                and self._completion_marker_matches(marker, source, backup)
+            ):
                 continue
             destination_is_replaceable = (
                 destination.exists()
@@ -329,7 +356,12 @@ class ApplicationPaths:
                 "O arquivo de origem não é um banco SQLite válido.",
             )
 
-        if destination.exists() and completion_marker.exists():
+        if (
+            destination.exists()
+            and backup.exists()
+            and completion_marker.exists()
+            and self._completion_marker_matches(completion_marker, source, backup)
+        ):
             return MigrationResult(
                 source,
                 destination,
@@ -396,7 +428,9 @@ class ApplicationPaths:
                     self._replace_with_validated_copy(backup, destination)
                 else:
                     self._safe_copy(backup, destination, validate_sqlite=True)
-                completion_marker.write_text("completed\n", encoding="ascii")
+                completion_marker.write_text(
+                    f"{self._sqlite_content_digest(backup)}\n", encoding="ascii"
+                )
         except (OSError, sqlite3.DatabaseError, ValueError):
             return MigrationResult(
                 source,
@@ -413,6 +447,23 @@ class ApplicationPaths:
             True,
             "Carteira importada com sucesso e backup preservado.",
         )
+
+    @classmethod
+    def _completion_marker_matches(cls, marker: Path, source: Path, backup: Path) -> bool:
+        try:
+            marker_value = marker.read_text(encoding="ascii").strip()
+        except (OSError, UnicodeError):
+            return False
+        if marker_value == "completed":
+            return cls._same_sqlite_contents(source, backup)
+        try:
+            source_digest = cls._sqlite_content_digest(source)
+            return (
+                marker_value == source_digest
+                and cls._sqlite_content_digest(backup) == source_digest
+            )
+        except (OSError, sqlite3.DatabaseError):
+            return False
 
     @staticmethod
     def is_valid_sqlite(path: Path) -> bool:

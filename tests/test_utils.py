@@ -179,6 +179,7 @@ def test_session_manager_initialization_on_empty_database(mock_db, monkeypatch):
 
 def test_session_manager_resets_portfolio_state(monkeypatch):
     """Portfolio replacement must invalidate values loaded from the previous database."""
+    from core.utils import session as session_module
     from core.constants import (
         SESSION_ANNUAL_INTEREST_RATE,
         SESSION_BAZIN_TARGET_SPREAD,
@@ -252,12 +253,19 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
     mock_session = {key: "stale" for key in portfolio_keys}
     mock_session.update({"active_db": "portfolio.db", "session_id": "keep-me"})
     monkeypatch.setattr(st, "session_state", mock_session)
+    cache_clear_calls = []
+    monkeypatch.setattr(
+        session_module.MarketData._get_raw_ticker_market_analysis,
+        "clear",
+        lambda: cache_clear_calls.append(True),
+    )
 
     SessionManager.reset_portfolio_state()
 
     assert portfolio_keys.isdisjoint(mock_session)
     assert mock_session["active_db"] == "portfolio.db"
     assert mock_session["session_id"] == "keep-me"
+    assert cache_clear_calls == [True]
 
 
 def test_session_manager_switches_to_valid_fallback_and_resets_loaded_state(monkeypatch):

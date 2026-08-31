@@ -69,6 +69,7 @@ class SessionManager:
     @staticmethod
     def reset_portfolio_state():
         """Discard session values derived from the active portfolio database."""
+        MarketData._get_raw_ticker_market_analysis.clear()
         portfolio_keys = (
             "db_loaded",
             "processed_files",

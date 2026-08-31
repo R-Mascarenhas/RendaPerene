@@ -26,6 +26,21 @@ Read `ARCHITECTURE.md` when a task changes module boundaries, persistence, data 
 - When a change affects the documented architecture, persistence model, integration, user workflow, setup, or validation commands, update `ARCHITECTURE.md` and `README.md` in the same change as needed.
 - Keep changes scoped to the request. Ask before a destructive change, an external write, or a material expansion of scope.
 
+## Pre-PR review
+
+Before pushing commits or opening/updating a pull request:
+
+1. Review the complete diff against the target branch as an independent code reviewer.
+2. Look specifically for correctness bugs, regressions, data loss, concurrency
+   problems, stale state/cache, security issues, and missing edge-case tests.
+3. Fix all actionable P1/P2 findings.
+4. Run the relevant tests, the full test suite when practical, and Ruff.
+5. Perform one final review pass after the fixes.
+6. Only then push the commit or update the pull request.
+
+When addressing review feedback, inspect the entire resulting diff before pushing,
+not only the lines mentioned in the existing comments.
+
 ## Data and privacy
 
 - Treat local `.db`, `.ods`, `.xlsx`, `.csv`, and generated package artifacts as potentially sensitive or generated data. Do not add or modify them unless the task explicitly requires it.

@@ -362,6 +362,27 @@ def test_migrated_pristine_portfolio_is_not_reoffered_after_schema_metadata_chan
     assert source not in paths.migration_candidates()
 
 
+def test_changed_legacy_source_is_not_hidden_by_an_old_completion_marker(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio.db"
+    DatabaseManager(source).init_personal_db()
+    paths.prepare()
+    result = paths.migrate_legacy_database(source)
+    connection = sqlite3.connect(source)
+    try:
+        connection.execute("UPDATE goal_settings SET reinvest_dividends_enabled = 0 WHERE id = 1")
+        connection.commit()
+    finally:
+        connection.close()
+
+    assert result.migrated is True
+    assert source in paths.migration_candidates()
+    repeated = paths.migrate_legacy_database(source)
+    assert repeated.migrated is False
+    assert "backup diferente" in repeated.message
+
+
 def test_demo_session_uses_an_isolated_seeded_database(tmp_path, monkeypatch):
     resource_root = tmp_path / "application"
     source = resource_root / "database" / "portfolio_demo.db"

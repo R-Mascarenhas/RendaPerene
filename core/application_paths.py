@@ -236,10 +236,7 @@ class ApplicationPaths:
         for source in self.legacy_databases():
             destination = self.portfolio_database(source.name)
             backup = self.backups_dir / "legacy-import" / source.name
-            if (
-                destination.exists()
-                and backup.with_suffix(backup.suffix + ".done").exists()
-            ):
+            if destination.exists() and backup.with_suffix(backup.suffix + ".done").exists():
                 continue
             destination_is_replaceable = (
                 destination.exists()
@@ -270,10 +267,7 @@ class ApplicationPaths:
                 "O arquivo de origem não é um banco SQLite válido.",
             )
 
-        if (
-            destination.exists()
-            and completion_marker.exists()
-        ):
+        if destination.exists() and completion_marker.exists():
             return MigrationResult(
                 source,
                 destination,
@@ -441,6 +435,7 @@ class ApplicationPaths:
     @staticmethod
     @contextmanager
     def _catalog_lock(catalog: Path):
+        catalog = Path(catalog)
         lock = catalog.with_name(f".{catalog.name}.lock")
         descriptor = None
         try:

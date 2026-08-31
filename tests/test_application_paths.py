@@ -185,6 +185,24 @@ def test_sqlite_content_comparison_includes_committed_wal_pages(tmp_path):
         writer.close()
 
 
+def test_sqlite_content_digest_reuses_unchanged_file_metadata(tmp_path, monkeypatch):
+    database = tmp_path / "portfolio.db"
+    create_database(database)
+    real_connect = sqlite3.connect
+    connect_calls = 0
+
+    def counted_connect(*args, **kwargs):
+        nonlocal connect_calls
+        connect_calls += 1
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr("core.application_paths.sqlite3.connect", counted_connect)
+    ApplicationPaths._sqlite_content_digest(database)
+    ApplicationPaths._sqlite_content_digest(database)
+
+    assert connect_calls == 1
+
+
 def test_migration_publication_waits_for_database_connections_and_revalidates(
     tmp_path, monkeypatch
 ):
@@ -197,6 +215,7 @@ def test_migration_publication_waits_for_database_connections_and_revalidates(
     manager = DatabaseManager(destination)
     manager.init_personal_db()
     connection = manager.get_personal_connection()
+    connection.execute("UPDATE goal_settings SET reinvest_dividends_enabled = 0 WHERE id = 1")
     lock_attempted = threading.Event()
     real_lock = portfolio_database_lock
 
@@ -215,7 +234,6 @@ def test_migration_publication_waits_for_database_connections_and_revalidates(
     try:
         assert lock_attempted.wait(timeout=2)
         assert migration.is_alive()
-        connection.execute("UPDATE goal_settings SET reinvest_dividends_enabled = 0 WHERE id = 1")
         connection.commit()
     finally:
         connection.close()
@@ -308,6 +326,8 @@ def test_legacy_main_remains_importable_after_empty_default_database_is_initiali
 
     assert result.migrated is True
     assert ApplicationPaths.is_valid_sqlite(destination)
+    assert not Path(f"{destination}-wal").exists()
+    assert not Path(f"{destination}-shm").exists()
     assert result.backup == paths.backups_dir / "legacy-import" / "portfolio.db"
     assert ApplicationPaths.is_valid_sqlite(result.backup)
     assert not (paths.backups_dir / "pre-migration").exists()

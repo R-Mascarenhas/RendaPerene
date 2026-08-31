@@ -1,17 +1,60 @@
 import sqlite3
-import sys
 from contextlib import suppress
 
 from core.application_paths import portfolio_database_lock
 
 
+class _LockedCursor(sqlite3.Cursor):
+    """Acquire the portfolio lock before executing a potentially writing statement."""
+
+    def execute(self, sql, parameters=()):
+        self.connection._ensure_write_lock(sql)
+        return super().execute(sql, parameters)
+
+    def executemany(self, sql, parameters):
+        self.connection._ensure_write_lock(sql)
+        return super().executemany(sql, parameters)
+
+    def executescript(self, sql_script):
+        self.connection._ensure_write_lock(sql_script)
+        return super().executescript(sql_script)
+
+
 class _LockedConnection(sqlite3.Connection):
-    """Release a portfolio file lock when its SQLite connection closes."""
+    """Allow concurrent readers while locking a portfolio's write transaction."""
 
     _lock_context = None
+    _database_path = None
 
-    def attach_lock(self, lock_context):
+    def attach_database(self, database_path):
+        self._database_path = database_path
+
+    @staticmethod
+    def _statement_requires_write_lock(sql) -> bool:
+        statement = sql.lstrip().upper()
+        return not statement.startswith(("SELECT", "EXPLAIN"))
+
+    def _ensure_write_lock(self, sql):
+        if self._lock_context is not None or not self._statement_requires_write_lock(sql):
+            return
+        lock_context = portfolio_database_lock(self._database_path)
+        lock_context.__enter__()
         self._lock_context = lock_context
+
+    def cursor(self, factory=None):
+        return super().cursor(factory=factory or _LockedCursor)
+
+    def execute(self, sql, parameters=()):
+        self._ensure_write_lock(sql)
+        return super().execute(sql, parameters)
+
+    def executemany(self, sql, parameters):
+        self._ensure_write_lock(sql)
+        return super().executemany(sql, parameters)
+
+    def executescript(self, sql_script):
+        self._ensure_write_lock(sql_script)
+        return super().executescript(sql_script)
 
     def close(self):
         lock_context = self._lock_context
@@ -69,14 +112,8 @@ class DatabaseManager:
         configured_database = self.personal_db() if callable(self.personal_db) else self.personal_db
         db_file = Path(configured_database)
         db_file.parent.mkdir(parents=True, exist_ok=True)
-        lock_context = portfolio_database_lock(db_file)
-        lock_context.__enter__()
-        try:
-            connection = sqlite3.connect(db_file, factory=_LockedConnection)
-        except BaseException:
-            lock_context.__exit__(*sys.exc_info())
-            raise
-        connection.attach_lock(lock_context)
+        connection = sqlite3.connect(db_file, factory=_LockedConnection, timeout=60)
+        connection.attach_database(db_file)
         return connection
 
 

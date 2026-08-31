@@ -92,8 +92,9 @@ durante a importação; qualquer dado ou configuração do usuário torna o dest
 cópia recuperável relevante permanece em `backups/legacy-import/`. Ao publicar uma carteira
 importada, a raiz de composição invalida o estado da sessão derivado do banco e reinicia a execução
 para carregar as configurações persistidas antes que a interface permita novas edições. Conexões
-abertas pelo `DatabaseManager` e a publicação final de uma migração compartilham um lock por
-carteira, impedindo que uma escrita concorrente seja descartada durante a substituição.
+abertas pelo `DatabaseManager` permitem leituras concorrentes; o lock por carteira é adquirido
+somente quando uma conexão inicia uma escrita e também protege a publicação final de uma migração,
+impedindo que uma escrita concorrente seja descartada durante a substituição.
 Bancos inválidos não ficam disponíveis para seleção. Se a carteira ativa desaparecer ou se tornar
 inválida, a seleção automática de uma alternativa também invalida o estado derivado da carteira
 anterior antes de reiniciar a interface. Quando não existe alternativa válida, a aplicação usa um
@@ -101,9 +102,11 @@ novo nome `portfolio_recovery*.db`, preservando o arquivo inválido. O reset da 
 remove chaves de widgets de metas vinculadas ao banco anterior. Nomes de arquivos de carteiras e
 dados financeiros não são escritos em logs.
 
-A validação SQLite usa `PRAGMA quick_check` e mantém em memória o resultado por caminho, tamanho e
-data de modificação do arquivo. Reruns do Streamlit reutilizam a validação enquanto esses metadados
-não mudam; qualquer alteração no banco produz uma nova verificação de integridade.
+A validação SQLite usa `PRAGMA quick_check` e mantém em memória o resultado por caminho, tamanho,
+data de modificação e metadados dos arquivos auxiliares WAL/SHM. Reruns do Streamlit reutilizam a
+validação enquanto esses metadados não mudam; a comparação de conteúdo lógico usada pelos marcadores
+de migração também é reutilizada para arquivos imutáveis. Qualquer alteração no banco ou em seus
+auxiliares produz uma nova verificação.
 
 O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO
 registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa; o

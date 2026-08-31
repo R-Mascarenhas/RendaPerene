@@ -39,7 +39,9 @@ class StreamlitCachedMarketData:
 
     @staticmethod
     @st.cache_data(ttl=600)
-    def _get_raw_ticker_market_analysis(ticker: str, cache_version: int) -> dict:
+    def _get_raw_ticker_market_analysis(
+        ticker: str, cache_version: int, cache_scope: str = ""
+    ) -> dict:
         """Fetch market metrics and dividend history with a versioned 10-minute cache."""
         return MarketData._get_raw_ticker_market_analysis(ticker)
 
@@ -51,7 +53,9 @@ class StreamlitCachedMarketData:
         """
         ticker = ticker.strip().upper()
         raw_data = StreamlitCachedMarketData._get_raw_ticker_market_analysis(
-            ticker, StreamlitCachedMarketData.RAW_ANALYSIS_CACHE_VERSION
+            ticker,
+            StreamlitCachedMarketData.RAW_ANALYSIS_CACHE_VERSION,
+            str(st.session_state.get("session_id", "")),
         )
         if not raw_data:
             return {}

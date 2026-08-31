@@ -68,7 +68,19 @@ def _lock_owner_is_alive(lock: Path) -> bool:
         host, pid_text, _token = lock.read_text(encoding="ascii").split(":", 2)
         if host != socket.gethostname():
             return True
-        os.kill(int(pid_text), 0)
+        pid = int(pid_text)
+        if sys.platform.startswith("win"):
+            import ctypes
+
+            process_query_limited_information = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(
+                process_query_limited_information, False, pid
+            )
+            if not handle:
+                return False
+            ctypes.windll.kernel32.CloseHandle(handle)
+        else:
+            os.kill(pid, 0)
     except (OSError, UnicodeError, ValueError):
         return False
     return True
@@ -425,8 +437,10 @@ class ApplicationPaths:
                             False,
                             "A carteira de destino mudou durante a importação; nenhum dado foi substituído.",
                         )
+                    self._remove_sqlite_sidecars(destination)
                     self._replace_with_validated_copy(backup, destination)
                 else:
+                    self._remove_sqlite_sidecars(destination)
                     self._safe_copy(backup, destination, validate_sqlite=True)
                 completion_marker.write_text(
                     f"{self._sqlite_content_digest(backup)}\n", encoding="ascii"
@@ -521,7 +535,25 @@ class ApplicationPaths:
 
     @staticmethod
     def _sqlite_content_digest(path: Path) -> str:
-        connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        path = Path(path)
+        metadata = path.stat()
+        return ApplicationPaths._sqlite_content_digest_snapshot(
+            str(path.resolve()),
+            metadata.st_size,
+            metadata.st_mtime_ns,
+            ApplicationPaths._sqlite_sidecar_signature(path),
+        )
+
+    @staticmethod
+    @lru_cache(maxsize=256)
+    def _sqlite_content_digest_snapshot(
+        path: str,
+        _size: int,
+        _mtime_ns: int,
+        _sidecar_signature: tuple[tuple[int, int] | None, ...],
+    ) -> str:
+        database_path = Path(path)
+        connection = sqlite3.connect(f"{database_path.as_uri()}?mode=ro", uri=True)
         try:
             connection.execute("BEGIN")
             checksum = hashlib.sha256()

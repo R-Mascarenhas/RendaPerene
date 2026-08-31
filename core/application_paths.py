@@ -284,6 +284,7 @@ class ApplicationPaths:
             if destination.exists() and not self.is_valid_sqlite(destination):
                 self._replace_with_validated_copy(default_database_source, destination)
                 self._remove_sqlite_sidecars(destination)
+                self._write_database_generation(destination)
                 recovered_database = True
             elif not destination.exists():
                 self._safe_copy(default_database_source, destination, validate_sqlite=True)
@@ -299,6 +300,10 @@ class ApplicationPaths:
         ):
             raise ValueError("Portfolio databases must use a 'portfolio*.db' filename.")
         return self.database_dir / filename
+
+    @staticmethod
+    def _write_database_generation(database: Path) -> None:
+        Path(f"{database}.generation").write_text(uuid.uuid4().hex, encoding="ascii")
 
     @staticmethod
     def choose_portfolio(preferred: str, available: list[str]) -> str:
@@ -509,6 +514,7 @@ class ApplicationPaths:
                 else:
                     self._remove_sqlite_sidecars(destination)
                     self._safe_copy(backup, destination, validate_sqlite=True)
+                self._write_database_generation(destination)
                 completion_marker.write_text(
                     f"{self._sqlite_content_digest(backup)}\n", encoding="ascii"
                 )

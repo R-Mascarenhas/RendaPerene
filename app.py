@@ -194,10 +194,8 @@ ShareQuantityGoalService.set_adapters(
 
 # Reload if another Streamlit session replaced the active portfolio on disk.
 resolved_database = app_paths.portfolio_database(current_active_db)
-if resolved_database.exists():
-    database_signature = (resolved_database.stat().st_size, resolved_database.stat().st_mtime_ns)
-else:
-    database_signature = (None, None)
+generation_file = resolved_database.with_name(f"{resolved_database.name}.generation")
+database_signature = generation_file.stat().st_mtime_ns if generation_file.exists() else None
 if st.session_state.get("active_database_signature") not in (None, database_signature):
     SessionManager.reset_portfolio_state()
 st.session_state["active_database_signature"] = database_signature

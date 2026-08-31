@@ -3,6 +3,8 @@ import os
 import pandas as pd
 import streamlit as st
 
+from core.application_paths import ApplicationPaths
+
 
 class AssetsCatalogDAO:
     """Data Access Object (DAO) for managing read/write access to the static assets.csv catalog."""
@@ -26,6 +28,11 @@ class AssetsCatalogDAO:
     def add_fallback_asset(self, ticker: str) -> None:
         """Saves a fallback asset to the CSV file if it does not already exist."""
         csv_path = self._resolve_csv_path()
+        if os.path.exists(csv_path):
+            with ApplicationPaths._catalog_lock(csv_path):
+                self._add_fallback_asset_locked(csv_path, ticker)
+
+    def _add_fallback_asset_locked(self, csv_path, ticker: str) -> None:
         if os.path.exists(csv_path):
             df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig")
             df.columns = df.columns.str.strip()

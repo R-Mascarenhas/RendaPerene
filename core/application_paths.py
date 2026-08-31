@@ -7,8 +7,9 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import time
 import uuid
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -238,8 +239,6 @@ class ApplicationPaths:
             if (
                 destination.exists()
                 and backup.with_suffix(backup.suffix + ".done").exists()
-                and backup.exists()
-                and self._same_file_contents(source, backup)
             ):
                 continue
             destination_is_replaceable = (
@@ -274,8 +273,6 @@ class ApplicationPaths:
         if (
             destination.exists()
             and completion_marker.exists()
-            and backup.exists()
-            and self._same_file_contents(source, backup)
         ):
             return MigrationResult(
                 source,
@@ -410,6 +407,11 @@ class ApplicationPaths:
     @staticmethod
     def _merge_catalog(bundled_catalog: Path, writable_catalog: Path) -> None:
         """Apply bundled metadata updates while retaining user-only fallback rows."""
+        with ApplicationPaths._catalog_lock(writable_catalog):
+            ApplicationPaths._merge_catalog_locked(bundled_catalog, writable_catalog)
+
+    @staticmethod
+    def _merge_catalog_locked(bundled_catalog: Path, writable_catalog: Path) -> None:
         bundled_fields, bundled_rows = ApplicationPaths._read_catalog(bundled_catalog)
         writable_fields, writable_rows = ApplicationPaths._read_catalog(writable_catalog)
         fieldnames = bundled_fields + [
@@ -435,6 +437,27 @@ class ApplicationPaths:
         finally:
             with suppress(FileNotFoundError):
                 temporary.unlink()
+
+    @staticmethod
+    @contextmanager
+    def _catalog_lock(catalog: Path):
+        lock = catalog.with_name(f".{catalog.name}.lock")
+        descriptor = None
+        try:
+            for _ in range(500):
+                try:
+                    descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                    break
+                except FileExistsError:
+                    time.sleep(0.01)
+            if descriptor is None:
+                raise TimeoutError("Timed out waiting for assets catalog lock.")
+            yield
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+                with suppress(FileNotFoundError):
+                    lock.unlink()
 
     @staticmethod
     def _read_catalog(path: Path) -> tuple[list[str], list[dict[str, str]]]:

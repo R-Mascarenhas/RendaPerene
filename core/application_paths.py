@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 import uuid
+from collections.abc import Iterable
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from functools import lru_cache
@@ -20,6 +21,45 @@ from platformdirs.windows import Windows
 APP_NAME = "RendaPerene"
 DEFAULT_PORTFOLIO = "portfolio.db"
 DEMO_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
+FILE_LOCK_TIMEOUT_SECONDS = 5
+FILE_LOCK_STALE_SECONDS = 300
+
+
+@contextmanager
+def _exclusive_file_lock(lock: Path):
+    lock = Path(lock)
+    descriptor = None
+    deadline = time.monotonic() + FILE_LOCK_TIMEOUT_SECONDS
+    try:
+        while time.monotonic() < deadline:
+            try:
+                descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                break
+            except FileExistsError:
+                try:
+                    if time.time() - lock.stat().st_mtime > FILE_LOCK_STALE_SECONDS:
+                        lock.unlink()
+                        continue
+                except FileNotFoundError:
+                    continue
+                time.sleep(0.01)
+        if descriptor is None:
+            raise TimeoutError(f"Timed out waiting for {lock.name}.")
+        yield
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+            with suppress(FileNotFoundError):
+                lock.unlink()
+
+
+@contextmanager
+def portfolio_database_lock(database: Path):
+    """Serialize database connections and migration publication for one portfolio."""
+    database = Path(database)
+    lock = database.with_name(f".{database.name}.lock")
+    with _exclusive_file_lock(lock):
+        yield
 
 
 @dataclass(frozen=True)
@@ -136,27 +176,19 @@ class ApplicationPaths:
             directory.mkdir(parents=True, exist_ok=True)
 
         bundled_catalog = self.bundled_resource("assets.csv")
-        if self.catalog_file.exists() and self._is_valid_catalog(bundled_catalog):
-            with self._catalog_lock(self.catalog_file):
-                if not self._is_valid_catalog(self.catalog_file):
-                    self._replace_with_validated_catalog(bundled_catalog, self.catalog_file)
-
         current_catalog_paths = {bundled_catalog.resolve(), self.catalog_file.resolve()}
+        catalog_sources = []
         for legacy_root in reversed(self._legacy_roots()):
             legacy_catalog = legacy_root / "assets.csv"
             if legacy_catalog.resolve() not in current_catalog_paths and self._is_valid_catalog(
                 legacy_catalog
             ):
-                if self.catalog_file.exists():
-                    self._merge_catalog(legacy_catalog, self.catalog_file)
-                else:
-                    self._safe_copy(legacy_catalog, self.catalog_file, validate_sqlite=False)
+                catalog_sources.append(legacy_catalog)
 
-        if bundled_catalog.is_file():
-            if self.catalog_file.exists():
-                self._merge_catalog(bundled_catalog, self.catalog_file)
-            else:
-                self._safe_copy(bundled_catalog, self.catalog_file, validate_sqlite=False)
+        if self._is_valid_catalog(bundled_catalog):
+            catalog_sources.append(bundled_catalog)
+        if catalog_sources:
+            self._merge_catalogs(catalog_sources, self.catalog_file)
 
         if default_database_source is not None:
             destination = self.portfolio_database(DEFAULT_PORTFOLIO)
@@ -313,13 +345,13 @@ class ApplicationPaths:
                 if not backup.exists():
                     try:
                         self._safe_copy(source, backup, validate_sqlite=True)
-                    except (OSError, sqlite3.DatabaseError, ValueError) as error:
+                    except (OSError, sqlite3.DatabaseError, ValueError):
                         return MigrationResult(
                             source,
                             destination,
                             None,
                             False,
-                            f"A carteira já existe, mas o backup falhou: {error}",
+                            "A carteira já existe, mas não foi possível criar o backup.",
                         )
                 return MigrationResult(
                     source,
@@ -351,34 +383,27 @@ class ApplicationPaths:
             if not backup.exists():
                 self._safe_copy(source, backup, validate_sqlite=True)
 
-            if destination.exists():
-                if not self._is_pristine_database(destination):
-                    return MigrationResult(
-                        source,
-                        destination,
-                        backup,
-                        False,
-                        "A carteira de destino mudou durante a importação; nenhum dado foi substituído.",
-                    )
-                if not self._is_pristine_database(destination):
-                    return MigrationResult(
-                        source,
-                        destination,
-                        backup,
-                        False,
-                        "A carteira de destino mudou durante a importação; nenhum dado foi substituído.",
-                    )
-                self._replace_with_validated_copy(backup, destination)
-            else:
-                self._safe_copy(backup, destination, validate_sqlite=True)
-            completion_marker.write_text("completed\n", encoding="ascii")
-        except (OSError, sqlite3.DatabaseError, ValueError) as error:
+            with portfolio_database_lock(destination):
+                if destination.exists():
+                    if not self._is_pristine_database(destination):
+                        return MigrationResult(
+                            source,
+                            destination,
+                            backup,
+                            False,
+                            "A carteira de destino mudou durante a importação; nenhum dado foi substituído.",
+                        )
+                    self._replace_with_validated_copy(backup, destination)
+                else:
+                    self._safe_copy(backup, destination, validate_sqlite=True)
+                completion_marker.write_text("completed\n", encoding="ascii")
+        except (OSError, sqlite3.DatabaseError, ValueError):
             return MigrationResult(
                 source,
                 destination,
                 backup,
                 False,
-                f"Falha ao copiar a carteira: {error}",
+                "Não foi possível copiar a carteira. Verifique as permissões de armazenamento e tente novamente.",
             )
 
         return MigrationResult(
@@ -468,27 +493,47 @@ class ApplicationPaths:
     @staticmethod
     def _merge_catalog(bundled_catalog: Path, writable_catalog: Path) -> None:
         """Apply bundled metadata updates while retaining user-only fallback rows."""
-        with ApplicationPaths._catalog_lock(writable_catalog):
-            ApplicationPaths._merge_catalog_locked(bundled_catalog, writable_catalog)
+        ApplicationPaths._merge_catalogs((bundled_catalog,), writable_catalog)
 
     @staticmethod
-    def _merge_catalog_locked(bundled_catalog: Path, writable_catalog: Path) -> None:
-        bundled_fields, bundled_rows = ApplicationPaths._read_catalog(bundled_catalog)
-        writable_fields, writable_rows = ApplicationPaths._read_catalog(writable_catalog)
-        fieldnames = bundled_fields + [
-            field for field in writable_fields if field not in bundled_fields
-        ]
-        bundled_codes = {row["CÓDIGO"] for row in bundled_rows}
-        user_only_rows = [
-            row for row in writable_rows if row.get("CÓDIGO") and row["CÓDIGO"] not in bundled_codes
-        ]
+    def _merge_catalogs(catalog_sources: Iterable[Path], writable_catalog: Path) -> None:
+        """Build all catalog layers in memory and publish the final result once."""
+        with ApplicationPaths._catalog_lock(writable_catalog):
+            ApplicationPaths._merge_catalogs_locked(catalog_sources, writable_catalog)
+
+    @staticmethod
+    def _merge_catalogs_locked(catalog_sources: Iterable[Path], writable_catalog: Path) -> None:
+        if ApplicationPaths._is_valid_catalog(writable_catalog):
+            fieldnames, rows = ApplicationPaths._read_catalog(writable_catalog)
+        else:
+            fieldnames, rows = [], []
+
+        merged_source = False
+        for catalog_source in catalog_sources:
+            try:
+                source_fields, source_rows = ApplicationPaths._read_catalog(catalog_source)
+            except (OSError, UnicodeError, csv.Error, ValueError):
+                continue
+            merged_source = True
+            combined_fields = source_fields + [
+                field for field in fieldnames if field not in source_fields
+            ]
+            source_codes = {row["CÓDIGO"] for row in source_rows}
+            retained_rows = [
+                row for row in rows if row.get("CÓDIGO") and row["CÓDIGO"] not in source_codes
+            ]
+            fieldnames = combined_fields
+            rows = [*source_rows, *retained_rows]
+
+        if not merged_source:
+            return
 
         text_buffer = io.StringIO(newline="")
         writer = csv.DictWriter(text_buffer, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
-        writer.writerows([*bundled_rows, *user_only_rows])
+        writer.writerows(rows)
         merged_contents = text_buffer.getvalue().encode("utf-8-sig")
-        if writable_catalog.read_bytes() == merged_contents:
+        if writable_catalog.exists() and writable_catalog.read_bytes() == merged_contents:
             return
 
         temporary = writable_catalog.with_name(f".{writable_catalog.name}.{uuid.uuid4().hex}.tmp")
@@ -504,28 +549,8 @@ class ApplicationPaths:
     def _catalog_lock(catalog: Path):
         catalog = Path(catalog)
         lock = catalog.with_name(f".{catalog.name}.lock")
-        descriptor = None
-        try:
-            for _ in range(500):
-                try:
-                    descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                    break
-                except FileExistsError:
-                    try:
-                        if time.time() - lock.stat().st_mtime > 300:
-                            lock.unlink()
-                            continue
-                    except FileNotFoundError:
-                        continue
-                    time.sleep(0.01)
-            if descriptor is None:
-                raise TimeoutError("Timed out waiting for assets catalog lock.")
+        with _exclusive_file_lock(lock):
             yield
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
-                with suppress(FileNotFoundError):
-                    lock.unlink()
 
     @staticmethod
     def _read_catalog(path: Path) -> tuple[list[str], list[dict[str, str]]]:
@@ -546,18 +571,6 @@ class ApplicationPaths:
             return True
         except (OSError, UnicodeError, csv.Error, ValueError):
             return False
-
-    @classmethod
-    def _replace_with_validated_catalog(cls, source: Path, destination: Path) -> None:
-        temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            shutil.copy2(source, temporary)
-            if not cls._is_valid_catalog(temporary):
-                raise ValueError("The copied file failed assets catalog validation.")
-            os.replace(temporary, destination)
-        finally:
-            with suppress(FileNotFoundError):
-                temporary.unlink()
 
     @staticmethod
     def _snapshot_sqlite(source: Path, destination: Path) -> None:

@@ -218,6 +218,8 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
         "accumulation_plan_weights_portfolio.db",
         "enable_dividend_reinvestment_goal_portfolio.db",
         "enable_share_quantity_goal_portfolio.db",
+        "initial_equity_widget_250000.0",
+        "mw_value_input_1518.0",
         "processed_files",
         SESSION_BIRTH_DATE,
         SESSION_RETIREMENT_AGE,

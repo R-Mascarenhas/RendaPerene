@@ -1,4 +1,26 @@
+import sqlite3
+import sys
 from contextlib import suppress
+
+from core.application_paths import portfolio_database_lock
+
+
+class _LockedConnection(sqlite3.Connection):
+    """Release a portfolio file lock when its SQLite connection closes."""
+
+    _lock_context = None
+
+    def attach_lock(self, lock_context):
+        self._lock_context = lock_context
+
+    def close(self):
+        lock_context = self._lock_context
+        self._lock_context = None
+        try:
+            super().close()
+        finally:
+            if lock_context is not None:
+                lock_context.__exit__(None, None, None)
 
 
 class DatabaseManager:
@@ -42,13 +64,20 @@ class DatabaseManager:
 
     def get_personal_connection(self):
         """Returns a new connection to the configured personal transactional database."""
-        import sqlite3
         from pathlib import Path
 
         configured_database = self.personal_db() if callable(self.personal_db) else self.personal_db
         db_file = Path(configured_database)
         db_file.parent.mkdir(parents=True, exist_ok=True)
-        return sqlite3.connect(db_file)
+        lock_context = portfolio_database_lock(db_file)
+        lock_context.__enter__()
+        try:
+            connection = sqlite3.connect(db_file, factory=_LockedConnection)
+        except BaseException:
+            lock_context.__exit__(*sys.exc_info())
+            raise
+        connection.attach_lock(lock_context)
+        return connection
 
 
 # Global Singleton instance for the app

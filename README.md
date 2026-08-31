@@ -53,8 +53,9 @@ pastas irmãs de releases anteriores chamadas `RendaPerene-v*`. Quando o mesmo n
 de uma versão, a cópia válida mais recente é oferecida. A origem é mantida, uma cópia de recuperação
 é criada em `backups/legacy-import/` e cada cópia é validada como SQLite antes de ficar disponível.
 Repetir a operação é seguro e um arquivo existente com conteúdo diferente nunca é sobrescrito. Caso
-o primeiro carregamento já tenha criado uma carteira principal
-somente com os valores padrão, ela pode ser substituída com segurança; qualquer dado ou configuração
+o primeiro carregamento já tenha criado uma carteira principal somente com os valores padrão, a
+publicação final aguarda as operações em andamento e verifica novamente se ela continua sem dados
+do usuário. Caso positivo, ela pode ser substituída com segurança; qualquer dado ou configuração
 alterada impede essa substituição. Após uma importação bem-sucedida, a carteira importada é ativada
 e seus dados de planejamento são recarregados. Os bancos da demonstração hospedada continuam
 isolados por sessão em armazenamento temporário. Bancos demo inválidos são restaurados

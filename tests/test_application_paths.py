@@ -1,11 +1,13 @@
 import os
 import sqlite3
 import sys
+import threading
 import time
+from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-from core.application_paths import ApplicationPaths
+from core.application_paths import ApplicationPaths, portfolio_database_lock
 from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.database import DatabaseManager
 from core.utils.market_data import MarketData
@@ -181,6 +183,76 @@ def test_sqlite_content_comparison_includes_committed_wal_pages(tmp_path):
         assert ApplicationPaths._same_sqlite_contents(source, backup) is False
     finally:
         writer.close()
+
+
+def test_migration_publication_waits_for_database_connections_and_revalidates(
+    tmp_path, monkeypatch
+):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio.db"
+    create_database(source, "legacy")
+    paths.prepare()
+    destination = paths.portfolio_database("portfolio.db")
+    manager = DatabaseManager(destination)
+    manager.init_personal_db()
+    connection = manager.get_personal_connection()
+    lock_attempted = threading.Event()
+    real_lock = portfolio_database_lock
+
+    @contextmanager
+    def observed_lock(database):
+        lock_attempted.set()
+        with real_lock(database):
+            yield
+
+    monkeypatch.setattr("core.application_paths.portfolio_database_lock", observed_lock)
+    results = []
+    migration = threading.Thread(
+        target=lambda: results.append(paths.migrate_legacy_database(source))
+    )
+    migration.start()
+    try:
+        assert lock_attempted.wait(timeout=2)
+        assert migration.is_alive()
+        connection.execute("UPDATE goal_settings SET reinvest_dividends_enabled = 0 WHERE id = 1")
+        connection.commit()
+    finally:
+        connection.close()
+    migration.join(timeout=5)
+
+    assert not migration.is_alive()
+    assert results[0].migrated is False
+    assert "mudou durante a importação" in results[0].message
+    verification = sqlite3.connect(destination)
+    try:
+        assert verification.execute(
+            "SELECT reinvest_dividends_enabled FROM goal_settings WHERE id = 1"
+        ).fetchone() == (0,)
+    finally:
+        verification.close()
+
+
+def test_migration_copy_failures_return_only_localized_user_text(tmp_path, monkeypatch):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_family.db"
+    create_database(source)
+    paths.prepare()
+
+    def fail_copy(*_args, **_kwargs):
+        raise ValueError("The copied file failed SQLite validation.")
+
+    monkeypatch.setattr(ApplicationPaths, "_safe_copy", staticmethod(fail_copy))
+
+    result = paths.migrate_legacy_database(source)
+
+    assert result.migrated is False
+    assert result.message == (
+        "Não foi possível copiar a carteira. "
+        "Verifique as permissões de armazenamento e tente novamente."
+    )
+    assert "copied file" not in result.message
 
 
 def test_invalid_legacy_database_is_rejected_before_copy(tmp_path):
@@ -478,27 +550,52 @@ def test_prepare_replaces_an_invalid_catalog_while_holding_the_catalog_lock(tmp_
     write_catalog(resource_root / "assets.csv", [("BASE3", "Bundled metadata")])
     paths.catalog_file.parent.mkdir(parents=True)
     paths.catalog_file.write_text("invalid", encoding="utf-8")
-    real_replace = ApplicationPaths._replace_with_validated_catalog
-    replacement_was_locked = False
+    real_merge = ApplicationPaths._merge_catalogs_locked
+    merge_was_locked = False
 
-    def checked_replace(source, destination):
-        nonlocal replacement_was_locked
+    def checked_merge(sources, destination):
+        nonlocal merge_was_locked
         lock = destination.with_name(f".{destination.name}.lock")
-        replacement_was_locked = lock.exists()
-        real_replace(source, destination)
+        merge_was_locked = lock.exists()
+        real_merge(sources, destination)
 
     monkeypatch.setattr(
         ApplicationPaths,
-        "_replace_with_validated_catalog",
-        staticmethod(checked_replace),
+        "_merge_catalogs_locked",
+        staticmethod(checked_merge),
     )
 
     paths.prepare()
 
-    assert replacement_was_locked is True
+    assert merge_was_locked is True
     assert AssetsCatalogDAO(paths.catalog_file).load_catalog().loc["BASE3", "NOME"] == (
         "Bundled metadata"
     )
+
+
+def test_prepare_publishes_the_final_legacy_and_bundled_catalog_only_once(tmp_path, monkeypatch):
+    resource_root = tmp_path / "bundle"
+    legacy_root = tmp_path / "legacy"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", legacy_root)
+    write_catalog(legacy_root / "assets.csv", [("BASE3", "Legacy"), ("USER3", "Fallback")])
+    write_catalog(resource_root / "assets.csv", [("BASE3", "Bundled")])
+    paths.prepare()
+    real_replace = os.replace
+    replace_count = 0
+
+    def counting_replace(source, destination):
+        nonlocal replace_count
+        replace_count += 1
+        real_replace(source, destination)
+
+    monkeypatch.setattr("core.application_paths.os.replace", counting_replace)
+
+    paths.prepare()
+
+    assert replace_count == 0
+    catalog = AssetsCatalogDAO(paths.catalog_file).load_catalog()
+    assert catalog.loc["BASE3", "NOME"] == "Bundled"
+    assert catalog.loc["USER3", "NOME"] == "Fallback"
 
 
 def test_sqlite_validation_reuses_result_for_unchanged_file(monkeypatch, tmp_path):

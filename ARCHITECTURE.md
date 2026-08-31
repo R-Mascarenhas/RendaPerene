@@ -74,7 +74,9 @@ ao lado do executável e nas pastas irmãs `RendaPerene-v*`, em ordem de versão
 catálogo incluído na versão atual. Assim, a baseline mais nova prevalece para tickers oficiais,
 enquanto tickers alternativos existentes apenas nos catálogos legados são preservados. Catálogos
 legados malformados são ignorados, e uma cópia gravável inválida é substituída atomicamente pela
-baseline válida incluída no pacote.
+baseline válida incluída no pacote. Todas as camadas legadas e a baseline atual são combinadas em
+memória sob um único lock; somente o resultado final é publicado, e apenas quando seu conteúdo
+muda.
 
 Quando existem bancos `portfolio*.db` na antiga pasta `database/` ao lado da aplicação ou em pastas
 irmãs de releases anteriores chamadas `RendaPerene-v*`, a barra lateral oferece sua importação. Se
@@ -89,7 +91,9 @@ Bancos principais inicializados automaticamente apenas com os valores padrão po
 durante a importação; qualquer dado ou configuração do usuário torna o destino não substituível. A
 cópia recuperável relevante permanece em `backups/legacy-import/`. Ao publicar uma carteira
 importada, a raiz de composição invalida o estado da sessão derivado do banco e reinicia a execução
-para carregar as configurações persistidas antes que a interface permita novas edições.
+para carregar as configurações persistidas antes que a interface permita novas edições. Conexões
+abertas pelo `DatabaseManager` e a publicação final de uma migração compartilham um lock por
+carteira, impedindo que uma escrita concorrente seja descartada durante a substituição.
 Bancos inválidos não ficam disponíveis para seleção. Se a carteira ativa desaparecer ou se tornar
 inválida, a seleção automática de uma alternativa também invalida o estado derivado da carteira
 anterior antes de reiniciar a interface. Quando não existe alternativa válida, a aplicação usa um

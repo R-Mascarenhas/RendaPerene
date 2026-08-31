@@ -147,6 +147,8 @@ WIDGET_PLANNING_START_DATE_ENABLED = "planning_start_date_enabled_input"
 WIDGET_INITIAL_EQUITY = "initial_equity_input_widget"
 WIDGET_REINVESTMENT_GOAL_PREFIX = "enable_dividend_reinvestment_goal_"
 WIDGET_SHARE_QUANTITY_GOAL_PREFIX = "enable_share_quantity_goal_"
+WIDGET_ACCUMULATION_PLAN_WEIGHTS_PREFIX = "accumulation_plan_weights_"
+WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX = "accumulation_plan_editor_"
 
 WEIGHT_PCT = "weight_pct"
 CEILING_PRICE_GRID = "ceiling_price_grid"

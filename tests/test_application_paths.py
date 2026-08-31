@@ -137,6 +137,31 @@ def test_successful_legacy_migration_is_copy_only_backed_up_and_idempotent(tmp_p
     assert "já foi importada" in repeated.message
 
 
+def test_legacy_migration_reuses_logically_equal_backup_after_failed_publication(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_family.db"
+    create_database(source)
+    paths.prepare()
+    backup = paths.backups_dir / "legacy-import" / source.name
+    ApplicationPaths._safe_copy(source, backup, validate_sqlite=True)
+    connection = sqlite3.connect(backup)
+    try:
+        connection.execute("INSERT INTO marker VALUES ('temporary')")
+        connection.execute("DELETE FROM marker WHERE value = 'temporary'")
+        connection.commit()
+    finally:
+        connection.close()
+
+    assert source.read_bytes() != backup.read_bytes()
+
+    result = paths.migrate_legacy_database(source)
+
+    assert result.migrated is True
+    assert result.backup == backup
+    assert ApplicationPaths._same_sqlite_contents(source, result.destination)
+
+
 def test_invalid_legacy_database_is_rejected_before_copy(tmp_path):
     resource_root = tmp_path / "application"
     data_root = tmp_path / "user-data"

@@ -241,7 +241,7 @@ class ApplicationPaths:
             destination_is_replaceable = (
                 destination.exists()
                 and self._is_pristine_database(destination)
-                and not self._same_file_contents(source, destination)
+                and not self._same_sqlite_contents(source, destination)
             )
             if not destination.exists() or destination_is_replaceable:
                 candidates.append(source)
@@ -277,7 +277,9 @@ class ApplicationPaths:
             )
 
         if destination.exists():
-            if self.is_valid_sqlite(destination) and self._same_file_contents(source, destination):
+            if self.is_valid_sqlite(destination) and self._same_sqlite_contents(
+                source, destination
+            ):
                 if not backup.exists():
                     try:
                         self._safe_copy(source, backup, validate_sqlite=True)
@@ -308,7 +310,7 @@ class ApplicationPaths:
         try:
             self.backups_dir.mkdir(parents=True, exist_ok=True)
             backup.parent.mkdir(parents=True, exist_ok=True)
-            if backup.exists() and not self._same_file_contents(source, backup):
+            if backup.exists() and not self._same_sqlite_contents(source, backup):
                 return MigrationResult(
                     source,
                     destination,
@@ -397,6 +399,33 @@ class ApplicationPaths:
             return checksum.hexdigest()
 
         return digest(first) == digest(second)
+
+    @classmethod
+    def _same_sqlite_contents(cls, first: Path, second: Path) -> bool:
+        """Compare SQLite databases by committed logical content, not file layout."""
+        if cls._same_file_contents(first, second):
+            return True
+
+        try:
+            return cls._sqlite_content_digest(first) == cls._sqlite_content_digest(second)
+        except (OSError, sqlite3.DatabaseError):
+            return False
+
+    @staticmethod
+    def _sqlite_content_digest(path: Path) -> str:
+        connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            connection.execute("BEGIN")
+            checksum = hashlib.sha256()
+            for pragma in ("application_id", "user_version"):
+                value = connection.execute(f"PRAGMA {pragma}").fetchone()[0]
+                checksum.update(f"{pragma}={value}\0".encode())
+            for statement in connection.iterdump():
+                checksum.update(statement.encode("utf-8"))
+                checksum.update(b"\0")
+            return checksum.hexdigest()
+        finally:
+            connection.close()
 
     @staticmethod
     def _merge_catalog(bundled_catalog: Path, writable_catalog: Path) -> None:

@@ -30,6 +30,8 @@ from core.constants import (
     SESSION_PLANNING_START_DATE_ENABLED,
     SESSION_REQUIRED_CONTRIBUTION_CACHE,
     SESSION_RETIREMENT_AGE,
+    WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX,
+    WIDGET_ACCUMULATION_PLAN_WEIGHTS_PREFIX,
     WIDGET_BAZIN_SPREAD_INPUT,
     WIDGET_BAZIN_YIELD_INPUT,
     WIDGET_BIRTH_DATE,
@@ -97,6 +99,8 @@ class SessionManager:
         portfolio_prefixes = (
             WIDGET_REINVESTMENT_GOAL_PREFIX,
             WIDGET_SHARE_QUANTITY_GOAL_PREFIX,
+            WIDGET_ACCUMULATION_PLAN_WEIGHTS_PREFIX,
+            WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX,
         )
         for key in list(st.session_state):
             if key in portfolio_keys or (

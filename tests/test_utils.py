@@ -211,6 +211,8 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
 
     portfolio_keys = {
         "db_loaded",
+        "accumulation_plan_editor_portfolio.db",
+        "accumulation_plan_weights_portfolio.db",
         "enable_dividend_reinvestment_goal_portfolio.db",
         "enable_share_quantity_goal_portfolio.db",
         SESSION_BIRTH_DATE,

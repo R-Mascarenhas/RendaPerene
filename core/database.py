@@ -1,4 +1,5 @@
 import sqlite3
+import sys
 from contextlib import suppress
 
 from core.application_paths import portfolio_database_reader_lock
@@ -26,10 +27,11 @@ class _LockedConnection(sqlite3.Connection):
     _lock_context = None
     _database_path = None
 
-    def attach_database(self, database_path):
+    def attach_database(self, database_path, lock_context=None):
         self._database_path = database_path
-        self._lock_context = portfolio_database_reader_lock(database_path)
-        self._lock_context.__enter__()
+        self._lock_context = lock_context or portfolio_database_reader_lock(database_path)
+        if lock_context is None:
+            self._lock_context.__enter__()
 
     @staticmethod
     def _statement_requires_write_lock(sql) -> bool:
@@ -110,9 +112,15 @@ class DatabaseManager:
         configured_database = self.personal_db() if callable(self.personal_db) else self.personal_db
         db_file = Path(configured_database)
         db_file.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(db_file, factory=_LockedConnection, timeout=60)
-        connection.attach_database(db_file)
-        return connection
+        lock_context = portfolio_database_reader_lock(db_file)
+        lock_context.__enter__()
+        try:
+            connection = sqlite3.connect(db_file, factory=_LockedConnection, timeout=60)
+            connection.attach_database(db_file, lock_context)
+            return connection
+        except BaseException:
+            lock_context.__exit__(*sys.exc_info())
+            raise
 
 
 # Global Singleton instance for the app

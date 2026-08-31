@@ -65,7 +65,9 @@ e seus recursos podem ser substituídos sem mover as carteiras. Sessões da demo
 usam uma raiz temporária própria por sessão. Os caminhos do banco e do catálogo demo são resolvidos
 a cada operação a partir do contexto atual do Streamlit, sem armazenar o identificador de uma
 sessão nos singletons compartilhados. O caminho resolvido do catálogo também integra a chave de
-cache, impedindo que leituras sejam reutilizadas entre sessões.
+cache, impedindo que leituras sejam reutilizadas entre sessões. Bancos demo inválidos são
+restaurados a partir do recurso incluído no pacote, e diretórios de sessões sem atividade há mais
+de 24 horas são removidos durante novas execuções para limitar o uso do armazenamento temporário.
 
 Ao preparar o armazenamento gravável, `ApplicationPaths` incorpora primeiro os antigos `assets.csv`
 ao lado do executável e nas pastas irmãs `RendaPerene-v*`, em ordem de versão, e depois aplica o

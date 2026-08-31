@@ -57,7 +57,8 @@ o primeiro carregamento já tenha criado uma carteira principal
 somente com os valores padrão, ela pode ser substituída com segurança; qualquer dado ou configuração
 alterada impede essa substituição. Após uma importação bem-sucedida, a carteira importada é ativada
 e seus dados de planejamento são recarregados. Os bancos da demonstração hospedada continuam
-isolados por sessão em armazenamento temporário.
+isolados por sessão em armazenamento temporário. Bancos demo inválidos são restaurados
+automaticamente, e diretórios de sessões inativas há mais de 24 horas são descartados.
 
 Na primeira migração, o catálogo gravável também incorpora os registros alternativos dos
 `assets.csv` encontrados na instalação atual e nas pastas de releases anteriores. Depois, ele é

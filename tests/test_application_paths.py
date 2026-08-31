@@ -1,5 +1,7 @@
+import os
 import sqlite3
 import sys
+import time
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -162,6 +164,25 @@ def test_legacy_migration_reuses_logically_equal_backup_after_failed_publication
     assert ApplicationPaths._same_sqlite_contents(source, result.destination)
 
 
+def test_sqlite_content_comparison_includes_committed_wal_pages(tmp_path):
+    source = tmp_path / "portfolio.db"
+    backup = tmp_path / "portfolio_backup.db"
+    create_database(source)
+    writer = sqlite3.connect(source)
+    try:
+        assert writer.execute("PRAGMA journal_mode = WAL").fetchone() == ("wal",)
+        writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        backup.write_bytes(source.read_bytes())
+        writer.execute("INSERT INTO marker VALUES ('committed-in-wal')")
+        writer.commit()
+
+        assert source.read_bytes() == backup.read_bytes()
+        assert Path(f"{source}-wal").exists()
+        assert ApplicationPaths._same_sqlite_contents(source, backup) is False
+    finally:
+        writer.close()
+
+
 def test_invalid_legacy_database_is_rejected_before_copy(tmp_path):
     resource_root = tmp_path / "application"
     data_root = tmp_path / "user-data"
@@ -283,6 +304,42 @@ def test_demo_session_uses_an_isolated_seeded_database(tmp_path, monkeypatch):
     assert demo_paths.data_root == tmp_path / "RendaPerene" / "demo" / "session-123"
     assert destination.exists()
     assert ApplicationPaths.is_valid_sqlite(destination)
+
+    destination.write_text("invalid", encoding="utf-8")
+    Path(f"{destination}-wal").write_text("stale", encoding="utf-8")
+    Path(f"{destination}-shm").write_text("stale", encoding="utf-8")
+    demo_paths.prepare(source)
+
+    connection = sqlite3.connect(destination)
+    try:
+        assert connection.execute("SELECT value FROM marker").fetchone() == ("demo",)
+    finally:
+        connection.close()
+    assert not Path(f"{destination}-wal").exists()
+    assert not Path(f"{destination}-shm").exists()
+
+
+def test_demo_session_cleanup_removes_only_abandoned_directories(tmp_path, monkeypatch):
+    resource_root = tmp_path / "application"
+    monkeypatch.setattr("core.application_paths.tempfile.gettempdir", lambda: str(tmp_path))
+    paths = ApplicationPaths(resource_root, tmp_path / "unused", resource_root)
+    active = paths.for_demo_session("active").data_root
+    recent = paths.for_demo_session("recent").data_root
+    abandoned = paths.for_demo_session("abandoned").data_root
+    for session_root in (active, recent, abandoned):
+        session_root.mkdir(parents=True)
+        (session_root / "data").write_text("session", encoding="utf-8")
+    now = time.time()
+    recent.touch()
+    abandoned.touch()
+    os.utime(recent, (now - 60, now - 60))
+    os.utime(abandoned, (now - 101, now - 101))
+
+    paths.cleanup_demo_sessions("active", max_age_seconds=100)
+
+    assert active.exists()
+    assert recent.exists()
+    assert not abandoned.exists()
 
 
 def test_database_manager_resolves_the_current_session_path_for_each_connection(tmp_path):
@@ -415,6 +472,35 @@ def test_prepare_skips_malformed_legacy_catalog_and_uses_bundled_baseline(tmp_pa
     assert recovered_catalog.loc["BASE3", "NOME"] == "Bundled metadata"
 
 
+def test_prepare_replaces_an_invalid_catalog_while_holding_the_catalog_lock(tmp_path, monkeypatch):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    write_catalog(resource_root / "assets.csv", [("BASE3", "Bundled metadata")])
+    paths.catalog_file.parent.mkdir(parents=True)
+    paths.catalog_file.write_text("invalid", encoding="utf-8")
+    real_replace = ApplicationPaths._replace_with_validated_catalog
+    replacement_was_locked = False
+
+    def checked_replace(source, destination):
+        nonlocal replacement_was_locked
+        lock = destination.with_name(f".{destination.name}.lock")
+        replacement_was_locked = lock.exists()
+        real_replace(source, destination)
+
+    monkeypatch.setattr(
+        ApplicationPaths,
+        "_replace_with_validated_catalog",
+        staticmethod(checked_replace),
+    )
+
+    paths.prepare()
+
+    assert replacement_was_locked is True
+    assert AssetsCatalogDAO(paths.catalog_file).load_catalog().loc["BASE3", "NOME"] == (
+        "Bundled metadata"
+    )
+
+
 def test_sqlite_validation_reuses_result_for_unchanged_file(monkeypatch, tmp_path):
     database = tmp_path / "portfolio.db"
     create_database(database)
@@ -436,6 +522,36 @@ def test_sqlite_validation_reuses_result_for_unchanged_file(monkeypatch, tmp_pat
 
     assert ApplicationPaths.is_valid_sqlite(database) is False
     assert connection_count == 2
+
+
+def test_sqlite_validation_cache_changes_when_wal_changes(monkeypatch, tmp_path):
+    database = tmp_path / "portfolio.db"
+    create_database(database)
+    writer = sqlite3.connect(database)
+    assert writer.execute("PRAGMA journal_mode = WAL").fetchone() == ("wal",)
+    writer.execute("INSERT INTO marker VALUES ('first-wal-row')")
+    writer.commit()
+    real_connect = sqlite3.connect
+    connection_count = 0
+
+    def counting_connect(*args, **kwargs):
+        nonlocal connection_count
+        connection_count += 1
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr("core.application_paths.sqlite3.connect", counting_connect)
+    try:
+        assert ApplicationPaths.is_valid_sqlite(database) is True
+        assert ApplicationPaths.is_valid_sqlite(database) is True
+        assert connection_count == 1
+
+        writer.execute("INSERT INTO marker VALUES ('second-wal-row')")
+        writer.commit()
+
+        assert ApplicationPaths.is_valid_sqlite(database) is True
+        assert connection_count == 2
+    finally:
+        writer.close()
 
 
 def test_choose_portfolio_falls_back_to_a_valid_alternative_when_default_is_invalid(tmp_path):

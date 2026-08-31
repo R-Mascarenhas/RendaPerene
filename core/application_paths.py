@@ -19,6 +19,7 @@ from platformdirs.windows import Windows
 
 APP_NAME = "RendaPerene"
 DEFAULT_PORTFOLIO = "portfolio.db"
+DEMO_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,34 @@ class ApplicationPaths:
         demo_root = Path(tempfile.gettempdir()) / APP_NAME / "demo" / safe_session_id
         return ApplicationPaths(self.resource_root, demo_root, self.legacy_root)
 
+    def cleanup_demo_sessions(
+        self,
+        active_session_id: str,
+        max_age_seconds: int = DEMO_SESSION_MAX_AGE_SECONDS,
+    ) -> None:
+        """Refresh the active demo session and remove abandoned session directories."""
+        active_paths = self.for_demo_session(active_session_id)
+        sessions_root = active_paths.data_root.parent
+        now = time.time()
+        if active_paths.data_root.exists():
+            with suppress(OSError):
+                os.utime(active_paths.data_root, (now, now))
+        if not sessions_root.is_dir():
+            return
+
+        try:
+            session_roots = tuple(sessions_root.iterdir())
+        except OSError:
+            return
+        for session_root in session_roots:
+            if not session_root.is_dir() or session_root == active_paths.data_root:
+                continue
+            try:
+                if now - session_root.stat().st_mtime > max_age_seconds:
+                    shutil.rmtree(session_root)
+            except OSError:
+                continue
+
     def prepare(self, default_database_source: Path | None = None) -> None:
         """Create writable directories and seed catalog or demo data when absent."""
         for directory in (
@@ -107,12 +136,10 @@ class ApplicationPaths:
             directory.mkdir(parents=True, exist_ok=True)
 
         bundled_catalog = self.bundled_resource("assets.csv")
-        if (
-            self.catalog_file.exists()
-            and not self._is_valid_catalog(self.catalog_file)
-            and self._is_valid_catalog(bundled_catalog)
-        ):
-            self._replace_with_validated_catalog(bundled_catalog, self.catalog_file)
+        if self.catalog_file.exists() and self._is_valid_catalog(bundled_catalog):
+            with self._catalog_lock(self.catalog_file):
+                if not self._is_valid_catalog(self.catalog_file):
+                    self._replace_with_validated_catalog(bundled_catalog, self.catalog_file)
 
         current_catalog_paths = {bundled_catalog.resolve(), self.catalog_file.resolve()}
         for legacy_root in reversed(self._legacy_roots()):
@@ -133,9 +160,12 @@ class ApplicationPaths:
 
         if default_database_source is not None:
             destination = self.portfolio_database(DEFAULT_PORTFOLIO)
-            if not destination.exists():
-                if not self.is_valid_sqlite(default_database_source):
-                    raise ValueError("The default portfolio database is not a valid SQLite file.")
+            if not self.is_valid_sqlite(default_database_source):
+                raise ValueError("The default portfolio database is not a valid SQLite file.")
+            if destination.exists() and not self.is_valid_sqlite(destination):
+                self._replace_with_validated_copy(default_database_source, destination)
+                self._remove_sqlite_sidecars(destination)
+            elif not destination.exists():
                 self._safe_copy(default_database_source, destination, validate_sqlite=True)
 
     def portfolio_database(self, filename: str) -> Path:
@@ -370,12 +400,31 @@ class ApplicationPaths:
         if not path.is_file() or metadata.st_size == 0:
             return False
         return ApplicationPaths._is_valid_sqlite_snapshot(
-            str(path.resolve()), metadata.st_size, metadata.st_mtime_ns
+            str(path.resolve()),
+            metadata.st_size,
+            metadata.st_mtime_ns,
+            ApplicationPaths._sqlite_sidecar_signature(path),
         )
 
     @staticmethod
+    def _sqlite_sidecar_signature(path: Path) -> tuple[tuple[int, int] | None, ...]:
+        signature = []
+        for suffix in ("-wal", "-shm"):
+            try:
+                metadata = Path(f"{path}{suffix}").stat()
+                signature.append((metadata.st_size, metadata.st_mtime_ns))
+            except OSError:
+                signature.append(None)
+        return tuple(signature)
+
+    @staticmethod
     @lru_cache(maxsize=256)
-    def _is_valid_sqlite_snapshot(path: str, _size: int, _mtime_ns: int) -> bool:
+    def _is_valid_sqlite_snapshot(
+        path: str,
+        _size: int,
+        _mtime_ns: int,
+        _sidecar_signature: tuple[tuple[int, int] | None, ...],
+    ) -> bool:
         """Cache SQLite integrity for one immutable file metadata snapshot."""
         try:
             connection = sqlite3.connect(f"{Path(path).as_uri()}?mode=ro", uri=True)
@@ -386,26 +435,9 @@ class ApplicationPaths:
         except (OSError, sqlite3.DatabaseError):
             return False
 
-    @staticmethod
-    def _same_file_contents(first: Path, second: Path) -> bool:
-        if first.stat().st_size != second.stat().st_size:
-            return False
-
-        def digest(path: Path) -> str:
-            checksum = hashlib.sha256()
-            with path.open("rb") as file:
-                for chunk in iter(lambda: file.read(1024 * 1024), b""):
-                    checksum.update(chunk)
-            return checksum.hexdigest()
-
-        return digest(first) == digest(second)
-
     @classmethod
     def _same_sqlite_contents(cls, first: Path, second: Path) -> bool:
         """Compare SQLite databases by committed logical content, not file layout."""
-        if cls._same_file_contents(first, second):
-            return True
-
         try:
             return cls._sqlite_content_digest(first) == cls._sqlite_content_digest(second)
         except (OSError, sqlite3.DatabaseError):
@@ -426,6 +458,12 @@ class ApplicationPaths:
             return checksum.hexdigest()
         finally:
             connection.close()
+
+    @staticmethod
+    def _remove_sqlite_sidecars(path: Path) -> None:
+        for suffix in ("-wal", "-shm"):
+            with suppress(FileNotFoundError):
+                Path(f"{path}{suffix}").unlink()
 
     @staticmethod
     def _merge_catalog(bundled_catalog: Path, writable_catalog: Path) -> None:

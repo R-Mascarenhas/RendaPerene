@@ -211,10 +211,14 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
 
     portfolio_keys = {
         "db_loaded",
+        "b3_file_uploader_7",
+        "b3_import_success_msg",
+        "b3_uploader_key",
         "accumulation_plan_editor_portfolio.db",
         "accumulation_plan_weights_portfolio.db",
         "enable_dividend_reinvestment_goal_portfolio.db",
         "enable_share_quantity_goal_portfolio.db",
+        "processed_files",
         SESSION_BIRTH_DATE,
         SESSION_RETIREMENT_AGE,
         SESSION_DESIRED_INCOME_MW,

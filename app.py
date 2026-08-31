@@ -21,6 +21,7 @@ app_paths = runtime_paths
 if is_cloud:
     if "session_id" not in st.session_state:
         st.session_state["session_id"] = str(uuid.uuid4())
+    runtime_paths.cleanup_demo_sessions(st.session_state["session_id"])
     app_paths = app_paths.for_demo_session(st.session_state["session_id"])
     app_paths.prepare(app_paths.bundled_resource("database/portfolio_demo.db"))
 else:

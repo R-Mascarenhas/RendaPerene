@@ -37,6 +37,22 @@ def _exclusive_file_lock(lock: Path):
             try:
                 descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 os.write(descriptor, owner_token.encode("ascii"))
+                while True:
+                    readers = tuple(lock.parent.glob(f"{lock.name}.reader.*"))
+                    if not readers:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(f"Timed out waiting for {lock.name} readers.")
+                    for reader in readers:
+                        try:
+                            if (
+                                time.time() - reader.stat().st_mtime > FILE_LOCK_STALE_SECONDS
+                                and not _lock_owner_is_alive(reader)
+                            ):
+                                reader.unlink()
+                        except FileNotFoundError:
+                            continue
+                    time.sleep(0.01)
                 break
             except FileExistsError:
                 try:
@@ -93,6 +109,37 @@ def portfolio_database_lock(database: Path):
     lock = database.with_name(f".{database.name}.lock")
     with _exclusive_file_lock(lock):
         yield
+
+
+@contextmanager
+def portfolio_database_reader_lock(database: Path):
+    """Register a reader so migration publication waits for open SQLite handles."""
+    database = Path(database)
+    lock = database.with_name(f".{database.name}.lock")
+    reader = database.with_name(f"{lock.name}.reader.{uuid.uuid4().hex}")
+    deadline = time.monotonic() + FILE_LOCK_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if lock.exists():
+            time.sleep(0.01)
+            continue
+        try:
+            descriptor = os.open(reader, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            owner_token = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
+            os.write(descriptor, owner_token.encode("ascii"))
+            os.close(descriptor)
+            if lock.exists():
+                reader.unlink(missing_ok=True)
+                continue
+            break
+        except FileExistsError:
+            continue
+    else:
+        raise TimeoutError(f"Timed out waiting for {lock.name}.")
+    try:
+        yield
+    finally:
+        with suppress(FileNotFoundError):
+            reader.unlink()
 
 
 @dataclass(frozen=True)
@@ -198,8 +245,9 @@ class ApplicationPaths:
             except OSError:
                 continue
 
-    def prepare(self, default_database_source: Path | None = None) -> None:
+    def prepare(self, default_database_source: Path | None = None) -> bool:
         """Create writable directories and seed catalog or demo data when absent."""
+        recovered_database = False
         for directory in (
             self.database_dir,
             self.catalog_file.parent,
@@ -230,8 +278,10 @@ class ApplicationPaths:
             if destination.exists() and not self.is_valid_sqlite(destination):
                 self._replace_with_validated_copy(default_database_source, destination)
                 self._remove_sqlite_sidecars(destination)
+                recovered_database = True
             elif not destination.exists():
                 self._safe_copy(default_database_source, destination, validate_sqlite=True)
+        return recovered_database
 
     def portfolio_database(self, filename: str) -> Path:
         """Resolve a portfolio filename without allowing directory traversal or unrelated files."""
@@ -317,6 +367,9 @@ class ApplicationPaths:
         except OSError:
             return (current_root,)
 
+        current_version = self._release_version(current_root)
+        if current_version:
+            siblings = [path for path in siblings if self._release_version(path) < current_version]
         siblings.sort(key=self._release_version, reverse=True)
         return (current_root, *siblings)
 

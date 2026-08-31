@@ -23,7 +23,10 @@ if is_cloud:
         st.session_state["session_id"] = str(uuid.uuid4())
     runtime_paths.cleanup_demo_sessions(st.session_state["session_id"])
     app_paths = app_paths.for_demo_session(st.session_state["session_id"])
-    app_paths.prepare(app_paths.bundled_resource("database/portfolio_demo.db"))
+    recovered_database = app_paths.prepare(app_paths.bundled_resource("database/portfolio_demo.db"))
+    if recovered_database:
+        SessionManager.reset_portfolio_state()
+        st.rerun()
 else:
     app_paths.prepare()
 

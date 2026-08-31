@@ -92,9 +92,9 @@ durante a importação; qualquer dado ou configuração do usuário torna o dest
 cópia recuperável relevante permanece em `backups/legacy-import/`. Ao publicar uma carteira
 importada, a raiz de composição invalida o estado da sessão derivado do banco e reinicia a execução
 para carregar as configurações persistidas antes que a interface permita novas edições. Conexões
-abertas pelo `DatabaseManager` permitem leituras concorrentes; o lock por carteira é adquirido
-somente quando uma conexão inicia uma escrita e também protege a publicação final de uma migração,
-impedindo que uma escrita concorrente seja descartada durante a substituição.
+abertas pelo `DatabaseManager` registram leitores concorrentes; a publicação final aguarda esses
+leitores sob o lock por carteira, impedindo que uma conexão SQLite aberta continue apontando para o
+arquivo antigo durante uma substituição. As escritas continuam usando o bloqueio nativo do SQLite.
 Bancos inválidos não ficam disponíveis para seleção. Se a carteira ativa desaparecer ou se tornar
 inválida, a seleção automática de uma alternativa também invalida o estado derivado da carteira
 anterior antes de reiniciar a interface. Quando não existe alternativa válida, a aplicação usa um

@@ -1,7 +1,7 @@
 import sqlite3
 from contextlib import suppress
 
-from core.application_paths import portfolio_database_lock
+from core.application_paths import portfolio_database_reader_lock
 
 
 class _LockedCursor(sqlite3.Cursor):
@@ -28,6 +28,8 @@ class _LockedConnection(sqlite3.Connection):
 
     def attach_database(self, database_path):
         self._database_path = database_path
+        self._lock_context = portfolio_database_reader_lock(database_path)
+        self._lock_context.__enter__()
 
     @staticmethod
     def _statement_requires_write_lock(sql) -> bool:
@@ -35,11 +37,7 @@ class _LockedConnection(sqlite3.Connection):
         return not statement.startswith(("SELECT", "EXPLAIN"))
 
     def _ensure_write_lock(self, sql):
-        if self._lock_context is not None or not self._statement_requires_write_lock(sql):
-            return
-        lock_context = portfolio_database_lock(self._database_path)
-        lock_context.__enter__()
-        self._lock_context = lock_context
+        return
 
     def cursor(self, factory=None):
         return super().cursor(factory=factory or _LockedCursor)

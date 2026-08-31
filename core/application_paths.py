@@ -54,7 +54,7 @@ def _exclusive_file_lock(lock: Path):
                 try:
                     observed_owner = lock.read_text(encoding="ascii")
                     if (
-                        not _lock_owner_is_alive(lock)
+                        not _owner_token_is_alive(observed_owner)
                         and lock.exists()
                         and lock.read_text(encoding="ascii") == observed_owner
                     ):
@@ -76,10 +76,10 @@ def _exclusive_file_lock(lock: Path):
                 pass
 
 
-def _lock_owner_is_alive(lock: Path) -> bool:
-    """Return whether a lock's recorded local-process owner is still running."""
+def _owner_token_is_alive(owner_token: str) -> bool:
+    """Return whether a lock's recorded local-process owner token represents a running process."""
     try:
-        host, pid_text, _token = lock.read_text(encoding="ascii").split(":", 2)
+        host, pid_text, _token = owner_token.split(":", 2)
         if host != socket.gethostname():
             return True
         pid = int(pid_text)
@@ -95,9 +95,18 @@ def _lock_owner_is_alive(lock: Path) -> bool:
             ctypes.windll.kernel32.CloseHandle(handle)
         else:
             os.kill(pid, 0)
-    except (OSError, UnicodeError, ValueError):
+    except (OSError, ValueError):
         return False
     return True
+
+
+def _lock_owner_is_alive(lock: Path) -> bool:
+    """Return whether a lock's recorded local-process owner is still running."""
+    try:
+        owner_token = lock.read_text(encoding="ascii")
+        return _owner_token_is_alive(owner_token)
+    except (OSError, UnicodeError):
+        return False
 
 
 @contextmanager
@@ -119,11 +128,14 @@ def portfolio_database_reader_lock(database: Path):
     while time.monotonic() < deadline:
         if lock.exists():
             try:
-                if not _lock_owner_is_alive(lock):
-                    observed_owner = lock.read_text(encoding="ascii")
-                    if lock.exists() and lock.read_text(encoding="ascii") == observed_owner:
-                        lock.unlink()
-                        continue
+                observed_owner = lock.read_text(encoding="ascii")
+                if (
+                    not _owner_token_is_alive(observed_owner)
+                    and lock.exists()
+                    and lock.read_text(encoding="ascii") == observed_owner
+                ):
+                    lock.unlink()
+                    continue
             except FileNotFoundError:
                 continue
             time.sleep(0.01)

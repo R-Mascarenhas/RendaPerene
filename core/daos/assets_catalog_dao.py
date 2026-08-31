@@ -53,5 +53,18 @@ class AssetsCatalogDAO:
                     ]
                 )
                 df = pd.concat([df, new_row], ignore_index=True)
-                df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+
+                import uuid
+                from contextlib import suppress
+                from pathlib import Path
+
+                csv_path_obj = Path(csv_path)
+                temporary = csv_path_obj.with_name(f".{csv_path_obj.name}.{uuid.uuid4().hex}.tmp")
+                try:
+                    df.to_csv(temporary, index=False, encoding="utf-8-sig")
+                    os.replace(temporary, csv_path_obj)
+                finally:
+                    with suppress(FileNotFoundError):
+                        temporary.unlink()
+
                 st.cache_data.clear()

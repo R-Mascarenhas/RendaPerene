@@ -124,6 +124,17 @@ def portfolio_database_reader_lock(database: Path):
     deadline = time.monotonic() + FILE_LOCK_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         if lock.exists():
+            try:
+                if (
+                    time.time() - lock.stat().st_mtime > FILE_LOCK_STALE_SECONDS
+                    and not _lock_owner_is_alive(lock)
+                ):
+                    observed_owner = lock.read_text(encoding="ascii")
+                    if lock.exists() and lock.read_text(encoding="ascii") == observed_owner:
+                        lock.unlink()
+                        continue
+            except FileNotFoundError:
+                continue
             time.sleep(0.01)
             continue
         try:
@@ -449,6 +460,19 @@ class ApplicationPaths:
                             False,
                             "A carteira já existe, mas não foi possível criar o backup.",
                         )
+                try:
+                    completion_marker.parent.mkdir(parents=True, exist_ok=True)
+                    completion_marker.write_text(
+                        f"{self._sqlite_content_digest(source)}\n", encoding="ascii"
+                    )
+                except (OSError, sqlite3.DatabaseError):
+                    return MigrationResult(
+                        source,
+                        destination,
+                        backup,
+                        False,
+                        "A carteira já existe, mas não foi possível registrar a importação.",
+                    )
                 return MigrationResult(
                     source,
                     destination,

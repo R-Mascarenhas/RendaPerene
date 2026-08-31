@@ -237,6 +237,7 @@ class ApplicationPaths:
             backup = self.backups_dir / "legacy-import" / source.name
             if (
                 destination.exists()
+                and backup.with_suffix(backup.suffix + ".done").exists()
                 and backup.exists()
                 and self._same_file_contents(source, backup)
             ):
@@ -259,6 +260,7 @@ class ApplicationPaths:
 
         destination = self.portfolio_database(source.name)
         backup = self.backups_dir / "legacy-import" / source.name
+        completion_marker = backup.with_suffix(backup.suffix + ".done")
 
         if not self.is_valid_sqlite(source):
             return MigrationResult(
@@ -269,7 +271,12 @@ class ApplicationPaths:
                 "O arquivo de origem não é um banco SQLite válido.",
             )
 
-        if destination.exists() and backup.exists() and self._same_file_contents(source, backup):
+        if (
+            destination.exists()
+            and completion_marker.exists()
+            and backup.exists()
+            and self._same_file_contents(source, backup)
+        ):
             return MigrationResult(
                 source,
                 destination,
@@ -330,9 +337,18 @@ class ApplicationPaths:
                         False,
                         "A carteira de destino mudou durante a importação; nenhum dado foi substituído.",
                     )
+                if not self._is_pristine_database(destination):
+                    return MigrationResult(
+                        source,
+                        destination,
+                        backup,
+                        False,
+                        "A carteira de destino mudou durante a importação; nenhum dado foi substituído.",
+                    )
                 self._replace_with_validated_copy(backup, destination)
             else:
                 self._safe_copy(backup, destination, validate_sqlite=True)
+            completion_marker.write_text("completed\n", encoding="ascii")
         except (OSError, sqlite3.DatabaseError, ValueError) as error:
             return MigrationResult(
                 source,
@@ -427,7 +443,10 @@ class ApplicationPaths:
             fieldnames = list(reader.fieldnames or [])
             if "CÓDIGO" not in fieldnames:
                 raise ValueError("The assets catalog must contain a CÓDIGO column.")
-            return fieldnames, list(reader)
+            rows = list(reader)
+            if any(None in row for row in rows):
+                raise ValueError("The assets catalog contains rows with extra columns.")
+            return fieldnames, rows
 
     @classmethod
     def _is_valid_catalog(cls, path: Path) -> bool:
@@ -448,6 +467,18 @@ class ApplicationPaths:
         finally:
             with suppress(FileNotFoundError):
                 temporary.unlink()
+
+    @staticmethod
+    def _snapshot_sqlite(source: Path, destination: Path) -> None:
+        """Create a consistent SQLite snapshot, including committed WAL pages."""
+        source_connection = sqlite3.connect(f"{source.resolve().as_uri()}?mode=ro", uri=True)
+        destination_connection = sqlite3.connect(destination)
+        try:
+            source_connection.backup(destination_connection)
+            destination_connection.commit()
+        finally:
+            destination_connection.close()
+            source_connection.close()
 
     @classmethod
     def _is_pristine_database(cls, path: Path) -> bool:
@@ -511,7 +542,11 @@ class ApplicationPaths:
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
         try:
-            shutil.copy2(source, temporary)
+            wal_file = source.with_name(source.name + "-wal")
+            if validate_sqlite and wal_file.exists():
+                cls._snapshot_sqlite(source, temporary)
+            else:
+                shutil.copy2(source, temporary)
             if validate_sqlite and not cls.is_valid_sqlite(temporary):
                 raise ValueError("The copied file failed SQLite validation.")
             if destination.exists():

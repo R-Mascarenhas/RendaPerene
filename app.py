@@ -84,6 +84,9 @@ if not is_cloud:
     st.sidebar.markdown("### 🗃️ Gerenciar Carteiras")
 
     requested_db = st.session_state.get("active_db", "portfolio.db")
+    if requested_db and not app_paths.portfolio_database(requested_db).exists():
+        # Force a portfolio switch so a deleted active database cannot retain stale state.
+        requested_db = "portfolio_missing.db"
     active_db = app_paths.choose_portfolio(requested_db, db_files)
     if active_db != requested_db:
         SessionManager.switch_portfolio(active_db)

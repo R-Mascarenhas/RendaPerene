@@ -25,6 +25,31 @@ DEMO_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
 FILE_LOCK_TIMEOUT_SECONDS = 5
 
 
+def _create_owned_file(path: Path, owner_token: str) -> int:
+    """Publish an owner token atomically and return an open descriptor for it."""
+    path = Path(path)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    linked = False
+    try:
+        encoded_token = owner_token.encode("ascii")
+        offset = 0
+        while offset < len(encoded_token):
+            offset += os.write(descriptor, encoded_token[offset:])
+        os.fsync(descriptor)
+        os.link(temporary, path)
+        linked = True
+        return descriptor
+    finally:
+        if linked:
+            with suppress(FileNotFoundError):
+                temporary.unlink()
+        else:
+            os.close(descriptor)
+            with suppress(FileNotFoundError):
+                temporary.unlink()
+
+
 @contextmanager
 def _exclusive_file_lock(lock: Path):
     lock = Path(lock)
@@ -34,8 +59,7 @@ def _exclusive_file_lock(lock: Path):
     try:
         while time.monotonic() < deadline:
             try:
-                descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(descriptor, owner_token.encode("ascii"))
+                descriptor = _create_owned_file(lock, owner_token)
                 while True:
                     readers = tuple(lock.parent.glob(f"{lock.name}.reader.*"))
                     if not readers:
@@ -141,9 +165,8 @@ def portfolio_database_reader_lock(database: Path):
             time.sleep(0.01)
             continue
         try:
-            descriptor = os.open(reader, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             owner_token = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
-            os.write(descriptor, owner_token.encode("ascii"))
+            descriptor = _create_owned_file(reader, owner_token)
             os.close(descriptor)
             if lock.exists():
                 reader.unlink(missing_ok=True)

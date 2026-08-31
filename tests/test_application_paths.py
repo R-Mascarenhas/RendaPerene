@@ -251,6 +251,56 @@ def test_migration_publication_waits_for_database_connections_and_revalidates(
         verification.close()
 
 
+def test_file_lock_does_not_expose_uninitialized_owner(tmp_path, monkeypatch):
+    database = tmp_path / "portfolio.db"
+    first_created_lock = threading.Event()
+    allow_first_write = threading.Event()
+    second_entered = threading.Event()
+    release_second = threading.Event()
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    real_write = os.write
+    write_count = 0
+
+    def delayed_first_write(descriptor, contents):
+        nonlocal write_count
+        write_count += 1
+        if write_count == 1:
+            first_created_lock.set()
+            assert allow_first_write.wait(timeout=2)
+        return real_write(descriptor, contents)
+
+    monkeypatch.setattr("core.application_paths.os.write", delayed_first_write)
+
+    def first_writer():
+        with portfolio_database_lock(database):
+            first_entered.set()
+            assert release_first.wait(timeout=2)
+
+    def second_writer():
+        with portfolio_database_lock(database):
+            second_entered.set()
+            assert release_second.wait(timeout=2)
+
+    first = threading.Thread(target=first_writer)
+    second = threading.Thread(target=second_writer)
+    first.start()
+    assert first_created_lock.wait(timeout=2)
+    second.start()
+
+    try:
+        assert second_entered.wait(timeout=2)
+        allow_first_write.set()
+        assert not first_entered.wait(timeout=0.2)
+    finally:
+        release_first.set()
+        release_second.set()
+        first.join(timeout=2)
+        second.join(timeout=2)
+
+    assert first_entered.is_set()
+
+
 def test_migration_copy_failures_return_only_localized_user_text(tmp_path, monkeypatch):
     resource_root = tmp_path / "application"
     paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)

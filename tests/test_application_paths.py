@@ -459,6 +459,24 @@ def test_migrated_pristine_portfolio_is_not_reoffered_after_schema_metadata_chan
     assert source not in paths.migration_candidates()
 
 
+def test_migration_is_reoffered_after_a_missing_portfolio_is_recreated_empty(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio.db"
+    create_database(source, "legacy-data")
+    paths.prepare()
+
+    first_result = paths.migrate_legacy_database(source)
+    assert first_result.migrated is True
+
+    first_result.destination.unlink()
+    DatabaseManager(first_result.destination).init_personal_db()
+
+    assert source in paths.migration_candidates()
+    repeated = paths.migrate_legacy_database(source)
+    assert repeated.migrated is True
+
+
 def test_changed_legacy_source_is_not_hidden_by_an_old_completion_marker(tmp_path):
     resource_root = tmp_path / "application"
     paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)

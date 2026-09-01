@@ -434,6 +434,10 @@ class ApplicationPaths:
                 and backup.exists()
                 and marker.exists()
                 and self._completion_marker_matches(marker, source, backup)
+                and not (
+                    self._is_pristine_database(destination)
+                    and not self._is_pristine_database(source)
+                )
             ):
                 continue
             candidates.append(source)
@@ -464,6 +468,9 @@ class ApplicationPaths:
             and backup.exists()
             and completion_marker.exists()
             and self._completion_marker_matches(completion_marker, source, backup)
+            and not (
+                self._is_pristine_database(destination) and not self._is_pristine_database(source)
+            )
         ):
             return MigrationResult(
                 source,

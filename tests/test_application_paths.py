@@ -104,6 +104,25 @@ def test_legacy_discovery_prefers_newest_release_for_duplicate_portfolio_names(t
     assert paths.legacy_databases() == (newer_database,)
 
 
+def test_legacy_discovery_includes_non_portfolio_database_names(tmp_path):
+    resource_root = tmp_path / "application"
+    source = resource_root / "database" / "family.db"
+    create_database(source, "family")
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+
+    assert paths.legacy_databases() == (source,)
+    assert source in paths.migration_candidates()
+
+
+def test_portfolio_inventory_includes_non_portfolio_database_names(tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    database = paths.portfolio_database("family.db")
+    create_database(database, "family")
+
+    assert database in paths.inspect_portfolios().valid
+    assert paths.portfolio_options(paths.inspect_portfolios()) == ("family.db",)
+
+
 def test_legacy_discovery_uses_older_valid_duplicate_when_newest_is_invalid(tmp_path):
     releases_root = tmp_path / "releases"
     older_database = releases_root / "RendaPerene-v2.9.0" / "database" / "portfolio.db"

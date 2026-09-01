@@ -48,7 +48,7 @@ reutilizar os dados de planejamento da anterior. Se nenhuma carteira válida exi
 carteira de recuperação é criada com outro nome e o arquivo inválido permanece intacto.
 
 Na primeira execução com o novo layout, a barra lateral oferece a importação de bancos
-`portfolio*.db` encontrados na antiga pasta `database/`, tanto ao lado da aplicação quanto em
+arquivos `.db` encontrados na antiga pasta `database/`, tanto ao lado da aplicação quanto em
 pastas irmãs de releases anteriores chamadas `RendaPerene-v*`. Quando o mesmo nome existe em mais
 de uma versão, a cópia válida mais recente é oferecida. A origem é mantida, uma cópia de recuperação
 é criada em `backups/legacy-import/` e cada cópia é validada como SQLite antes de ficar disponível.

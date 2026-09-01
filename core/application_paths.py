@@ -325,12 +325,8 @@ class ApplicationPaths:
 
     def portfolio_database(self, filename: str) -> Path:
         """Resolve a portfolio filename without allowing directory traversal or unrelated files."""
-        if (
-            Path(filename).name != filename
-            or not filename.startswith("portfolio")
-            or not filename.endswith(".db")
-        ):
-            raise ValueError("Portfolio databases must use a 'portfolio*.db' filename.")
+        if Path(filename).name != filename or not filename.endswith(".db"):
+            raise ValueError("Portfolio databases must use a safe '.db' filename.")
         return self.database_dir / filename
 
     @staticmethod
@@ -350,7 +346,7 @@ class ApplicationPaths:
 
     def inspect_portfolios(self) -> PortfolioInventory:
         """Return valid and invalid portfolio databases from the writable data directory."""
-        candidates = sorted(self.database_dir.glob("portfolio*.db"))
+        candidates = sorted(self.database_dir.glob("*.db"))
         valid = tuple(path for path in candidates if self.is_valid_sqlite(path))
         invalid = tuple(path for path in candidates if path not in valid)
         return PortfolioInventory(valid=valid, invalid=invalid)
@@ -380,8 +376,8 @@ class ApplicationPaths:
             legacy_database_dir = legacy_root / "database"
             if legacy_database_dir.resolve() == self.database_dir.resolve():
                 continue
-            for path in sorted(legacy_database_dir.glob("portfolio*.db")):
-                if "demo" not in path.name:
+            for path in sorted(legacy_database_dir.glob("*.db")):
+                if "demo" not in path.name.casefold():
                     databases_by_name.setdefault(path.name, []).append(path)
 
         selected_databases = []

@@ -78,8 +78,9 @@ baseline válida incluída no pacote. Todas as camadas legadas e a baseline atua
 memória sob um único lock; somente o resultado final é publicado, e apenas quando seu conteúdo
 muda.
 
-Quando existem bancos `portfolio*.db` na antiga pasta `database/` ao lado da aplicação ou em pastas
-irmãs de releases anteriores chamadas `RendaPerene-v*`, a barra lateral oferece sua importação. Se
+Quando existem bancos `.db` (exceto arquivos de demonstração) na antiga pasta `database/` ao lado da
+aplicação ou em pastas irmãs de releases anteriores chamadas `RendaPerene-v*`, a barra lateral oferece
+sua importação. Se
 mais de uma versão contém o mesmo nome de carteira, a versão válida mais recente prevalece; uma
 cópia inválida mais nova não oculta uma cópia válida anterior. A migração valida a origem, copia
 (sem mover) um backup para `backups/legacy-import/`, valida novamente a cópia temporária e somente

@@ -562,10 +562,19 @@ class ApplicationPaths:
                 else:
                     self._remove_sqlite_sidecars(destination)
                     self._safe_copy(backup, destination, validate_sqlite=True)
-                self._write_database_generation(destination)
-                completion_marker.write_text(
-                    f"{self._sqlite_content_digest(backup)}\n", encoding="ascii"
-                )
+                try:
+                    self._write_database_generation(destination)
+                    completion_marker.write_text(
+                        f"{self._sqlite_content_digest(backup)}\n", encoding="ascii"
+                    )
+                except (OSError, sqlite3.DatabaseError, ValueError):
+                    return MigrationResult(
+                        source,
+                        destination,
+                        backup,
+                        True,
+                        "Carteira importada, mas não foi possível registrar a conclusão da importação.",
+                    )
         except (OSError, sqlite3.DatabaseError, ValueError):
             return MigrationResult(
                 source,

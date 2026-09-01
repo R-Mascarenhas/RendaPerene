@@ -7,7 +7,12 @@ import os
 from core.database import db
 from core.application_paths import ApplicationPaths
 from core.utils.formatter import Formatter
-from core.utils.session import get_app_version, monitor_active_sessions, SessionManager
+from core.utils.session import (
+    SessionManager,
+    configure_session_log,
+    get_app_version,
+    monitor_active_sessions,
+)
 
 
 def test_formatter_colored_cell_style_dry_sanity():
@@ -80,6 +85,19 @@ def test_get_app_version_sanity(monkeypatch, tmp_path):
 
     monkeypatch.setattr(sys, "_MEIPASS", mock_meipass, raising=False)
     assert get_app_version() == "2.3.4.5"
+
+
+def test_get_app_version_uses_configured_log_path(monkeypatch, tmp_path):
+    log_path = tmp_path / "logs" / "session_debug.log"
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "missing-bundle"), raising=False)
+    configure_session_log(log_path)
+
+    try:
+        assert get_app_version() == "0.0.0"
+    finally:
+        configure_session_log("session_debug.log")
+
+    assert "version.txt not found" in log_path.read_text(encoding="utf-8")
 
 
 def test_monitor_active_sessions_stop_trigger(monkeypatch):

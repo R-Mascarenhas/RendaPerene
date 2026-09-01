@@ -477,6 +477,29 @@ def test_migration_is_reoffered_after_a_missing_portfolio_is_recreated_empty(tmp
     assert repeated.migrated is True
 
 
+def test_migration_reports_success_when_generation_bookkeeping_fails(tmp_path, monkeypatch):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio.db"
+    create_database(source, "legacy-data")
+    paths.prepare()
+
+    def fail_generation(_database):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(
+        ApplicationPaths,
+        "_write_database_generation",
+        staticmethod(fail_generation),
+    )
+
+    result = paths.migrate_legacy_database(source)
+
+    assert result.migrated is True
+    assert "não foi possível registrar" in result.message
+    assert ApplicationPaths.is_valid_sqlite(result.destination)
+
+
 def test_changed_legacy_source_is_not_hidden_by_an_old_completion_marker(tmp_path):
     resource_root = tmp_path / "application"
     paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)

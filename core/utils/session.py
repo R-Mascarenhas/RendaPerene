@@ -1,4 +1,5 @@
 import datetime
+from pathlib import Path
 
 import streamlit as st
 
@@ -52,6 +53,25 @@ from core.constants import (
 )
 from core.strings import MODEL_CLASSIC
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
+
+
+class _SessionLogConfiguration:
+    path = Path("session_debug.log")
+
+
+def configure_session_log(path: str | Path) -> None:
+    """Set the writable path used by session and startup diagnostics."""
+    _SessionLogConfiguration.path = Path(path)
+
+
+def _append_session_log(message: str) -> None:
+    """Append a diagnostic message without allowing logging to break the application."""
+    try:
+        _SessionLogConfiguration.path.parent.mkdir(parents=True, exist_ok=True)
+        with _SessionLogConfiguration.path.open("a", encoding="utf-8") as log_file:
+            log_file.write(message)
+    except Exception:
+        pass
 
 
 class SessionManager:
@@ -233,11 +253,7 @@ def monitor_active_sessions():
 
     from streamlit.runtime import get_instance
 
-    try:
-        with open("session_debug.log", "a", encoding="utf-8") as log_file:
-            log_file.write(f"[{time.ctime()}] Monitor thread started.\n")
-    except Exception:
-        pass
+    _append_session_log(f"[{time.ctime()}] Monitor thread started.\n")
 
     # Grace period for the initial browser tab to load and connect
     time.sleep(15)
@@ -248,11 +264,7 @@ def monitor_active_sessions():
         time.sleep(5)
         runtime = get_instance()
         if runtime is None:
-            try:
-                with open("session_debug.log", "a", encoding="utf-8") as log_file:
-                    log_file.write(f"[{time.ctime()}] Runtime is None.\n")
-            except Exception:
-                pass
+            _append_session_log(f"[{time.ctime()}] Runtime is None.\n")
             continue
 
         session_count = 0
@@ -275,20 +287,12 @@ def monitor_active_sessions():
                 except Exception:
                     session_details = [str(s) for s in sessions]
             except Exception as e2:
-                try:
-                    with open("session_debug.log", "a", encoding="utf-8") as log_file:
-                        log_file.write(f"[{time.ctime()}] Exception listing sessions: {e} | {e2}\n")
-                except Exception:
-                    pass
+                _append_session_log(f"[{time.ctime()}] Exception listing sessions: {e} | {e2}\n")
                 continue
 
-        try:
-            with open("session_debug.log", "a", encoding="utf-8") as log_file:
-                log_file.write(
-                    f"[{time.ctime()}] Active sessions count: {session_count} | Sessions: {session_details} | Has had session: {has_had_session} | Zero count: {zero_session_count}\n"
-                )
-        except Exception:
-            pass
+        _append_session_log(
+            f"[{time.ctime()}] Active sessions count: {session_count} | Sessions: {session_details} | Has had session: {has_had_session} | Zero count: {zero_session_count}\n"
+        )
 
         if session_count > 0:
             has_had_session = True
@@ -298,11 +302,7 @@ def monitor_active_sessions():
 
         # Terminate cleanly after 2 consecutive checks with 0 active sessions (10s)
         if has_had_session and zero_session_count >= 2:
-            try:
-                with open("session_debug.log", "a", encoding="utf-8") as log_file:
-                    log_file.write(f"[{time.ctime()}] Shutdown trigger fired! Exiting process.\n")
-            except Exception:
-                pass
+            _append_session_log(f"[{time.ctime()}] Shutdown trigger fired! Exiting process.\n")
             if "pytest" in sys.modules:
                 runtime.stop()
                 break
@@ -329,21 +329,13 @@ def get_app_version() -> str:
             with open(version_path, encoding="utf-8") as f:
                 return f.read().strip()
         except Exception as e:
-            try:
-                with open("session_debug.log", "a", encoding="utf-8") as log_file:
-                    import time
+            import time
 
-                    log_file.write(f"[{time.ctime()}] WARNING: Error reading version.txt: {e}\n")
-            except Exception:
-                pass
+            _append_session_log(f"[{time.ctime()}] WARNING: Error reading version.txt: {e}\n")
     else:
-        try:
-            with open("session_debug.log", "a", encoding="utf-8") as log_file:
-                import time
+        import time
 
-                log_file.write(
-                    f"[{time.ctime()}] WARNING: version.txt not found at path: {version_path}\n"
-                )
-        except Exception:
-            pass
+        _append_session_log(
+            f"[{time.ctime()}] WARNING: version.txt not found at path: {version_path}\n"
+        )
     return "0.0.0"

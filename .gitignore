@@ -22,6 +22,8 @@ Thumbs.db
 
 # Temporary files
 out/
+.*.lock
+*.reader.*
 .gemini/
 .vscode/
 
@@ -37,3 +39,4 @@ build/
 dist/
 venv_dist/
 *.spec
+AGF_files/

@@ -71,29 +71,25 @@ def _open_lock_descriptor(path: Path) -> int:
     return descriptor
 
 
-def _create_owned_file(path: Path, owner_token: str) -> int:
-    """Publish an owner token atomically and return an open descriptor for it."""
+def _create_owned_file(path: Path, owner_token: str) -> None:
+    """Publish an owner token atomically after closing the temporary file."""
     path = Path(path)
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    linked = False
     try:
         encoded_token = owner_token.encode("utf-8")
         offset = 0
         while offset < len(encoded_token):
             offset += os.write(descriptor, encoded_token[offset:])
         os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = None
         os.link(temporary, path)
-        linked = True
-        return descriptor
     finally:
-        if linked:
-            with suppress(FileNotFoundError):
-                temporary.unlink()
-        else:
+        if descriptor is not None:
             os.close(descriptor)
-            with suppress(FileNotFoundError):
-                temporary.unlink()
+        with suppress(FileNotFoundError):
+            temporary.unlink()
 
 
 @contextmanager
@@ -160,7 +156,8 @@ def portfolio_database_reader_lock(database: Path):
         try:
             with _exclusive_file_lock(lock):
                 owner_token = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
-                descriptor = _create_owned_file(reader, owner_token)
+                _create_owned_file(reader, owner_token)
+                descriptor = os.open(reader, os.O_RDWR)
                 if not _try_lock_descriptor(descriptor):
                     os.close(descriptor)
                     descriptor = None

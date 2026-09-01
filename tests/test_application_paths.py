@@ -7,7 +7,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-from core.application_paths import ApplicationPaths, portfolio_database_lock
+from core.application_paths import (
+    ApplicationPaths,
+    portfolio_database_lock,
+    portfolio_database_reader_lock,
+)
 from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.database import DatabaseManager
 from core.utils.market_data import MarketData
@@ -258,6 +262,15 @@ def test_file_lock_reuses_stale_lock_file_without_unlinking(tmp_path):
 
     with portfolio_database_lock(database):
         assert lock.exists()
+
+
+def test_reader_marker_is_published_without_a_temporary_file(tmp_path):
+    database = tmp_path / "portfolio.db"
+
+    with portfolio_database_reader_lock(database):
+        marker_files = tuple(tmp_path.glob(".portfolio.db.lock.reader.*"))
+        assert len(marker_files) == 1
+        assert tuple(tmp_path.glob(".*.tmp")) == ()
 
 
 def test_file_lock_serializes_active_writers(tmp_path):

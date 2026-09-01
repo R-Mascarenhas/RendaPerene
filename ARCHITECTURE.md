@@ -94,7 +94,10 @@ importada, a raiz de composição invalida o estado da sessão derivado do banco
 para carregar as configurações persistidas antes que a interface permita novas edições. Conexões
 abertas pelo `DatabaseManager` registram leitores concorrentes; a publicação final aguarda esses
 leitores sob o lock por carteira, impedindo que uma conexão SQLite aberta continue apontando para o
-arquivo antigo durante uma substituição. As escritas continuam usando o bloqueio nativo do SQLite.
+arquivo antigo durante uma substituição. Os locks usam bloqueios advisory do sistema operacional
+mantidos por descritores abertos; por isso, um processo encerrado libera automaticamente sua posse
+sem que outro processo precise apagar um arquivo de lock que pode já ter sido reutilizado. As
+escritas continuam usando o bloqueio nativo do SQLite.
 Bancos inválidos não ficam disponíveis para seleção. Se a carteira ativa desaparecer ou se tornar
 inválida, a seleção automática de uma alternativa também invalida o estado derivado da carteira
 anterior antes de reiniciar a interface. Quando não existe alternativa válida, a aplicação usa um

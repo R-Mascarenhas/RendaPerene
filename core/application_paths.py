@@ -1,4 +1,5 @@
 import csv
+import errno
 import hashlib
 import io
 import os
@@ -23,6 +24,51 @@ APP_NAME = "RendaPerene"
 DEFAULT_PORTFOLIO = "portfolio.db"
 DEMO_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
 FILE_LOCK_TIMEOUT_SECONDS = 5
+
+
+def _try_lock_descriptor(descriptor: int) -> bool:
+    """Acquire an advisory lock without reclaiming another process's lock file."""
+    if sys.platform.startswith("win"):
+        import msvcrt
+
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        try:
+            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return False
+        return True
+
+    import fcntl
+
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as error:
+        if error.errno in (errno.EACCES, errno.EAGAIN):
+            return False
+        raise
+    return True
+
+
+def _unlock_descriptor(descriptor: int) -> None:
+    """Release an advisory lock held by a descriptor."""
+    if sys.platform.startswith("win"):
+        import msvcrt
+
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+        return
+
+    import fcntl
+
+    fcntl.flock(descriptor, fcntl.LOCK_UN)
+
+
+def _open_lock_descriptor(path: Path) -> int:
+    """Open a persistent lock file, creating a byte for Windows byte-range locking."""
+    descriptor = os.open(path, os.O_CREAT | os.O_RDWR)
+    if sys.platform.startswith("win") and os.fstat(descriptor).st_size == 0:
+        os.write(descriptor, b"\0")
+    return descriptor
 
 
 def _create_owned_file(path: Path, owner_token: str) -> int:
@@ -54,83 +100,43 @@ def _create_owned_file(path: Path, owner_token: str) -> int:
 def _exclusive_file_lock(lock: Path):
     lock = Path(lock)
     descriptor = None
-    owner_token = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
     deadline = time.monotonic() + FILE_LOCK_TIMEOUT_SECONDS
     try:
         while time.monotonic() < deadline:
-            try:
-                descriptor = _create_owned_file(lock, owner_token)
-                while True:
-                    readers = tuple(lock.parent.glob(f"{lock.name}.reader.*"))
-                    if not readers:
-                        break
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError(f"Timed out waiting for {lock.name} readers.")
-                    for reader in readers:
-                        try:
-                            if not _lock_owner_is_alive(reader):
-                                reader.unlink()
-                        except FileNotFoundError:
-                            continue
-                    time.sleep(0.01)
-                break
-            except FileExistsError:
+            descriptor = _open_lock_descriptor(lock)
+            if not _try_lock_descriptor(descriptor):
+                os.close(descriptor)
+                descriptor = None
+                time.sleep(0.01)
+                continue
+
+            active_readers = []
+            for reader in lock.parent.glob(f"{lock.name}.reader.*"):
                 try:
-                    observed_owner = lock.read_text(encoding="utf-8")
-                    if (
-                        not _owner_token_is_alive(observed_owner)
-                        and lock.exists()
-                        and lock.read_text(encoding="utf-8") == observed_owner
-                    ):
-                        lock.unlink()
-                        continue
+                    reader_descriptor = os.open(reader, os.O_RDWR)
                 except FileNotFoundError:
                     continue
-                time.sleep(0.01)
+                if _try_lock_descriptor(reader_descriptor):
+                    _unlock_descriptor(reader_descriptor)
+                    os.close(reader_descriptor)
+                    with suppress(FileNotFoundError):
+                        reader.unlink()
+                else:
+                    os.close(reader_descriptor)
+                    active_readers.append(reader)
+            if not active_readers:
+                break
+            _unlock_descriptor(descriptor)
+            os.close(descriptor)
+            descriptor = None
+            time.sleep(0.01)
         if descriptor is None:
             raise TimeoutError(f"Timed out waiting for {lock.name}.")
         yield
     finally:
         if descriptor is not None:
+            _unlock_descriptor(descriptor)
             os.close(descriptor)
-            try:
-                if lock.read_text(encoding="utf-8") == owner_token:
-                    lock.unlink()
-            except (FileNotFoundError, UnicodeError):
-                pass
-
-
-def _owner_token_is_alive(owner_token: str) -> bool:
-    """Return whether a lock's recorded local-process owner token represents a running process."""
-    try:
-        host, pid_text, _token = owner_token.split(":", 2)
-        if host != socket.gethostname():
-            return True
-        pid = int(pid_text)
-        if sys.platform.startswith("win"):
-            import ctypes
-
-            process_query_limited_information = 0x1000
-            handle = ctypes.windll.kernel32.OpenProcess(
-                process_query_limited_information, False, pid
-            )
-            if not handle:
-                return False
-            ctypes.windll.kernel32.CloseHandle(handle)
-        else:
-            os.kill(pid, 0)
-    except (OSError, ValueError):
-        return False
-    return True
-
-
-def _lock_owner_is_alive(lock: Path) -> bool:
-    """Return whether a lock's recorded local-process owner is still running."""
-    try:
-        owner_token = lock.read_text(encoding="utf-8")
-        return _owner_token_is_alive(owner_token)
-    except (OSError, UnicodeError):
-        return False
 
 
 @contextmanager
@@ -149,29 +155,18 @@ def portfolio_database_reader_lock(database: Path):
     lock = database.with_name(f".{database.name}.lock")
     reader = database.with_name(f"{lock.name}.reader.{uuid.uuid4().hex}")
     deadline = time.monotonic() + FILE_LOCK_TIMEOUT_SECONDS
+    descriptor = None
     while time.monotonic() < deadline:
-        if lock.exists():
-            try:
-                observed_owner = lock.read_text(encoding="utf-8")
-                if (
-                    not _owner_token_is_alive(observed_owner)
-                    and lock.exists()
-                    and lock.read_text(encoding="utf-8") == observed_owner
-                ):
-                    lock.unlink()
-                    continue
-            except FileNotFoundError:
-                continue
-            time.sleep(0.01)
-            continue
         try:
-            owner_token = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
-            descriptor = _create_owned_file(reader, owner_token)
-            os.close(descriptor)
-            if lock.exists():
-                reader.unlink(missing_ok=True)
-                continue
-            break
+            with _exclusive_file_lock(lock):
+                owner_token = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
+                descriptor = _create_owned_file(reader, owner_token)
+                if not _try_lock_descriptor(descriptor):
+                    os.close(descriptor)
+                    descriptor = None
+                    reader.unlink(missing_ok=True)
+                    continue
+                break
         except FileExistsError:
             continue
     else:
@@ -179,6 +174,9 @@ def portfolio_database_reader_lock(database: Path):
     try:
         yield
     finally:
+        if descriptor is not None:
+            _unlock_descriptor(descriptor)
+            os.close(descriptor)
         with suppress(FileNotFoundError):
             reader.unlink()
 

@@ -251,26 +251,20 @@ def test_migration_publication_waits_for_database_connections_and_revalidates(
         verification.close()
 
 
-def test_file_lock_does_not_expose_uninitialized_owner(tmp_path, monkeypatch):
+def test_file_lock_reuses_stale_lock_file_without_unlinking(tmp_path):
     database = tmp_path / "portfolio.db"
-    first_created_lock = threading.Event()
-    allow_first_write = threading.Event()
-    second_entered = threading.Event()
-    release_second = threading.Event()
+    lock = database.with_name(".portfolio.db.lock")
+    lock.write_text("stale-owner", encoding="utf-8")
+
+    with portfolio_database_lock(database):
+        assert lock.exists()
+
+
+def test_file_lock_serializes_active_writers(tmp_path):
+    database = tmp_path / "portfolio.db"
     first_entered = threading.Event()
     release_first = threading.Event()
-    real_write = os.write
-    write_count = 0
-
-    def delayed_first_write(descriptor, contents):
-        nonlocal write_count
-        write_count += 1
-        if write_count == 1:
-            first_created_lock.set()
-            assert allow_first_write.wait(timeout=2)
-        return real_write(descriptor, contents)
-
-    monkeypatch.setattr("core.application_paths.os.write", delayed_first_write)
+    second_entered = threading.Event()
 
     def first_writer():
         with portfolio_database_lock(database):
@@ -280,25 +274,24 @@ def test_file_lock_does_not_expose_uninitialized_owner(tmp_path, monkeypatch):
     def second_writer():
         with portfolio_database_lock(database):
             second_entered.set()
-            assert release_second.wait(timeout=2)
 
     first = threading.Thread(target=first_writer)
     second = threading.Thread(target=second_writer)
     first.start()
-    assert first_created_lock.wait(timeout=2)
+    assert first_entered.wait(timeout=2)
     second.start()
 
     try:
+        assert not second_entered.wait(timeout=0.2)
+        release_first.set()
         assert second_entered.wait(timeout=2)
-        allow_first_write.set()
-        assert not first_entered.wait(timeout=0.2)
     finally:
         release_first.set()
-        release_second.set()
         first.join(timeout=2)
         second.join(timeout=2)
 
-    assert first_entered.is_set()
+    assert not first.is_alive()
+    assert not second.is_alive()
 
 
 def test_migration_copy_failures_return_only_localized_user_text(tmp_path, monkeypatch):

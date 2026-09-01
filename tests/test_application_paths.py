@@ -514,9 +514,9 @@ def test_migration_reports_success_when_generation_bookkeeping_fails(tmp_path, m
 
     result = paths.migrate_legacy_database(source)
 
-    assert result.migrated is True
-    assert "não foi possível registrar" in result.message
-    assert ApplicationPaths.is_valid_sqlite(result.destination)
+    assert result.migrated is False
+    assert "nenhum dado foi substituído" in result.message
+    assert not result.destination.exists()
 
 
 def test_changed_legacy_source_is_not_hidden_by_an_old_completion_marker(tmp_path):

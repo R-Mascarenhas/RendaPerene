@@ -543,8 +543,21 @@ class ApplicationPaths:
             if not backup.exists():
                 self._safe_copy(source, backup, validate_sqlite=True)
 
+            rollback_destination = destination.with_name(
+                f".{destination.name}.{uuid.uuid4().hex}.rollback"
+            )
+            generation_file = destination.with_name(f"{destination.name}.generation")
+            rollback_generation = generation_file.with_name(
+                f".{generation_file.name}.{uuid.uuid4().hex}.rollback"
+            )
+            rollback_marker = completion_marker.with_name(
+                f".{completion_marker.name}.{uuid.uuid4().hex}.rollback"
+            )
             with portfolio_database_lock(destination):
-                if destination.exists():
+                destination_existed = destination.exists()
+                generation_existed = generation_file.exists()
+                marker_existed = completion_marker.exists()
+                if destination_existed:
                     if not self._is_pristine_database(destination):
                         return MigrationResult(
                             source,
@@ -553,24 +566,52 @@ class ApplicationPaths:
                             False,
                             "A carteira de destino mudou durante a importação; nenhum dado foi substituído.",
                         )
-                    self._remove_sqlite_sidecars(destination)
-                    self._replace_with_validated_copy(backup, destination)
-                else:
-                    self._remove_sqlite_sidecars(destination)
-                    self._safe_copy(backup, destination, validate_sqlite=True)
+                    shutil.copy2(destination, rollback_destination)
+                if generation_existed:
+                    shutil.copy2(generation_file, rollback_generation)
+                if marker_existed:
+                    shutil.copy2(completion_marker, rollback_marker)
                 try:
+                    if destination_existed:
+                        self._remove_sqlite_sidecars(destination)
+                        self._replace_with_validated_copy(backup, destination)
+                    else:
+                        self._remove_sqlite_sidecars(destination)
+                        self._safe_copy(backup, destination, validate_sqlite=True)
                     self._write_database_generation(destination)
                     completion_marker.write_text(
                         f"{self._sqlite_content_digest(backup)}\n", encoding="ascii"
                     )
                 except (OSError, sqlite3.DatabaseError, ValueError):
+                    self._remove_sqlite_sidecars(destination)
+                    if destination_existed:
+                        os.replace(rollback_destination, destination)
+                    else:
+                        with suppress(FileNotFoundError):
+                            destination.unlink()
+                    if generation_existed:
+                        os.replace(rollback_generation, generation_file)
+                    else:
+                        with suppress(FileNotFoundError):
+                            generation_file.unlink()
+                    if marker_existed:
+                        os.replace(rollback_marker, completion_marker)
+                    else:
+                        with suppress(FileNotFoundError):
+                            completion_marker.unlink()
                     return MigrationResult(
                         source,
                         destination,
                         backup,
-                        True,
-                        "Carteira importada, mas não foi possível registrar a conclusão da importação.",
+                        False,
+                        "Não foi possível concluir a importação; nenhum dado foi substituído.",
                     )
+            with suppress(FileNotFoundError):
+                rollback_destination.unlink()
+            with suppress(FileNotFoundError):
+                rollback_generation.unlink()
+            with suppress(FileNotFoundError):
+                rollback_marker.unlink()
         except (OSError, sqlite3.DatabaseError, ValueError):
             return MigrationResult(
                 source,

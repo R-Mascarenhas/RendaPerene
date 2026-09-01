@@ -273,6 +273,27 @@ def test_reader_marker_is_published_without_a_temporary_file(tmp_path):
         assert tuple(tmp_path.glob(".*.tmp")) == ()
 
 
+def test_reader_registration_does_not_wait_for_existing_readers(tmp_path):
+    database = tmp_path / "portfolio.db"
+    first_reader = portfolio_database_reader_lock(database)
+    first_reader.__enter__()
+    second_entered = threading.Event()
+
+    def second_reader():
+        with portfolio_database_reader_lock(database):
+            second_entered.set()
+
+    second = threading.Thread(target=second_reader)
+    second.start()
+    try:
+        assert second_entered.wait(timeout=2)
+    finally:
+        first_reader.__exit__(None, None, None)
+        second.join(timeout=2)
+
+    assert not second.is_alive()
+
+
 def test_file_lock_serializes_active_writers(tmp_path):
     database = tmp_path / "portfolio.db"
     first_entered = threading.Event()

@@ -93,7 +93,7 @@ def _create_owned_file(path: Path, owner_token: str) -> None:
 
 
 @contextmanager
-def _exclusive_file_lock(lock: Path):
+def _exclusive_file_lock(lock: Path, wait_for_readers: bool = True):
     lock = Path(lock)
     descriptor = None
     deadline = time.monotonic() + FILE_LOCK_TIMEOUT_SECONDS
@@ -106,6 +106,8 @@ def _exclusive_file_lock(lock: Path):
                 time.sleep(0.01)
                 continue
 
+            if not wait_for_readers:
+                break
             active_readers = []
             for reader in lock.parent.glob(f"{lock.name}.reader.*"):
                 try:
@@ -154,7 +156,7 @@ def portfolio_database_reader_lock(database: Path):
     descriptor = None
     while time.monotonic() < deadline:
         try:
-            with _exclusive_file_lock(lock):
+            with _exclusive_file_lock(lock, wait_for_readers=False):
                 owner_token = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
                 _create_owned_file(reader, owner_token)
                 descriptor = os.open(reader, os.O_RDWR)

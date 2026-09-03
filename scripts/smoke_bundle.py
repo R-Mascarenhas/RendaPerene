@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def main() -> int:
-    executable = Path(sys.argv[1])
+    executable = Path(sys.argv[1]).resolve()
     if not executable.is_file():
         raise SystemExit(f"Packaged executable was not found: {executable}")
     with tempfile.TemporaryDirectory(prefix="rendaperene-smoke-") as data_root:

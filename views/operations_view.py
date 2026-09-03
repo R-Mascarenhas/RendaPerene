@@ -22,6 +22,27 @@ from views.cached_market_data import StreamlitCachedMarketData as MarketData
 class OperationsView:
     """Class responsible for rendering the manual transactions and B3 uploader forms."""
 
+    @staticmethod
+    def _get_available_tickers(entry_type: str, catalog: pd.DataFrame) -> list[str]:
+        """Return catalog tickers valid for the selected manual operation."""
+        is_sale = "Venda" in entry_type
+        is_earning = "Dividendo" in entry_type or "JCP" in entry_type or "Rendimento" in entry_type
+        is_corp_event = "Desdobro" in entry_type or "Grupamento" in entry_type
+
+        if is_sale or is_earning or is_corp_event:
+            try:
+                df_positions = AssetService.calculate_positions()
+                if not df_positions.empty and "ticker" in df_positions.columns:
+                    if "quantity" in df_positions.columns:
+                        df_positions = df_positions[df_positions["quantity"] > 0]
+                    owned_tickers = df_positions["ticker"].tolist()
+                    return sorted([ticker for ticker in owned_tickers if ticker in catalog.index])
+            except Exception:
+                pass
+            return []
+
+        return sorted(catalog.index.tolist()) if not catalog.empty else []
+
     def render(self):
         st.header("Gestão de Movimentações")
         col1, col2 = st.columns(2)
@@ -51,21 +72,10 @@ class OperationsView:
         # Load the assets catalog dynamically to construct the autocompleting ticker + name options
         catalog = MarketData.load_assets_catalog()
 
+        is_sale = "Venda" in entry_type
         is_earning = "Dividendo" in entry_type or "JCP" in entry_type or "Rendimento" in entry_type
         is_corp_event = "Desdobro" in entry_type or "Grupamento" in entry_type
-
-        if is_earning or is_corp_event:
-            try:
-                df_positions = AssetService.calculate_positions()
-                if not df_positions.empty and "ticker" in df_positions.columns:
-                    owned_tickers = df_positions["ticker"].tolist()
-                    available_tickers = sorted([t for t in owned_tickers if t in catalog.index])
-                else:
-                    available_tickers = []
-            except Exception:
-                available_tickers = []
-        else:
-            available_tickers = sorted(catalog.index.tolist()) if not catalog.empty else []
+        available_tickers = self._get_available_tickers(entry_type, catalog)
 
         options = ["--- Selecione ---"] + [
             f"{t} - {catalog.loc[t, 'NOME']}" for t in available_tickers if t in catalog.index
@@ -81,7 +91,7 @@ class OperationsView:
                 "Selecione o Ativo", options=options, index=0, help=HELP_OPS_SEARCH
             )
 
-            if (is_earning or is_corp_event) and not available_tickers:
+            if (is_sale or is_earning or is_corp_event) and not available_tickers:
                 st.warning(
                     "⚠️ Você não possui nenhum ativo em carteira para realizar essa operação."
                 )

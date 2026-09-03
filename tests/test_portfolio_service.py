@@ -134,6 +134,15 @@ def test_sale_transaction_total_subtracts_fees():
     assert sale["Valor Total"] == 995.00
 
 
+def test_get_owned_tickers_returns_only_positive_positions():
+    """Owned ticker eligibility must be centralized in the asset service."""
+    AssetService.add_transaction("BBAS3", "2021-12-15", "BUY", 100, 10.00)
+    AssetService.add_transaction("CXSE3", "2021-12-15", "BUY", 100, 10.00)
+    AssetService.add_transaction("CXSE3", "2021-12-16", "SELL", 100, 10.00)
+
+    assert AssetService.get_owned_tickers() == ["BBAS3"]
+
+
 def test_instantiable_portfolio_contexts_isolation(tmp_path):
     """Proves that two independent AssetService instances are completely isolated physically and logically."""
     from core.database import DatabaseManager

@@ -529,8 +529,8 @@ def test_operations_view_only_offers_owned_assets_for_sales(mock_db, monkeypatch
 
     monkeypatch.setattr(
         AssetService,
-        "calculate_positions",
-        lambda: pd.DataFrame({"ticker": ["BBAS3"]}),
+        "get_owned_tickers",
+        lambda: ["BBAS3"],
     )
     catalog = pd.DataFrame(
         {"NOME": ["Banco do Brasil", "Caixa Seguridade"]}, index=["BBAS3", "CXSE3"]

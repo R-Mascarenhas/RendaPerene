@@ -31,12 +31,8 @@ class OperationsView:
 
         if is_sale or is_earning or is_corp_event:
             try:
-                df_positions = AssetService.calculate_positions()
-                if not df_positions.empty and "ticker" in df_positions.columns:
-                    if "quantity" in df_positions.columns:
-                        df_positions = df_positions[df_positions["quantity"] > 0]
-                    owned_tickers = df_positions["ticker"].tolist()
-                    return sorted([ticker for ticker in owned_tickers if ticker in catalog.index])
+                owned_tickers = AssetService.get_owned_tickers()
+                return sorted([ticker for ticker in owned_tickers if ticker in catalog.index])
             except Exception:
                 pass
             return []

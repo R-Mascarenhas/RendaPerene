@@ -179,6 +179,16 @@ class AssetService:
         return self._portfolio_repo.get_quantity_on_date(ticker, date_str, conn=conn)
 
     @hybridmethod
+    def get_owned_tickers(self) -> list[str]:
+        """Returns tickers with a positive current position."""
+        df_positions = self.calculate_positions()
+        if df_positions.empty or "ticker" not in df_positions.columns:
+            return []
+        if "quantity" not in df_positions.columns:
+            return df_positions["ticker"].tolist()
+        return df_positions.loc[df_positions["quantity"] > 0, "ticker"].tolist()
+
+    @hybridmethod
     def get_asset_transactions(self, ticker: str) -> pd.DataFrame:
         """Returns all transactions for a specific asset ordered by date descending."""
         return self._portfolio_repo.get_transactions_by_ticker_desc(ticker)

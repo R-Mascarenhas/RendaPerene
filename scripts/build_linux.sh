@@ -14,6 +14,6 @@ python3 -m PyInstaller --clean --noconfirm --distpath dist --workpath build Rend
 
 archive="dist/RendaPerene-v${app_version}-ubuntu-x64.tar.gz"
 rm -f "$archive"
-tar -czf "$archive" -C dist "RendaPerene-v${app_version}"
 python3 scripts/validate_bundle.py "dist/RendaPerene-v${app_version}" "$app_version"
+tar -czf "$archive" -C dist "RendaPerene-v${app_version}"
 python3 scripts/smoke_bundle.py "dist/RendaPerene-v${app_version}/RendaPerene-v${app_version}"

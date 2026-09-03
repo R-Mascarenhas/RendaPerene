@@ -1,0 +1,61 @@
+name: Package native distributions
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  package-windows:
+    name: Windows x64 package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          $version = (Get-Content version.txt -Raw).Trim()
+          if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}".TrimStart("v") -ne $version) { throw "Release tag does not match version.txt" }
+      - name: Build and smoke-test Windows bundle
+        shell: cmd
+        run: build_windows_exe.bat
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RendaPerene-windows-x64
+          path: dist/RendaPerene-v*-windows-x64.zip
+          if-no-files-found: error
+
+  package-ubuntu:
+    name: Ubuntu x64 package
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Validate release version
+        run: |
+          version="$(tr -d '[:space:]' < version.txt)"
+          tag="${{ github.ref_name }}"
+          if [[ "${{ github.ref_type }}" == "tag" && "${tag#v}" != "$version" ]]; then
+            echo "Release tag does not match version.txt" >&2
+            exit 1
+          fi
+      - name: Build and smoke-test Ubuntu bundle
+        run: bash scripts/build_linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RendaPerene-ubuntu-x64
+          path: dist/RendaPerene-v*-ubuntu-x64.tar.gz
+          if-no-files-found: error

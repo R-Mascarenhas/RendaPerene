@@ -39,4 +39,5 @@ build/
 dist/
 venv_dist/
 *.spec
+!RendaPerene.spec
 AGF_files/

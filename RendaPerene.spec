@@ -20,7 +20,7 @@ binaries = []
 hiddenimports = []
 
 # Streamlit and Plotly load templates, static files, and plugins dynamically.
-for package in ("streamlit", "plotly"):
+for package in ("streamlit", "plotly", "openpyxl"):
     package_datas, package_binaries, package_hiddenimports = collect_all(package)
     datas.extend(package_datas)
     binaries.extend(package_binaries)

@@ -18,14 +18,14 @@ def main() -> int:
     forbidden_directories = tuple(
         path for name in ("database", "catalog", "logs") if (path := resource_root / name).exists()
     )
-    forbidden = forbidden_directories + tuple(resource_root.rglob("*.db"))
-    forbidden += tuple(resource_root.rglob("*.xlsx")) + tuple(resource_root.rglob("*.ods"))
-    forbidden += tuple(resource_root.rglob("*.log"))
+    forbidden = forbidden_directories
     allowed_catalog = resource_root / "assets.csv"
     forbidden += tuple(
         path
         for path in resource_root.rglob("*")
-        if path.is_file() and path.suffix.casefold() == ".csv" and path != allowed_catalog
+        if path.is_file()
+        and path.suffix.casefold() in {".db", ".xlsx", ".ods", ".log", ".csv"}
+        and path != allowed_catalog
     )
     if forbidden:
         raise SystemExit(f"Personal or generated files found in bundle: {forbidden}")

@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, copy_metadata
+from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
 
 ROOT = Path(SPECPATH)
@@ -26,6 +26,16 @@ for package in ("streamlit", "plotly"):
     binaries.extend(package_binaries)
     hiddenimports.extend(package_hiddenimports)
     datas.extend(copy_metadata(package))
+
+# app.py is executed later by Streamlit, so Analysis cannot discover its imports directly.
+for package in ("core", "views", "services"):
+    hiddenimports.extend(collect_submodules(package))
+
+# yfinance is imported by the market-data adapter during Streamlit startup.
+yfinance_datas, yfinance_binaries, yfinance_hiddenimports = collect_all("yfinance")
+datas.extend(yfinance_datas)
+binaries.extend(yfinance_binaries)
+hiddenimports.extend(yfinance_hiddenimports)
 
 # Application modules are resources because Streamlit receives app.py as a script.
 for package in ("core", "views", "services"):

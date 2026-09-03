@@ -27,5 +27,5 @@ Invoke-Python @("-m", "PyInstaller", "--clean", "--noconfirm", "--distpath", "di
 $archive = "dist/RendaPerene-v$appVersion-windows-x64.zip"
 if (Test-Path $archive) { Remove-Item $archive -Force }
 Invoke-Python @("scripts/validate_bundle.py", "dist/RendaPerene-v$appVersion", $appVersion)
-Compress-Archive -Path "dist/RendaPerene-v$appVersion" -DestinationPath $archive
 Invoke-Python @("scripts/smoke_bundle.py", "dist/RendaPerene-v$appVersion/RendaPerene-v$appVersion.exe")
+Compress-Archive -Path "dist/RendaPerene-v$appVersion" -DestinationPath $archive

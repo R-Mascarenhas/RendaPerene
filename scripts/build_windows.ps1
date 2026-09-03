@@ -1,8 +1,14 @@
 $ErrorActionPreference = "Stop"
+$buildVenv = "venv_dist"
+if (-not (Test-Path "$buildVenv\Scripts\python.exe")) {
+    & python -m venv $buildVenv
+    if ($LASTEXITCODE -ne 0) { throw "Python command failed with exit code $LASTEXITCODE" }
+}
+$buildPython = Join-Path $buildVenv "Scripts\python.exe"
 
 function Invoke-Python {
     param([string[]] $Arguments)
-    & python @Arguments
+    & $buildPython @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Python command failed with exit code $LASTEXITCODE"
     }

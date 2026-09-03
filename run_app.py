@@ -20,6 +20,7 @@ if __name__ == "__main__":
         "run",
         str(script_path),
         "--global.developmentMode=false",
+        "--server.address=127.0.0.1",
         f"--server.port={port}",
         "--server.headless=false",
         "--server.showEmailPrompt=false",

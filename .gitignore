@@ -38,6 +38,7 @@ docs/backlog/
 build/
 dist/
 venv_dist/
+.venv-packaging/
 *.spec
 !RendaPerene.spec
 AGF_files/

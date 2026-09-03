@@ -139,7 +139,8 @@ gerado.
 
 No Windows, execute `build_windows_exe.bat` em um checkout com Python instalado. No Ubuntu 22.04 ou
 mais recente, execute `bash scripts/build_linux.sh`. Os comandos instalam as dependências declaradas
-em `pyproject.toml` (incluindo a dependência opcional `packaging` do PyInstaller), criam
+em `pyproject.toml` (incluindo a dependência opcional `packaging` do PyInstaller) em ambientes
+virtuais dedicados, criam
 respectivamente `RendaPerene-v<versão>-windows-x64.zip` ou
 `RendaPerene-v<versão>-ubuntu-x64.tar.gz` e executam uma verificação de recursos e um smoke check do
 servidor Streamlit. O arquivo `.tar.gz` preserva as permissões executáveis.

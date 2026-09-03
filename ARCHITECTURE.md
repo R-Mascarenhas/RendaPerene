@@ -161,7 +161,8 @@ Essas integrações permitem o uso local, mas precisam de acesso à rede quando 
 graváveis, planilhas, logs e outros arquivos pessoais ou gerados não são adicionados ao bundle.
 
 Os scripts `build_windows.ps1` e `build_linux.sh` são apenas comandos nativos de empacotamento e
-produzem os arquivos ZIP e TAR.GZ versionados. Cada build valida os recursos do diretório final e
+criam ambientes virtuais dedicados antes de instalar as dependências. Eles produzem os arquivos ZIP
+e TAR.GZ versionados. Cada build valida os recursos do diretório final e
 inicia o executável em um diretório de dados temporário para verificar que o servidor Streamlit
 chega a responder. O workflow executa os builds em runners Windows e Ubuntu 22.04 separados; tags
 de release são rejeitadas quando não correspondem a `version.txt`.

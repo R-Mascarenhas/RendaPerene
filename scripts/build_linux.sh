@@ -8,12 +8,17 @@ if [[ "${GITHUB_REF_TYPE:-}" == "tag" && "${GITHUB_REF_NAME#v}" != "$app_version
     exit 1
 fi
 
-python3 -m pip install --upgrade pip
-python3 -m pip install ".[packaging]"
-python3 -m PyInstaller --clean --noconfirm --distpath dist --workpath build RendaPerene.spec
+build_venv=".venv-packaging"
+if [[ ! -x "$build_venv/bin/python" ]]; then
+    python3 -m venv "$build_venv"
+fi
+build_python="$build_venv/bin/python"
+"$build_python" -m pip install --upgrade pip
+"$build_python" -m pip install ".[packaging]"
+"$build_python" -m PyInstaller --clean --noconfirm --distpath dist --workpath build RendaPerene.spec
 
 archive="dist/RendaPerene-v${app_version}-ubuntu-x64.tar.gz"
 rm -f "$archive"
-python3 scripts/validate_bundle.py "dist/RendaPerene-v${app_version}" "$app_version"
+"$build_python" scripts/validate_bundle.py "dist/RendaPerene-v${app_version}" "$app_version"
 tar -czf "$archive" -C dist "RendaPerene-v${app_version}"
-python3 scripts/smoke_bundle.py "dist/RendaPerene-v${app_version}/RendaPerene-v${app_version}"
+"$build_python" scripts/smoke_bundle.py "dist/RendaPerene-v${app_version}/RendaPerene-v${app_version}"

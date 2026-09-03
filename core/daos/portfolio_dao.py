@@ -154,7 +154,9 @@ class PortfolioDAO:
                 "     WHEN transaction_type='SELL' THEN 'Venda' "
                 "     ELSE 'Grupamento' END as Operação, "
                 "quantity as Quantidade, unit_price as [Valor Unitário], "
-                "(quantity * unit_price + fees) as [Valor Total] "
+                "CASE WHEN transaction_type='SELL' "
+                "     THEN (quantity * unit_price - fees) "
+                "     ELSE (quantity * unit_price + fees) END as [Valor Total] "
                 "FROM transactions WHERE ticker = ? ORDER BY date DESC",
                 conn,
                 params=(ticker,),

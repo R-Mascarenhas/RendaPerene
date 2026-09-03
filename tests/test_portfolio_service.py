@@ -123,6 +123,26 @@ def test_sell_all_shares_retains_monitoring_but_allows_removal():
     assert "BBAS3" in manual_only
 
 
+def test_sale_transaction_total_subtracts_fees():
+    """The displayed proceeds of a sale must be net of brokerage fees."""
+    AssetService.add_transaction("BBAS3", "2021-12-15", "BUY", 100, 10.00)
+    AssetService.add_transaction("BBAS3", "2021-12-16", "SELL", 100, 10.00, 5.00)
+
+    transactions = AssetService.get_asset_transactions("BBAS3")
+
+    sale = transactions[transactions["Operação"] == "Venda"].iloc[0]
+    assert sale["Valor Total"] == 995.00
+
+
+def test_get_owned_tickers_returns_only_positive_positions():
+    """Owned ticker eligibility must be centralized in the asset service."""
+    AssetService.add_transaction("BBAS3", "2021-12-15", "BUY", 100, 10.00)
+    AssetService.add_transaction("CXSE3", "2021-12-15", "BUY", 100, 10.00)
+    AssetService.add_transaction("CXSE3", "2021-12-16", "SELL", 100, 10.00)
+
+    assert AssetService.get_owned_tickers() == ["BBAS3"]
+
+
 def test_instantiable_portfolio_contexts_isolation(tmp_path):
     """Proves that two independent AssetService instances are completely isolated physically and logically."""
     from core.database import DatabaseManager

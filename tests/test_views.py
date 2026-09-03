@@ -523,6 +523,24 @@ def test_views_and_widgets_import_integrity():
     assert GoalsView is not None
 
 
+def test_operations_view_only_offers_owned_assets_for_sales(mock_db, monkeypatch):
+    """The manual sale selector must contain only assets with a current position."""
+    from views.operations_view import OperationsView
+
+    monkeypatch.setattr(
+        AssetService,
+        "get_owned_tickers",
+        lambda: ["BBAS3"],
+    )
+    catalog = pd.DataFrame(
+        {"NOME": ["Banco do Brasil", "Caixa Seguridade"]}, index=["BBAS3", "CXSE3"]
+    )
+
+    available = OperationsView()._get_available_tickers("Venda (Resgate)", catalog)
+
+    assert available == ["BBAS3"]
+
+
 def test_planning_view_start_date_change_callback(mock_db, monkeypatch):
     """
     Verifies that PlanningView._on_planning_start_date_change correctly syncs state,

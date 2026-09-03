@@ -2,7 +2,11 @@ import math
 
 import streamlit as st
 
-from core.constants import TICKER
+from core.constants import (
+    TICKER,
+    WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX,
+    WIDGET_ACCUMULATION_PLAN_WEIGHTS_PREFIX,
+)
 from core.utils import Formatter
 from services.share_quantity_goal_service import ShareQuantityGoalService
 from views.components.goal_progress import GoalProgressBar
@@ -59,8 +63,8 @@ class AccumulationGoalPlanningWidget:
         )
 
         active_database = st.session_state.get("active_db", "portfolio.db")
-        weights_key = f"accumulation_plan_weights_{active_database}"
-        editor_key = f"accumulation_plan_editor_{active_database}"
+        weights_key = f"{WIDGET_ACCUMULATION_PLAN_WEIGHTS_PREFIX}{active_database}"
+        editor_key = f"{WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX}{active_database}"
         selected_weights = st.session_state.get(weights_key)
 
         try:

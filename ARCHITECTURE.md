@@ -16,7 +16,11 @@ O `app.py` é a raiz de composição. Ele:
 4. inicializa o estado da sessão; e
 5. direciona para as três telas principais: Dashboard, Ativos e Planejamento.
 
-Em uma execução local normal, o banco ativo é `database/portfolio.db` ou outro arquivo `portfolio_*.db` selecionado na barra lateral. Quando um ambiente de hospedagem compartilhada do Streamlit é detectado, a aplicação cria para a sessão um banco clonado de `database/portfolio_demo.db`; esse recurso serve apenas para demonstração e não representa o modelo principal de persistência.
+Em uma execução local normal, o banco ativo é `portfolio.db` ou outro arquivo `portfolio*.db`
+selecionado na barra lateral, sempre dentro do diretório gravável do usuário. Quando um ambiente de
+hospedagem compartilhada do Streamlit é detectado, a aplicação cria para a sessão um banco clonado
+do recurso `database/portfolio_demo.db` em um diretório temporário isolado; esse recurso serve
+apenas para demonstração e não representa o modelo principal de persistência.
 
 Execute a aplicação com:
 
@@ -48,7 +52,72 @@ O arquivo `core/ports.py` define as fronteiras para persistência da carteira, a
 
 ## Persistência
 
-O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa; o catálogo estático de ativos é mantido separadamente no arquivo `assets.csv`.
+`ApplicationPaths`, em `core/application_paths.py`, é o módulo profundo que separa os recursos
+descartáveis do pacote dos dados graváveis. Sua interface resolve os recursos incluídos no pacote,
+a raiz de dados, o diretório das carteiras, o catálogo, os logs e os backups. Também prepara o
+layout, inventaria apenas bancos SQLite válidos e concentra a migração das versões antigas. A raiz
+de composição `app.py` conecta esses caminhos ao `DatabaseManager`, ao catálogo e aos adaptadores;
+as views não calculam caminhos do sistema operacional.
+
+As raízes graváveis padrão são `%LOCALAPPDATA%\RendaPerene` no Windows e
+`$XDG_DATA_HOME/RendaPerene` no Linux, com fallback para `~/.local/share/RendaPerene`. O executável
+e seus recursos podem ser substituídos sem mover as carteiras. Sessões da demonstração hospedada
+usam uma raiz temporária própria por sessão. Os caminhos do banco e do catálogo demo são resolvidos
+a cada operação a partir do contexto atual do Streamlit, sem armazenar o identificador de uma
+sessão nos singletons compartilhados. O caminho resolvido do catálogo também integra a chave de
+cache, impedindo que leituras sejam reutilizadas entre sessões. Bancos demo inválidos são
+restaurados a partir do recurso incluído no pacote, e diretórios de sessões sem atividade há mais
+de 24 horas são removidos durante novas execuções para limitar o uso do armazenamento temporário.
+
+Ao preparar o armazenamento gravável, `ApplicationPaths` incorpora primeiro os antigos `assets.csv`
+ao lado do executável e nas pastas irmãs `RendaPerene-v*`, em ordem de versão, e depois aplica o
+catálogo incluído na versão atual. Assim, a baseline mais nova prevalece para tickers oficiais,
+enquanto tickers alternativos existentes apenas nos catálogos legados são preservados. Catálogos
+legados malformados são ignorados, e uma cópia gravável inválida é substituída atomicamente pela
+baseline válida incluída no pacote. Todas as camadas legadas e a baseline atual são combinadas em
+memória sob um único lock; somente o resultado final é publicado, e apenas quando seu conteúdo
+muda.
+
+Quando existem bancos `.db` (exceto arquivos de demonstração) na antiga pasta `database/` ao lado da
+aplicação ou em pastas irmãs de releases anteriores chamadas `RendaPerene-v*`, a barra lateral oferece
+sua importação. Se
+mais de uma versão contém o mesmo nome de carteira, a versão válida mais recente prevalece; uma
+cópia inválida mais nova não oculta uma cópia válida anterior. A migração valida a origem, copia
+(sem mover) um backup para `backups/legacy-import/`, valida novamente a cópia temporária e somente
+então publica o banco em
+`database/`. A operação é idempotente e recusa qualquer sobrescrita quando há conteúdo diferente.
+Bancos importados não são oferecidos novamente quando uma migração de esquema altera os bytes do
+destino: a cópia imutável em `backups/legacy-import/` identifica a origem já processada.
+Bancos principais inicializados automaticamente apenas com os valores padrão podem ser substituídos
+durante a importação; qualquer dado ou configuração do usuário torna o destino não substituível. A
+cópia recuperável relevante permanece em `backups/legacy-import/`. Ao publicar uma carteira
+importada, a raiz de composição invalida o estado da sessão derivado do banco e reinicia a execução
+para carregar as configurações persistidas antes que a interface permita novas edições. Conexões
+abertas pelo `DatabaseManager` registram leitores concorrentes; a publicação final aguarda esses
+leitores sob o lock por carteira, impedindo que uma conexão SQLite aberta continue apontando para o
+arquivo antigo durante uma substituição. Os locks usam bloqueios advisory do sistema operacional
+mantidos por descritores abertos; por isso, um processo encerrado libera automaticamente sua posse
+sem que outro processo precise apagar um arquivo de lock que pode já ter sido reutilizado. As
+escritas continuam usando o bloqueio nativo do SQLite.
+Bancos inválidos não ficam disponíveis para seleção. Se a carteira ativa desaparecer ou se tornar
+inválida, a seleção automática de uma alternativa também invalida o estado derivado da carteira
+anterior antes de reiniciar a interface. Quando não existe alternativa válida, a aplicação usa um
+novo nome `portfolio_recovery*.db`, preservando o arquivo inválido. O reset da carteira também
+remove chaves de widgets de metas vinculadas ao banco anterior. Nomes de arquivos de carteiras e
+dados financeiros não são escritos em logs.
+
+A validação SQLite usa `PRAGMA quick_check` e mantém em memória o resultado por caminho, tamanho,
+data de modificação e metadados dos arquivos auxiliares WAL/SHM. Reruns do Streamlit reutilizam a
+validação enquanto esses metadados não mudam; a comparação de conteúdo lógico usada pelos marcadores
+de migração também é reutilizada para arquivos imutáveis. Qualquer alteração no banco ou em seus
+auxiliares produz uma nova verificação.
+
+O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO
+registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa; o
+catálogo estático incluído no pacote é copiado para o arquivo gravável `catalog/assets.csv` na
+primeira execução. Nas versões seguintes, o baseline incluído no novo pacote atualiza metadados e
+adiciona tickers, enquanto registros alternativos existentes somente no catálogo do usuário são
+preservados pela mesclagem baseada em `CÓDIGO`.
 
 | Armazenamento | Finalidade |
 | --- | --- |
@@ -59,7 +128,7 @@ O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita
 | `planning_configuration` | Configuração única (`id = 1`): data de nascimento, idade de aposentadoria, dados de renda, taxa de juros anual, salário mínimo, patrimônio inicial, modalidade de renda, parâmetros do modelo de Bazin e data opcional de início do planejamento. |
 | `asset_accumulation_goals` | Uma meta de quantidade por ticker: base anual persistida, quantidade-alvo e modalidade, percentual-alvo opcional, peso editável (incluindo zero), estado ativo, média de proventos de cinco anos e data de criação. A aplicação atualiza a base efetiva para 1º de janeiro no carregamento, sem depender de salvar novamente a cada virada de ano. |
 | `goal_settings` | Preferências únicas da carteira para reinvestimento de dividendos e metas de quantidade de ações. O reinvestimento é ativado por padrão; as metas por ação permanecem desativadas até serem habilitadas. |
-| `assets.csv` | Catálogo estático da B3 com metadados dos tickers. Tickers desconhecidos encontrados na importação podem ser adicionados como registros alternativos do catálogo. |
+| `catalog/assets.csv` | Cópia gravável do catálogo estático da B3 com metadados dos tickers. Tickers desconhecidos encontrados na importação podem ser adicionados como registros alternativos do catálogo. |
 
 O SQLite não declara chaves estrangeiras entre esses armazenamentos. Os serviços preservam programaticamente a consistência necessária.
 

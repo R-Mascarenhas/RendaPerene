@@ -1,4 +1,5 @@
 import datetime
+from pathlib import Path
 
 import streamlit as st
 
@@ -30,13 +31,112 @@ from core.constants import (
     SESSION_PLANNING_START_DATE_ENABLED,
     SESSION_REQUIRED_CONTRIBUTION_CACHE,
     SESSION_RETIREMENT_AGE,
+    WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX,
+    WIDGET_ACCUMULATION_PLAN_WEIGHTS_PREFIX,
+    WIDGET_B3_FILE_UPLOADER_PREFIX,
+    WIDGET_BAZIN_SPREAD_INPUT,
+    WIDGET_BAZIN_YIELD_INPUT,
+    WIDGET_BIRTH_DATE,
+    WIDGET_CEILING_MODEL_SELECTOR,
+    WIDGET_INCOME_FIXED,
+    WIDGET_INCOME_MW,
+    WIDGET_INCOME_TYPE,
+    WIDGET_INITIAL_EQUITY,
+    WIDGET_INITIAL_EQUITY_DYNAMIC_PREFIX,
+    WIDGET_INTEREST_RATE,
+    WIDGET_MW_VALUE_PREFIX,
+    WIDGET_PLANNING_START_DATE,
+    WIDGET_PLANNING_START_DATE_ENABLED,
+    WIDGET_REINVESTMENT_GOAL_PREFIX,
+    WIDGET_RETIREMENT_AGE,
+    WIDGET_SHARE_QUANTITY_GOAL_PREFIX,
 )
 from core.strings import MODEL_CLASSIC
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
 
 
+class _SessionLogConfiguration:
+    path = Path("session_debug.log")
+
+
+def configure_session_log(path: str | Path) -> None:
+    """Set the writable path used by session and startup diagnostics."""
+    _SessionLogConfiguration.path = Path(path)
+
+
+def _append_session_log(message: str) -> None:
+    """Append a diagnostic message without allowing logging to break the application."""
+    try:
+        _SessionLogConfiguration.path.parent.mkdir(parents=True, exist_ok=True)
+        with _SessionLogConfiguration.path.open("a", encoding="utf-8") as log_file:
+            log_file.write(message)
+    except Exception:
+        pass
+
+
 class SessionManager:
     """Manages the initialization of the application's global session state."""
+
+    @staticmethod
+    def switch_portfolio(filename: str) -> bool:
+        """Activate another portfolio and invalidate state loaded from the previous one."""
+        if st.session_state.get("active_db") == filename:
+            return False
+        st.session_state["active_db"] = filename
+        SessionManager.reset_portfolio_state()
+        return True
+
+    @staticmethod
+    def reset_portfolio_state():
+        """Discard session values derived from the active portfolio database."""
+        MarketData._get_raw_ticker_market_analysis.clear()
+        portfolio_keys = (
+            "db_loaded",
+            "processed_files",
+            "b3_uploader_key",
+            "b3_import_success_msg",
+            SESSION_BIRTH_DATE,
+            SESSION_RETIREMENT_AGE,
+            SESSION_DESIRED_INCOME_MW,
+            SESSION_ANNUAL_INTEREST_RATE,
+            SESSION_MW_VALUE,
+            SESSION_INITIAL_EQUITY,
+            SESSION_DESIRED_INCOME_TYPE,
+            SESSION_DESIRED_INCOME_FIXED,
+            SESSION_CEILING_MODEL_SELECTION,
+            SESSION_BAZIN_TARGET_YIELD,
+            SESSION_BAZIN_TARGET_SPREAD,
+            SESSION_PLANNING_START_DATE,
+            SESSION_PLANNING_START_DATE_ENABLED,
+            SESSION_REQUIRED_CONTRIBUTION_CACHE,
+            SESSION_CALCULATED_EQUITY_CACHE,
+            WIDGET_BIRTH_DATE,
+            WIDGET_RETIREMENT_AGE,
+            WIDGET_INTEREST_RATE,
+            WIDGET_INCOME_TYPE,
+            WIDGET_INCOME_MW,
+            WIDGET_INCOME_FIXED,
+            WIDGET_CEILING_MODEL_SELECTOR,
+            WIDGET_BAZIN_YIELD_INPUT,
+            WIDGET_BAZIN_SPREAD_INPUT,
+            WIDGET_PLANNING_START_DATE,
+            WIDGET_PLANNING_START_DATE_ENABLED,
+            WIDGET_INITIAL_EQUITY,
+        )
+        portfolio_prefixes = (
+            WIDGET_REINVESTMENT_GOAL_PREFIX,
+            WIDGET_SHARE_QUANTITY_GOAL_PREFIX,
+            WIDGET_ACCUMULATION_PLAN_WEIGHTS_PREFIX,
+            WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX,
+            WIDGET_B3_FILE_UPLOADER_PREFIX,
+            WIDGET_MW_VALUE_PREFIX,
+            WIDGET_INITIAL_EQUITY_DYNAMIC_PREFIX,
+        )
+        for key in list(st.session_state):
+            if key in portfolio_keys or (
+                isinstance(key, str) and key.startswith(portfolio_prefixes)
+            ):
+                st.session_state.pop(key, None)
 
     @staticmethod
     def initialize():
@@ -153,11 +253,7 @@ def monitor_active_sessions():
 
     from streamlit.runtime import get_instance
 
-    try:
-        with open("session_debug.log", "a", encoding="utf-8") as log_file:
-            log_file.write(f"[{time.ctime()}] Monitor thread started.\n")
-    except Exception:
-        pass
+    _append_session_log(f"[{time.ctime()}] Monitor thread started.\n")
 
     # Grace period for the initial browser tab to load and connect
     time.sleep(15)
@@ -168,11 +264,7 @@ def monitor_active_sessions():
         time.sleep(5)
         runtime = get_instance()
         if runtime is None:
-            try:
-                with open("session_debug.log", "a", encoding="utf-8") as log_file:
-                    log_file.write(f"[{time.ctime()}] Runtime is None.\n")
-            except Exception:
-                pass
+            _append_session_log(f"[{time.ctime()}] Runtime is None.\n")
             continue
 
         session_count = 0
@@ -195,20 +287,12 @@ def monitor_active_sessions():
                 except Exception:
                     session_details = [str(s) for s in sessions]
             except Exception as e2:
-                try:
-                    with open("session_debug.log", "a", encoding="utf-8") as log_file:
-                        log_file.write(f"[{time.ctime()}] Exception listing sessions: {e} | {e2}\n")
-                except Exception:
-                    pass
+                _append_session_log(f"[{time.ctime()}] Exception listing sessions: {e} | {e2}\n")
                 continue
 
-        try:
-            with open("session_debug.log", "a", encoding="utf-8") as log_file:
-                log_file.write(
-                    f"[{time.ctime()}] Active sessions count: {session_count} | Sessions: {session_details} | Has had session: {has_had_session} | Zero count: {zero_session_count}\n"
-                )
-        except Exception:
-            pass
+        _append_session_log(
+            f"[{time.ctime()}] Active sessions count: {session_count} | Sessions: {session_details} | Has had session: {has_had_session} | Zero count: {zero_session_count}\n"
+        )
 
         if session_count > 0:
             has_had_session = True
@@ -218,11 +302,7 @@ def monitor_active_sessions():
 
         # Terminate cleanly after 2 consecutive checks with 0 active sessions (10s)
         if has_had_session and zero_session_count >= 2:
-            try:
-                with open("session_debug.log", "a", encoding="utf-8") as log_file:
-                    log_file.write(f"[{time.ctime()}] Shutdown trigger fired! Exiting process.\n")
-            except Exception:
-                pass
+            _append_session_log(f"[{time.ctime()}] Shutdown trigger fired! Exiting process.\n")
             if "pytest" in sys.modules:
                 runtime.stop()
                 break
@@ -249,21 +329,13 @@ def get_app_version() -> str:
             with open(version_path, encoding="utf-8") as f:
                 return f.read().strip()
         except Exception as e:
-            try:
-                with open("session_debug.log", "a", encoding="utf-8") as log_file:
-                    import time
+            import time
 
-                    log_file.write(f"[{time.ctime()}] WARNING: Error reading version.txt: {e}\n")
-            except Exception:
-                pass
+            _append_session_log(f"[{time.ctime()}] WARNING: Error reading version.txt: {e}\n")
     else:
-        try:
-            with open("session_debug.log", "a", encoding="utf-8") as log_file:
-                import time
+        import time
 
-                log_file.write(
-                    f"[{time.ctime()}] WARNING: version.txt not found at path: {version_path}\n"
-                )
-        except Exception:
-            pass
+        _append_session_log(
+            f"[{time.ctime()}] WARNING: version.txt not found at path: {version_path}\n"
+        )
     return "0.0.0"

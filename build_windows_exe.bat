@@ -27,9 +27,9 @@ echo [INFO] Atualizando gerenciador de pacotes pip...
 python -m pip install --upgrade pip
 
 echo [INFO] Instalando dependencias de producao do projeto...
-pip install -r requirements.txt
+pip install .
 if errorlevel 1 (
-    echo [ERRO] Falha ao instalar as dependencias do requirements.txt.
+    echo [ERRO] Falha ao instalar as dependencias declaradas no pyproject.toml.
     goto :error
 )
 
@@ -87,6 +87,7 @@ pyinstaller --noconfirm --onedir --windowed ^
     --add-data "views;views" ^
     --add-data "services;services" ^
     --add-data "assets.csv;." ^
+    --add-data "database\portfolio_demo.db;database" ^
     --add-data "version.txt;." ^
     run_app.py
 

@@ -29,7 +29,44 @@ A interface e a documentação do projeto estão em português brasileiro (PT-BR
 
 ## Dados e privacidade
 
-Os dados da carteira são armazenados localmente em bancos SQLite no diretório `database/`. A aplicação não utiliza banco de dados em nuvem, contas de usuário ou telemetria, nem realiza scraping do portal da B3.
+Os dados da carteira são armazenados localmente em bancos SQLite fora da pasta da aplicação.
+Assim, uma versão descompactada em uma nova pasta encontra as mesmas carteiras sem exigir cópias
+manuais. Os diretórios padrão são:
+
+- Windows: `%LOCALAPPDATA%\RendaPerene`;
+- Linux: `$XDG_DATA_HOME/RendaPerene` ou, quando a variável não estiver definida,
+  `~/.local/share/RendaPerene`.
+
+Dentro desse diretório, `database/` contém as carteiras, `catalog/assets.csv` contém o catálogo
+gravável, `backups/` preserva cópias de recuperação e `logs/` é reservado para registros locais.
+A aplicação não utiliza banco de dados em nuvem, contas de usuário ou telemetria, nem realiza
+scraping do portal da B3.
+
+Bancos inválidos são ignorados na seleção. Se a carteira ativa for removida ou deixar de ser um
+SQLite válido, a aplicação seleciona outra carteira disponível e recarrega suas configurações sem
+reutilizar os dados de planejamento da anterior. Se nenhuma carteira válida existir, uma nova
+carteira de recuperação é criada com outro nome e o arquivo inválido permanece intacto.
+
+Na primeira execução com o novo layout, a barra lateral oferece a importação de bancos
+arquivos `.db` encontrados na antiga pasta `database/`, tanto ao lado da aplicação quanto em
+pastas irmãs de releases anteriores chamadas `RendaPerene-v*`. Quando o mesmo nome existe em mais
+de uma versão, a cópia válida mais recente é oferecida. A origem é mantida, uma cópia de recuperação
+é criada em `backups/legacy-import/` e cada cópia é validada como SQLite antes de ficar disponível.
+Repetir a operação é seguro e um arquivo existente com conteúdo diferente nunca é sobrescrito. Caso
+o primeiro carregamento já tenha criado uma carteira principal somente com os valores padrão, a
+publicação final aguarda as operações em andamento e verifica novamente se ela continua sem dados
+do usuário. Caso positivo, ela pode ser substituída com segurança; qualquer dado ou configuração
+alterada impede essa substituição. Após uma importação bem-sucedida, a carteira importada é ativada
+e seus dados de planejamento são recarregados. Os bancos da demonstração hospedada continuam
+isolados por sessão em armazenamento temporário. Bancos demo inválidos são restaurados
+automaticamente, e diretórios de sessões inativas há mais de 24 horas são descartados.
+
+Na primeira migração, o catálogo gravável também incorpora os registros alternativos dos
+`assets.csv` encontrados na instalação atual e nas pastas de releases anteriores. Depois, ele é
+atualizado a partir do catálogo incluído em cada nova versão: metadados e tickers do pacote são
+incorporados sem remover registros locais de ativos que ainda não fazem parte do catálogo oficial.
+Catálogos antigos sem o cabeçalho esperado são ignorados; se a cópia gravável estiver malformada,
+ela é recuperada a partir do catálogo válido incluído no pacote.
 
 O acesso à rede é necessário para obter dados atualizados:
 
@@ -77,7 +114,9 @@ Inicie a aplicação Streamlit:
 venv/bin/streamlit run app.py
 ```
 
-Se o ambiente virtual estiver ativo, `streamlit run app.py` é equivalente. Na primeira execução, a aplicação cria e inicializa `database/portfolio.db` caso o arquivo ainda não exista.
+Se o ambiente virtual estiver ativo, `streamlit run app.py` é equivalente. Na primeira execução,
+a aplicação cria e inicializa `portfolio.db` no diretório de dados do usuário descrito acima caso
+o arquivo ainda não exista.
 
 ## Validação
 

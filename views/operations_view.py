@@ -3,6 +3,7 @@ import datetime
 import pandas as pd
 import streamlit as st
 
+from core.constants import WIDGET_B3_FILE_UPLOADER_PREFIX
 from core.strings import (
     HELP_OPS_SEARCH,
     MSG_INVALID_ASSET_SELECTION,
@@ -190,7 +191,7 @@ class OperationsView:
         b3_file = st.file_uploader(
             "Arraste o arquivo .xlsx da B3 aqui",
             type=["xlsx"],
-            key=f"b3_file_uploader_{st.session_state.b3_uploader_key}",
+            key=f"{WIDGET_B3_FILE_UPLOADER_PREFIX}{st.session_state.b3_uploader_key}",
         )
 
         # Show persistent success message if present in session_state

@@ -28,7 +28,9 @@ from core.constants import (
     WIDGET_INCOME_FIXED,
     WIDGET_INCOME_MW,
     WIDGET_INCOME_TYPE,
+    WIDGET_INITIAL_EQUITY_DYNAMIC_PREFIX,
     WIDGET_INTEREST_RATE,
+    WIDGET_MW_VALUE_PREFIX,
     WIDGET_PLANNING_START_DATE,
     WIDGET_PLANNING_START_DATE_ENABLED,
     WIDGET_RETIREMENT_AGE,
@@ -111,7 +113,7 @@ class PlanningView:
     def _on_mw_value_change(self):
         """Syncs the custom widget key-input back to the core session state and saves it."""
         # Retrieve value from dynamic state key
-        dynamic_key = f"mw_value_input_{st.session_state[SESSION_MW_VALUE]}"
+        dynamic_key = f"{WIDGET_MW_VALUE_PREFIX}{st.session_state[SESSION_MW_VALUE]}"
         if dynamic_key in st.session_state:
             st.session_state[SESSION_MW_VALUE] = float(st.session_state[dynamic_key])
         self._save_params()
@@ -184,7 +186,9 @@ class PlanningView:
 
     def _on_initial_equity_change(self):
         """Syncs the initial equity input back to core state and saves it."""
-        dynamic_key = f"initial_equity_widget_{st.session_state[SESSION_INITIAL_EQUITY]}"
+        dynamic_key = (
+            f"{WIDGET_INITIAL_EQUITY_DYNAMIC_PREFIX}{st.session_state[SESSION_INITIAL_EQUITY]}"
+        )
         if dynamic_key in st.session_state:
             st.session_state[SESSION_INITIAL_EQUITY] = float(st.session_state[dynamic_key])
         self._save_params()
@@ -327,7 +331,7 @@ class PlanningView:
                     min_value=1000.0,
                     max_value=5000.0,
                     value=st.session_state[SESSION_MW_VALUE],
-                    key=f"mw_value_input_{st.session_state[SESSION_MW_VALUE]}",
+                    key=f"{WIDGET_MW_VALUE_PREFIX}{st.session_state[SESSION_MW_VALUE]}",
                     step=10.0,
                     on_change=self._on_mw_value_change,
                 )
@@ -390,7 +394,7 @@ class PlanningView:
                     min_value=0.0,
                     max_value=10_000_000.0,
                     value=float(st.session_state[SESSION_INITIAL_EQUITY]),
-                    key=f"initial_equity_widget_{st.session_state[SESSION_INITIAL_EQUITY]}",
+                    key=f"{WIDGET_INITIAL_EQUITY_DYNAMIC_PREFIX}{st.session_state[SESSION_INITIAL_EQUITY]}",
                     step=1000.0,
                     on_change=self._on_initial_equity_change,
                     help=HELP_INITIAL_EQUITY_INPUT_DYNAMIC.format(

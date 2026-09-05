@@ -75,6 +75,28 @@ O acesso à rede é necessário para obter dados atualizados:
 
 A importação da B3 é iniciada pelo usuário: baixe a planilha oficial no Portal do Investidor da B3 e envie-a pela aplicação. Bancos locais e planilhas pessoais são ignorados pelo Git; não faça commit desses arquivos.
 
+Entradas de aquisição, subscrição ou depósito com valor financeiro zero ou ausente ficam com
+**custo pendente**. A quantidade permanece na carteira, mas preço médio, custo e rentabilidade
+ficam indisponíveis até a regularização em **Ativos → Operações → Custos pendentes da B3**.
+Informe o preço unitário ou o valor total da aquisição, sem taxas, e acrescente as taxas
+opcionais no campo separado. Consulte o comprovante da oferta, extrato financeiro,
+nota/comprovante de liquidação ou declaração de IR. A aplicação não infere custos por
+cotações históricas nem usa preços fixos por ativo.
+
+Transferências de custódia não são aportes ou resgates. Pares de **Transferência** com o mesmo
+ativo, data e quantidade, sendo um débito e um crédito, representam apenas a troca de corretora
+e são ignorados mesmo sem valor financeiro. Uma entrada de **Transferência** sem o par é ignorada
+quando o histórico de dias anteriores cobre a quantidade transferida com custo conhecido; sem
+cobertura suficiente, permanece como posição com custo pendente. Movimentações de
+**Transferência - Liquidação** continuam sendo compras ou vendas conforme a direção. Quando uma
+liquidação de crédito não informa valor financeiro, ela é registrada como aquisição com custo
+pendente. Desdobramentos, bonificações e grupamentos mantêm suas regras próprias.
+O registro de origem e as decisões de importação ficam no SQLite local: reimportar o mesmo
+extrato não duplica operações, desfaz correções nem recria transferências ignoradas.
+Os registros antigos são preservados; uma reimportação associa movimentações idênticas que
+ainda não tenham origem registrada. Históricos anteriores importados posteriormente não
+reclassificam automaticamente transferências já processadas.
+
 ## Requisitos
 
 - Python 3.10 ou mais recente

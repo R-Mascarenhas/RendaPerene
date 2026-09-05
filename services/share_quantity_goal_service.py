@@ -218,6 +218,9 @@ class ShareQuantityGoalService:
                 continue
             quantity = float(transaction[QUANTITY])
             transaction_type = transaction[TRANSACTION_TYPE]
+            if transaction_type == "TRANSFER_IN" or transaction.get("cost_status") == "PENDING":
+                quantity_before_action += quantity
+                continue
             if transaction_type == "BUY":
                 unit_price = float(transaction[UNIT_PRICE])
                 if math.isfinite(unit_price) and unit_price > 0:

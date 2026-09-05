@@ -850,6 +850,7 @@ class ApplicationPaths:
                     ).fetchall()
                 }
                 expected_tables = {
+                    "b3_import_records",
                     "transactions",
                     "dividends",
                     "tracked_market_assets",
@@ -858,10 +859,11 @@ class ApplicationPaths:
                     "asset_accumulation_goals",
                     "goal_settings",
                 }
-                if tables != expected_tables:
+                if tables not in (expected_tables, expected_tables - {"b3_import_records"}):
                     return False
 
                 user_data_tables = (
+                    "b3_import_records",
                     "transactions",
                     "dividends",
                     "tracked_market_assets",
@@ -869,6 +871,8 @@ class ApplicationPaths:
                     "asset_accumulation_goals",
                 )
                 for table_name in user_data_tables:
+                    if table_name not in tables:
+                        continue
                     if connection.execute(f"SELECT 1 FROM {table_name} LIMIT 1").fetchone():
                         return False
 

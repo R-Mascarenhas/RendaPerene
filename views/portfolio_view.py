@@ -180,6 +180,11 @@ class PortfolioView:
 
     def _render_indicators_block(self, row_pos, details):
         """SECTION 2: Renders general financial and valuation indicators for the asset."""
+        pending = row_pos.get("cost_pending", False)
+        if pending:
+            st.warning(
+                "Custo pendente. Regularize a entrada na tela de Operações para calcular os indicadores de custo."
+            )
         current_price = details.get("current_price", 0.0)
         dy = details.get("dy", 0.0)
         pe = details.get("pe", 0.0)
@@ -204,18 +209,24 @@ class PortfolioView:
         )
         m_col2.metric(
             LABEL_AVG_PRICE,
-            Formatter.format_currency(row_pos["average_price"]),
+            "Custo pendente" if pending else Formatter.format_currency(row_pos["average_price"]),
             help=HELP_AVG_PRICE,
         )
         m_col3.metric(
-            DISPLAY_ADJ_PRICE, Formatter.format_currency(adjusted_price), help=HELP_ADJ_PRICE
+            DISPLAY_ADJ_PRICE,
+            "Custo pendente" if pending else Formatter.format_currency(adjusted_price),
+            help=HELP_ADJ_PRICE,
         )
         m_col4.metric(LABEL_DY, f"{dy:.2f}%" if dy > 0 else "N/D", help=HELP_DY)
 
         total_invested = row_pos["invested_amount"]
         l12m_dividends = row_pos["l12m_dividends"]
         yoc_12 = ((l12m_dividends / total_invested * 100) / 12) if total_invested > 0 else 0.0
-        m_col5.metric(LABEL_YOC_12_MONTHLY, f"{yoc_12:.2f}%", help=HELP_YOC_12)
+        m_col5.metric(
+            LABEL_YOC_12_MONTHLY,
+            "Custo pendente" if pending else f"{yoc_12:.2f}%",
+            help=HELP_YOC_12,
+        )
 
         m_col6_row2, m_col7_row2, m_col8_row2, m_col9_row2 = st.columns(4)
         m_col6_row2.metric(
@@ -476,6 +487,9 @@ class PortfolioView:
                 df_tx_display["Valor Total"] = df_tx_display["Valor Total"].map(
                     Formatter.format_currency
                 )
+                if "Situação do custo" in df_tx_display:
+                    pending = df_tx_display["Situação do custo"] == "Custo pendente"
+                    df_tx_display.loc[pending, ["Valor Unitário", "Valor Total"]] = "Custo pendente"
                 st.dataframe(df_tx_display, width="stretch", hide_index=True)
             else:
                 st.write(MSG_NO_TX_RECORDED)

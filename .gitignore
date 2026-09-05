@@ -6,9 +6,11 @@ env/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+*.egg-info/
 
 # Databases (Sensitive / Local)
 *.db
+*.db.*
 !database/portfolio_demo.db
 
 # Spreadsheets (Sensitive)
@@ -22,6 +24,7 @@ Thumbs.db
 
 # Temporary files
 out/
+*.log
 .*.lock
 *.reader.*
 .gemini/
@@ -33,6 +36,7 @@ git_commit_features.py
 docs/reports/
 docs/architecture_review/
 docs/backlog/
+generate_synthetic_demo.py
 
 # PyInstaller & Dist Packaging
 build/

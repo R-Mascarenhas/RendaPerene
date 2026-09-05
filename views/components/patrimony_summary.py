@@ -26,26 +26,33 @@ class PatrimonySummaryWidget:
             return
 
         st.session_state.calculated_equity_cache = metrics["total_equity"]
+        pending = metrics.get("cost_pending", False)
+        if pending:
+            st.warning(
+                "Custo pendente: regularize as entradas em Ativos → Operações. A rentabilidade ficará disponível após a correção."
+            )
 
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric(
             LABEL_PATRIMONY_TOTAL,
             Formatter.format_currency(metrics["total_equity"]),
-            HELP_PATRIMONY_RETURN.format(val=metrics["overall_return"]),
+            "Custo pendente"
+            if pending
+            else HELP_PATRIMONY_RETURN.format(val=metrics["overall_return"]),
         )
         m2.metric(
             LABEL_CAPITAL_INVESTED,
-            Formatter.format_currency(metrics["total_invested"]),
+            "Custo pendente" if pending else Formatter.format_currency(metrics["total_invested"]),
             HELP_PLANNING_PARAM,
         )
         m3.metric(
             LABEL_DIVIDENDS_TOTAL,
             Formatter.format_currency(metrics["total_dividends"]),
-            HELP_YOC_TOTAL.format(val=metrics["overall_yoc"]),
+            "Custo pendente" if pending else HELP_YOC_TOTAL.format(val=metrics["overall_yoc"]),
         )
         m4.metric(
             LABEL_DIVIDENDS_L12M,
             Formatter.format_currency(metrics["l12m_dividends"]),
-            HELP_YOC_L12M.format(val=metrics["overall_l12m_yoc"]),
+            "Custo pendente" if pending else HELP_YOC_L12M.format(val=metrics["overall_l12m_yoc"]),
         )
         m5.metric(LABEL_DIVIDENDS_YTD, Formatter.format_currency(metrics["ytd_dividends"]))

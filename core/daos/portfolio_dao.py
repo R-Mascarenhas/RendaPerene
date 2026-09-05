@@ -13,6 +13,93 @@ class PortfolioDAO:
         """Delegates and returns an active SQLite database connection."""
         return self.db.get_personal_connection()
 
+    def import_b3_transaction(self, record: dict, transfer_classifier) -> bool:
+        """Persist source identity and ledger effect together under a SQLite write lock."""
+        conn = self.get_personal_connection()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            if conn.execute(
+                "SELECT 1 FROM b3_import_records WHERE source_key = ?", (record["source_key"],)
+            ).fetchone():
+                return False
+            ignored = record["transaction_type"] == "TRANSFER_OUT" or record.get(
+                "matched_custody_transfer", False
+            )
+            if record["event_kind"] == "CUSTODY" and not ignored:
+                history = pd.read_sql_query(
+                    "SELECT * FROM transactions WHERE ticker = ? AND date < ? ORDER BY date, id",
+                    conn,
+                    params=(record["ticker"], record["date"]),
+                )
+                ignored = transfer_classifier(history, record["quantity"])
+            transaction_id = None
+            created = False
+            if not ignored:
+                values = tuple(
+                    record[key]
+                    for key in (
+                        "date",
+                        "ticker",
+                        "transaction_type",
+                        "quantity",
+                        "unit_price",
+                        "fees",
+                    )
+                )
+                existing = conn.execute(
+                    "SELECT id FROM transactions WHERE date=? AND ticker=? AND transaction_type=? AND quantity=? AND unit_price=? AND fees=? AND id NOT IN (SELECT transaction_id FROM b3_import_records WHERE transaction_id IS NOT NULL)",
+                    values,
+                ).fetchone()
+                if existing:
+                    transaction_id = existing[0]
+                    conn.execute(
+                        "UPDATE transactions SET cost_status=? WHERE id=?",
+                        (record["cost_status"], transaction_id),
+                    )
+                else:
+                    cursor = conn.execute(
+                        "INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees, cost_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (*values, record["cost_status"]),
+                    )
+                    transaction_id = cursor.lastrowid
+                    created = True
+            conn.execute(
+                "INSERT INTO b3_import_records (source_key, source_record, event_kind, transaction_id, status) VALUES (?, ?, ?, ?, ?)",
+                (
+                    record["source_key"],
+                    record["source_record"],
+                    record["event_kind"],
+                    transaction_id,
+                    "IGNORED" if ignored else "IMPORTED",
+                ),
+            )
+            conn.commit()
+            return created
+        finally:
+            conn.close()
+
+    def get_pending_costs(self) -> pd.DataFrame:
+        conn = self.get_personal_connection()
+        try:
+            return pd.read_sql_query(
+                "SELECT t.id, t.date, t.ticker, t.quantity, b.source_record FROM transactions t JOIN b3_import_records b ON b.transaction_id=t.id WHERE t.cost_status='PENDING' ORDER BY t.date, t.id",
+                conn,
+            )
+        finally:
+            conn.close()
+
+    def resolve_pending_cost(self, transaction_id: int, unit_price: float, fees: float) -> bool:
+        conn = self.get_personal_connection()
+        try:
+            cursor = conn.execute(
+                "UPDATE transactions SET unit_price=?, fees=?, cost_status='CORRECTED' WHERE id=? AND cost_status='PENDING'",
+                (unit_price, fees, transaction_id),
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+        finally:
+            conn.close()
+
     def find_transaction(
         self,
         date: str,
@@ -136,7 +223,7 @@ class PortfolioDAO:
         conn = self.get_personal_connection()
         try:
             return pd.read_sql_query(
-                "SELECT date, transaction_type, quantity, unit_price, fees FROM transactions WHERE ticker = ? ORDER BY date ASC",
+                "SELECT t.date, CASE WHEN b.event_kind='CUSTODY' THEN 'TRANSFER_IN' ELSE t.transaction_type END AS transaction_type, t.quantity, t.unit_price, t.fees, t.cost_status FROM transactions t LEFT JOIN b3_import_records b ON b.transaction_id=t.id WHERE t.ticker = ? ORDER BY t.date, t.id",
                 conn,
                 params=(ticker,),
             )
@@ -150,13 +237,15 @@ class PortfolioDAO:
         try:
             return pd.read_sql_query(
                 "SELECT date as Data, "
-                "CASE WHEN transaction_type='BUY' THEN 'Compra' "
+                "CASE WHEN EXISTS (SELECT 1 FROM b3_import_records b WHERE b.transaction_id=transactions.id AND b.event_kind='CUSTODY') THEN 'Transferência recebida' "
+                "     WHEN transaction_type='BUY' THEN 'Compra' "
                 "     WHEN transaction_type='SELL' THEN 'Venda' "
                 "     ELSE 'Grupamento' END as Operação, "
                 "quantity as Quantidade, unit_price as [Valor Unitário], "
                 "CASE WHEN transaction_type='SELL' "
                 "     THEN (quantity * unit_price - fees) "
-                "     ELSE (quantity * unit_price + fees) END as [Valor Total] "
+                "     ELSE (quantity * unit_price + fees) END as [Valor Total], "
+                "CASE WHEN cost_status='PENDING' THEN 'Custo pendente' WHEN cost_status='CORRECTED' THEN 'Regularizado' ELSE 'Informado' END AS [Situação do custo] "
                 "FROM transactions WHERE ticker = ? ORDER BY date DESC",
                 conn,
                 params=(ticker,),
@@ -317,7 +406,7 @@ class PortfolioDAO:
         conn = self.get_personal_connection()
         try:
             return pd.read_sql_query(
-                "SELECT date, ticker, transaction_type, quantity, unit_price, fees FROM transactions ORDER BY date ASC, id ASC",
+                "SELECT t.date, t.ticker, t.transaction_type, t.quantity, t.unit_price, t.fees, t.cost_status, b.event_kind FROM transactions t LEFT JOIN b3_import_records b ON b.transaction_id=t.id ORDER BY t.date, t.id",
                 conn,
             )
         finally:
@@ -364,7 +453,7 @@ class PortfolioDAO:
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "SELECT SUM(quantity * unit_price + fees) FROM transactions WHERE transaction_type = 'BUY' AND date >= ?",
+                "SELECT SUM(quantity * unit_price + fees) FROM transactions WHERE transaction_type = 'BUY' AND date >= ? AND NOT EXISTS (SELECT 1 FROM b3_import_records b WHERE b.transaction_id=transactions.id AND b.event_kind='CUSTODY')",
                 (limit_date,),
             )
             res = cursor.fetchone()
@@ -377,7 +466,7 @@ class PortfolioDAO:
         conn = self.get_personal_connection()
         try:
             return pd.read_sql_query(
-                "SELECT date, quantity, unit_price, fees FROM transactions WHERE transaction_type = 'BUY'",
+                "SELECT date, quantity, unit_price, fees FROM transactions WHERE transaction_type = 'BUY' AND NOT EXISTS (SELECT 1 FROM b3_import_records b WHERE b.transaction_id=transactions.id AND b.event_kind='CUSTODY')",
                 conn,
             )
         finally:
@@ -406,6 +495,21 @@ class PortfolioDAO:
                 ticker TEXT NOT NULL,
                 dividend_type TEXT NOT NULL,
                 total_value REAL NOT NULL
+            )
+        """)
+
+        columns = {row[1] for row in cursor.execute("PRAGMA table_info(transactions)")}
+        if "cost_status" not in columns:
+            cursor.execute(
+                "ALTER TABLE transactions ADD COLUMN cost_status TEXT NOT NULL DEFAULT 'KNOWN'"
+            )
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS b3_import_records (
+                source_key TEXT PRIMARY KEY,
+                source_record TEXT NOT NULL,
+                event_kind TEXT NOT NULL,
+                transaction_id INTEGER UNIQUE,
+                status TEXT NOT NULL
             )
         """)
 

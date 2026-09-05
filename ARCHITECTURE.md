@@ -121,7 +121,8 @@ preservados pela mesclagem baseada em `CÓDIGO`.
 
 | Armazenamento | Finalidade |
 | --- | --- |
-| `transactions` | Registro das movimentações da carteira: `id`, `date`, `ticker`, `transaction_type`, `quantity`, `unit_price` e `fees`. Os tipos persistidos pela aplicação são `BUY`, `SELL` e `GROUP`. |
+| `transactions` | Registro das movimentações da carteira: `id`, `date`, `ticker`, `transaction_type`, `quantity`, `unit_price`, `fees` e `cost_status` (`KNOWN`, `PENDING`, `CORRECTED`). Os tipos persistidos são `BUY`, `SELL` e `GROUP`; entradas de custódia usam o efeito de quantidade de `BUY`, mas sua origem as exclui de aportes e metas de compras. |
+| `b3_import_records` | Identidade SHA-256 dos campos normalizados da movimentação, registro original normalizado em JSON, natureza do evento, vínculo único à transação e decisão de importação. Transferências ignoradas permanecem registradas sem transação. |
 | `dividends` | Proventos recebidos: `id`, `date`, `ticker`, `dividend_type` e `total_value`; os tipos são `DIVIDEND`, `JCP` e `YIELD`. |
 | `tracked_market_assets` | Tickers acompanhados manualmente. Os ativos em carteira são combinados com essa lista no monitor de mercado. |
 | `dividend_corrections` | Ajustes de dividendos por ticker e por ano, identificados por `(ticker, year)`. |
@@ -141,7 +142,11 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
 - Desdobramentos e bonificações da B3 são armazenados como transações `BUY` com custo zero.
 - Grupamentos são armazenados como transações `GROUP`, que substituem a quantidade atual pela quantidade informada.
 - Resgates são armazenados como transações `SELL`.
-- Transferências de custódia sem custo são ignoradas; transferências com valor diferente de zero são interpretadas de acordo com sua direção de crédito ou débito.
+- O parser distingue custódia, negociação e evento corporativo. Pares de `Transferência` com o mesmo ticker, data e quantidade, nas direções débito e crédito, representam troca de corretora e são marcados para serem ignorados. `Transferência - Liquidação` segue a direção de crédito ou débito como negociação; uma liquidação de crédito sem valor financeiro gera aquisição com custo pendente.
+- Para entradas de custódia sem par, `AssetService` avalia cronologicamente a quantidade com custo conhecido de dias anteriores; vendas reduzem essa cobertura proporcionalmente e grupamentos a ajustam. Custódia de saída é ignorada. Entradas com cobertura suficiente são ignoradas; as demais geram posição com custo pendente. A análise ocorre sob o mesmo bloqueio de escrita SQLite que registra a decisão.
+- `PortfolioDAO` grava origem e efeito na posição atomicamente (`BEGIN IMMEDIATE`). A identidade de origem é independente do custo corrigido. A regularização valida valores finitos, positivos e taxas não negativas, atualiza apenas operações pendentes e preserva a origem; os cálculos são refeitos no próximo carregamento.
+- A migração adiciona o status sem alterar custos antigos. Uma reimportação pode associar transações legadas idênticas ainda sem origem. Decisões persistidas não são reclassificadas por importações posteriores de históricos mais antigos.
+- Posições com custo pendente mantêm quantidade e valor de mercado, mas retornam custo e preço médio indisponíveis. As telas sinalizam a pendência e suspendem indicadores de rentabilidade dependentes desse custo. A regularização fica em Ativos → Operações e invalida o cache da interface.
 - Os cálculos dos aportes para aposentadoria usam pagamentos de anuidade antecipada (`type = 1`) por meio de `SimulationService.pmt_annuity_due()`.
 
 ## Integrações externas

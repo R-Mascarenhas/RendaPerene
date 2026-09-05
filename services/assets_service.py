@@ -1,4 +1,6 @@
 import datetime
+import json
+import math
 
 import pandas as pd
 
@@ -148,15 +150,29 @@ class AssetService:
         processed_dividends = 0
 
         # Record standardized transactions
+        if not transactions_df.empty:
+            transactions_df = transactions_df.sort_values("date", kind="stable")
         for _, row in transactions_df.iterrows():
-            success = self.add_transaction(
-                ticker=row["ticker"],
-                date=row["date"],
-                transaction_type=row["transaction_type"],
-                quantity=row["quantity"],
-                unit_price=row["unit_price"],
-                fees=row["fees"],
-            )
+            if row.get("source_key"):
+                success = self._portfolio_repo.import_b3_transaction(
+                    row.to_dict(), self._has_sufficient_cost_history
+                )
+                if success:
+                    self.register_fallback_asset(row["ticker"])
+                    if (
+                        row["transaction_type"] == "SELL"
+                        and self.get_quantity_on_date(row["ticker"], row["date"]) == 0
+                    ):
+                        self.add_tracked_market_asset(row["ticker"])
+            else:
+                success = self.add_transaction(
+                    ticker=row["ticker"],
+                    date=row["date"],
+                    transaction_type=row["transaction_type"],
+                    quantity=row["quantity"],
+                    unit_price=row["unit_price"],
+                    fees=row["fees"],
+                )
             if success:
                 processed_transactions += 1
 
@@ -172,6 +188,57 @@ class AssetService:
                 processed_dividends += 1
 
         return processed_transactions, processed_dividends
+
+    @staticmethod
+    def _has_sufficient_cost_history(history: pd.DataFrame, required_quantity: int) -> bool:
+        quantity, known_quantity, cost = 0, 0.0, 0.0
+        for row in history.to_dict("records"):
+            qty = row["quantity"]
+            if row["transaction_type"] == "BUY":
+                if row.get("cost_status") != "PENDING":
+                    known_quantity += (
+                        qty * known_quantity / quantity
+                        if row["unit_price"] == 0 and quantity > 0
+                        else qty
+                    )
+                    cost += qty * row["unit_price"] + row["fees"]
+                quantity += qty
+            elif row["transaction_type"] == "SELL":
+                remaining = max(0, quantity - qty)
+                cost = cost * remaining / quantity if quantity else 0.0
+                known_quantity = known_quantity * remaining / quantity if quantity else 0.0
+                quantity = remaining
+            elif row["transaction_type"] == "GROUP":
+                known_quantity = known_quantity * qty / quantity if quantity else 0.0
+                quantity = qty
+        return known_quantity >= required_quantity and cost > 0
+
+    @hybridmethod
+    def get_pending_costs(self) -> pd.DataFrame:
+        pending = self._portfolio_repo.get_pending_costs()
+        for field in ("movement", "institution"):
+            pending[field] = pending["source_record"].map(
+                lambda source: json.loads(source).get(field, "")
+            )
+        return pending
+
+    @hybridmethod
+    def regularize_cost(
+        self, transaction_id: int, value: float, *, value_is_total: bool = False, fees: float = 0.0
+    ) -> bool:
+        if not math.isfinite(value) or value <= 0 or not math.isfinite(fees) or fees < 0:
+            raise ValueError(
+                "Informe um custo positivo e taxas não negativas, com valores finitos."
+            )
+        pending = self.get_pending_costs()
+        selected = pending[pending["id"] == transaction_id]
+        if selected.empty:
+            return False
+        quantity = int(selected.iloc[0]["quantity"])
+        price = value / quantity if value_is_total else value
+        if not math.isfinite(price * quantity + fees):
+            raise ValueError("O custo total informado excede o limite permitido.")
+        return self._portfolio_repo.resolve_pending_cost(transaction_id, price, fees)
 
     @hybridmethod
     def get_quantity_on_date(self, ticker: str, date_str: str, conn=None) -> int:
@@ -539,6 +606,13 @@ class AssetService:
                 new_avg_price = (old_qty * old_avg_price) / qty if qty > 0 else 0.0
                 portfolio_state[ticker] = {QUANTITY: new_qty, AVERAGE_PRICE: new_avg_price}
 
+            pending = (
+                current_state.get("cost_pending", False) or row.get("cost_status") == "PENDING"
+            )
+            portfolio_state[ticker]["cost_pending"] = (
+                pending and portfolio_state[ticker][QUANTITY] > 0
+            )
+
         active_assets = []
         for ticker, info in portfolio_state.items():
             if info[QUANTITY] > 0:
@@ -581,8 +655,13 @@ class AssetService:
                         ASSET_TYPE: asset_type,
                         SECTOR: display_sector,
                         QUANTITY: info[QUANTITY],
-                        AVERAGE_PRICE: info[AVERAGE_PRICE],
-                        INVESTED_AMOUNT: info[QUANTITY] * info[AVERAGE_PRICE],
+                        "cost_pending": info.get("cost_pending", False),
+                        AVERAGE_PRICE: float("nan")
+                        if info.get("cost_pending")
+                        else info[AVERAGE_PRICE],
+                        INVESTED_AMOUNT: float("nan")
+                        if info.get("cost_pending")
+                        else info[QUANTITY] * info[AVERAGE_PRICE],
                         TOTAL_DIVIDENDS: total_dividends,
                         L12M_DIVIDENDS: l12m_dividends,
                         YTD_DIVIDENDS: ytd_dividends,
@@ -626,7 +705,9 @@ class AssetService:
 
         df_transactions[NET_CASHFLOW] = df_transactions.apply(
             lambda r: (
-                (r[QUANTITY] * r[UNIT_PRICE] + r[FEES])
+                0.0
+                if r.get("event_kind") == "CUSTODY"
+                else (r[QUANTITY] * r[UNIT_PRICE] + r[FEES])
                 if r[TRANSACTION_TYPE] == "BUY"
                 else -(r[QUANTITY] * r[UNIT_PRICE] - r[FEES])
                 if r[TRANSACTION_TYPE] == "SELL"
@@ -835,7 +916,10 @@ class AssetService:
             df_positions[L12M_DIVIDENDS] / df_positions[INVESTED_AMOUNT]
         ) * 100
 
-        total_invested_init = df_positions[INVESTED_AMOUNT].sum()
+        cost_pending = bool(
+            df_positions.get("cost_pending", pd.Series(False, index=df_positions.index)).any()
+        )
+        total_invested_init = df_positions[INVESTED_AMOUNT].sum(skipna=False)
         total_equity = df_positions[CURRENT_VALUE].sum()
 
         total_dividends = df_positions[TOTAL_DIVIDENDS].sum()
@@ -853,6 +937,8 @@ class AssetService:
         overall_l12m_yoc = (
             (l12m_dividends / total_invested_init * 100) if total_invested_init > 0 else 0.0
         )
+        if cost_pending:
+            overall_return = overall_yoc = overall_l12m_yoc = float("nan")
 
         # Pull the invested capital parameter used in PMT calculations from the planning service if available
         if self._planning_provider is not None:
@@ -863,6 +949,7 @@ class AssetService:
 
         return df_positions, {
             "total_equity": total_equity,
+            "cost_pending": cost_pending,
             "total_invested": total_invested_sim,
             "total_dividends": total_dividends,
             "l12m_dividends": l12m_dividends,
@@ -968,5 +1055,21 @@ class AssetService:
         df_display[DISPLAY_EARNINGS] = df_positions[TOTAL_DIVIDENDS].map(Formatter.format_currency)
         df_display[DISPLAY_YOC] = df_positions[YOC_CUSTOM].map(lambda x: f"{x:.2f}%")
         df_display[DISPLAY_YOC_12] = df_positions[YOC_12_CUSTOM].map(lambda x: f"{x:.2f}%")
+
+        pending = df_positions.get("cost_pending", pd.Series(False, index=df_positions.index))
+        if pending.any():
+            df_display["Situação do custo"] = pending.map(
+                {True: "Custo pendente", False: "Informado"}
+            )
+            for column in (
+                DISPLAY_AVG_PRICE,
+                DISPLAY_ADJ_PRICE,
+                DISPLAY_INVESTED,
+                DISPLAY_RETURN_PCT,
+                DISPLAY_RESULT,
+                DISPLAY_YOC,
+                DISPLAY_YOC_12,
+            ):
+                df_display.loc[pending, column] = "Custo pendente"
 
         return df_display, ceilings

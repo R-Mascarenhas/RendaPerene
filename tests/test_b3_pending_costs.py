@@ -8,6 +8,7 @@ import pytest
 from core.daos.portfolio_dao import PortfolioDAO
 from core.utils.b3_parser import B3ExcelParserAdapter
 from services.assets_service import AssetService
+from services.planning_service import SimulationService
 
 
 def movement(
@@ -248,6 +249,29 @@ def test_pending_cost_hides_portfolio_profit_and_holdings_metrics(monkeypatch):
     assert display.iloc[0][DISPLAY_AVG_PRICE] == "Custo pendente"
     assert display.iloc[0][DISPLAY_INVESTED] == "Custo pendente"
     assert display.iloc[0][DISPLAY_RETURN_PCT] == "Custo pendente"
+
+
+def test_retirement_planning_ignores_positions_with_pending_cost():
+    AssetService.add_transaction("BBAS3", "2024-01-01", "BUY", 100, 20)
+    pending = movement(quantity=50)
+    pending["Produto"] = "TAEE11"
+    AssetService.process_b3_import(pd.DataFrame([pending]))
+    SimulationService.save_configuration(
+        birth_date="1990-01-01",
+        retirement_age=65,
+        desired_income_mw=10,
+        annual_interest_rate=6,
+        mw_value=1518,
+        initial_equity_input=0,
+        desired_income_type="MULTIPLIER",
+        desired_income_fixed=15180,
+    )
+
+    simulation = SimulationService.get_current_simulation()
+
+    assert simulation is not None
+    assert simulation["total_invested"] == 2000
+    assert simulation["updated_monthly_contribution"] > 0
 
 
 @pytest.mark.parametrize("mode,value", [("Preço unitário", 20), ("Valor total da aquisição", 2000)])

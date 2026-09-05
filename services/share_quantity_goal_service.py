@@ -200,7 +200,11 @@ class ShareQuantityGoalService:
             lambda row: (
                 0
                 if row[TRANSACTION_TYPE] == "GROUP"
-                or (row[TRANSACTION_TYPE] == "BUY" and float(row[UNIT_PRICE]) <= 0)
+                or (
+                    row[TRANSACTION_TYPE] == "BUY"
+                    and row.get("cost_status") != "PENDING"
+                    and float(row[UNIT_PRICE]) <= 0
+                )
                 else 1
             ),
             axis=1,
@@ -218,12 +222,14 @@ class ShareQuantityGoalService:
                 continue
             quantity = float(transaction[QUANTITY])
             transaction_type = transaction[TRANSACTION_TYPE]
-            if transaction_type == "TRANSFER_IN" or transaction.get("cost_status") == "PENDING":
+            if transaction_type == "TRANSFER_IN":
                 quantity_before_action += quantity
                 continue
             if transaction_type == "BUY":
                 unit_price = float(transaction[UNIT_PRICE])
-                if math.isfinite(unit_price) and unit_price > 0:
+                if transaction.get("cost_status") == "PENDING" or (
+                    math.isfinite(unit_price) and unit_price > 0
+                ):
                     adjusted_acquisition_delta += quantity
                 elif quantity_before_action > 0:
                     factor = (quantity_before_action + quantity) / quantity_before_action

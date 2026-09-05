@@ -42,7 +42,14 @@ class StubPortfolioProvider:
                 ticker,
                 [],
             ),
-            columns=["date", "transaction_type", "quantity", "unit_price", "fees"],
+            columns=[
+                "date",
+                "transaction_type",
+                "quantity",
+                "unit_price",
+                "fees",
+                "cost_status",
+            ],
         )
 
 
@@ -314,6 +321,46 @@ def test_corporate_actions_do_not_count_as_accumulation_progress(mock_db):
 
     assert progress["current_quantity"] == 200
     assert progress["progress_percentage"] == 0
+
+
+def test_pending_cost_acquisitions_count_as_accumulation_progress(mock_db):
+    repository = PlanningDAO()
+    repository.upsert_accumulation_goal(
+        ticker="BBAS3",
+        start_quantity=100,
+        target_quantity=150,
+        target_mode=ShareQuantityGoalService.MODE_QUANTITY,
+        target_percentage=None,
+        allocation_weight=100,
+        average_dividend_5y=2.0,
+    )
+    set_goal_created_at(repository, "2025-12-31")
+    portfolio = StubPortfolioProvider(
+        [{"ticker": "BBAS3", "quantity": 125}],
+        year_start_quantities={"BBAS3": 100},
+        transactions={
+            "BBAS3": [
+                {
+                    "date": "2026-01-02",
+                    "transaction_type": "BUY",
+                    "quantity": 25,
+                    "unit_price": 0.0,
+                    "fees": 0.0,
+                    "cost_status": "PENDING",
+                },
+            ]
+        },
+    )
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=portfolio,
+        market_data_api=StubMarketData,
+        planning_provider=GrowthExamplePlanningProvider(),
+    )
+
+    progress = service.list_goals_with_progress(datetime.date(2026, 8, 28))[0]
+
+    assert progress["progress_percentage"] == 50
 
 
 def test_paid_acquisitions_are_rebased_after_corporate_actions(mock_db):

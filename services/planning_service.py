@@ -172,7 +172,11 @@ class SimulationService:
         df_pos = self._portfolio_provider.calculate_positions(
             start_date=config.get(PLANNING_START_DATE)
         )
-        total_invested = float(df_pos["invested_amount"].sum()) if not df_pos.empty else 0.0
+        # Positions with a pending acquisition cost remain part of the portfolio, but
+        # cannot contribute a reliable amount to the retirement calculation yet.
+        total_invested = (
+            float(df_pos["invested_amount"].sum(skipna=True)) if not df_pos.empty else 0.0
+        )
 
         # Get initial equity input from database configuration (only used if planning start date is specified)
         initial_equity_input = (

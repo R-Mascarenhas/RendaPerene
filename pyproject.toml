@@ -22,6 +22,9 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.16.3",
 ]
+packaging = [
+    "pyinstaller>=6.0,<7.0",
+]
 
 [tool.setuptools]
 packages = []

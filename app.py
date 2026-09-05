@@ -1,4 +1,5 @@
 import os
+import sys
 import uuid
 
 import streamlit as st
@@ -9,8 +10,10 @@ from core.database import DatabaseManager, db
 from core.utils import SessionManager, get_app_version
 from core.utils.market_data import MarketData
 
-# Detect if running in public shared cloud environments
-is_cloud = (
+# Detect if running in public shared cloud environments. Native packaged builds
+# are always local, even when launched from a mounted directory.
+is_frozen = getattr(sys, "frozen", False)
+is_cloud = not is_frozen and (
     "STREAMLIT_SHARING_MODE" in os.environ
     or os.path.abspath(".").startswith("/mount")
     or "/mount/" in os.path.abspath(".")

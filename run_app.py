@@ -1,4 +1,4 @@
-# run_app.py
+import os
 import sys
 
 # Force PyInstaller to index library dependencies in the executable bundle
@@ -13,14 +13,17 @@ if __name__ == "__main__":
     configure_session_log(app_paths.logs_dir / "session_debug.log")
     script_path = app_paths.bundled_resource("app.py")
 
-    # Configure command line arguments to run Streamlit in quiet offline mode
+    # Configure command line arguments to run Streamlit in quiet offline mode.
+    port = os.environ.get("RENDAPERENE_PORT", "8501")
+    headless = os.environ.get("RENDAPERENE_HEADLESS", "false").casefold() == "true"
     sys.argv = [
         "streamlit",
         "run",
         str(script_path),
         "--global.developmentMode=false",
-        "--server.port=8501",
-        "--server.headless=false",
+        "--server.address=127.0.0.1",
+        f"--server.port={port}",
+        f"--server.headless={str(headless).lower()}",
         "--server.showEmailPrompt=false",
         "--browser.gatherUsageStats=false",
     ]

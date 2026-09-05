@@ -153,6 +153,20 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
 
 Essas integrações permitem o uso local, mas precisam de acesso à rede quando dados atualizados são solicitados. A aplicação não realiza scraping do portal da B3; o próprio usuário importa a planilha oficial da B3.
 
+## Empacotamento
+
+`RendaPerene.spec` é a definição comum do PyInstaller para os builds `onedir`. O entry point é
+`run_app.py`, e o bundle contém `app.py`, `core/`, `views/`, `services/`, o catálogo base,
+`version.txt` e os recursos/metadados dinâmicos de Streamlit e Plotly. Bancos SQLite, catálogos
+graváveis, planilhas, logs e outros arquivos pessoais ou gerados não são adicionados ao bundle.
+
+Os scripts `build_windows.ps1` e `build_linux.sh` são apenas comandos nativos de empacotamento e
+criam ambientes virtuais dedicados antes de instalar as dependências. Eles produzem os arquivos ZIP
+e TAR.GZ versionados. Cada build valida os recursos do diretório final e
+inicia o executável em um diretório de dados temporário para verificar que o servidor Streamlit
+chega a responder. O workflow executa os builds em runners Windows e Ubuntu 22.04 separados; tags
+de release são rejeitadas quando não correspondem a `version.txt`.
+
 ## Apresentação
 
 O código, seus identificadores, o SQL e os comentários técnicos estão em inglês. A documentação, os textos da interface, os rótulos dos gráficos, as mensagens de ajuda e as tabelas renderizadas estão em português brasileiro. Valores em BRL exibidos ao usuário utilizam `Formatter.format_currency()`.

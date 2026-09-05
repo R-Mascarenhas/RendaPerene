@@ -130,6 +130,25 @@ venv/bin/ruff format --check .
 
 O Ruff usa Python 3.10 como versão-alvo, limita as linhas a 100 caracteres e exclui intencionalmente `tests/` do escopo configurado. O GitHub Actions executa os três comandos de validação de forma independente em pull requests destinados à `main` e em pushes para a `main`.
 
+## Distribuição nativa
+
+Os pacotes são compilados pelo PyInstaller em seu próprio sistema operacional, sempre no modo
+`onedir`. A definição comum está em `RendaPerene.spec`; ela inclui o código da aplicação, o
+catálogo base, `version.txt` e os recursos de Streamlit/Plotly, mas nenhum banco pessoal ou arquivo
+gerado.
+
+No Windows, execute `build_windows_exe.bat` em um checkout com Python instalado. No Ubuntu 22.04 ou
+mais recente, execute `bash scripts/build_linux.sh`. Os comandos instalam as dependências declaradas
+em `pyproject.toml` (incluindo a dependência opcional `packaging` do PyInstaller) em ambientes
+virtuais dedicados, criam
+respectivamente `RendaPerene-v<versão>-windows-x64.zip` ou
+`RendaPerene-v<versão>-ubuntu-x64.tar.gz` e executam uma verificação de recursos e um smoke check do
+servidor Streamlit. O arquivo `.tar.gz` preserva as permissões executáveis.
+
+O workflow `Package native distributions` repete esses passos em runners nativos Windows e Ubuntu
+22.04. Em builds de tags, o nome da tag (por exemplo, `v0.7.0`) precisa corresponder ao conteúdo de
+`version.txt`; uma divergência interrompe o build.
+
 ## Arquitetura
 
 A aplicação é dividida em três camadas:

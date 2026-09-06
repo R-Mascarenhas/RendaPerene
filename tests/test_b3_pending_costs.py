@@ -151,6 +151,46 @@ def test_transfer_liquidation_with_value_is_regular_trade():
     assert not position["cost_pending"]
 
 
+def test_reimport_reconciles_legacy_positive_cost_custody_entry():
+    AssetService.add_transaction("BBAS3", "2024-01-02", "BUY", 100, 20)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        transaction_id = conn.execute(
+            "SELECT id FROM transactions WHERE ticker='BBAS3'"
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO b3_import_records (source_key, source_record, event_kind, transaction_id, status) "
+            "VALUES (?, ?, 'CUSTODY', ?, 'IMPORTED')",
+            (
+                "legacy-source",
+                json.dumps(
+                    {
+                        "date": "2024-01-02",
+                        "ticker": "BBAS3",
+                        "movement": "Transferência",
+                        "direction": "Crédito",
+                        "quantity": 100,
+                        "price": 20,
+                        "value": 2000,
+                        "institution": "XP",
+                    },
+                    ensure_ascii=False,
+                ),
+                transaction_id,
+            ),
+        )
+        conn.commit()
+
+    frame = pd.DataFrame([movement("Transferência", date="02/01/2024", value=2000, price=20)])
+    assert AssetService.process_b3_import(frame) == (0, 0)
+    position = AssetService.calculate_positions().iloc[0]
+    assert position["quantity"] == 100
+    assert position["average_price"] == pytest.approx(20)
+    assert not position["cost_pending"]
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM b3_import_records").fetchone()[0] == 1
+
+
 @pytest.mark.parametrize(
     "kind", ["Bonificação em Ativos", "Desdobro", "Desdobramento", "Grupamento"]
 )

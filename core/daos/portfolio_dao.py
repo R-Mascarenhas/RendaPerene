@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from core.database import db
@@ -34,6 +36,7 @@ class PortfolioDAO:
                 ignored = transfer_classifier(history, record["quantity"])
             transaction_id = None
             created = False
+            reconciled_legacy = False
             if not ignored:
                 values = tuple(
                     record[key]
@@ -50,12 +53,19 @@ class PortfolioDAO:
                     "SELECT id FROM transactions WHERE date=? AND ticker=? AND transaction_type=? AND quantity=? AND unit_price=? AND fees=? AND id NOT IN (SELECT transaction_id FROM b3_import_records WHERE transaction_id IS NOT NULL)",
                     values,
                 ).fetchone()
+                legacy_custody = None
+                if record["event_kind"] == "CUSTODY" and record["cost_status"] == "PENDING":
+                    legacy_custody = self._find_legacy_custody_transaction(conn, record)
+                    if legacy_custody is not None:
+                        existing = (legacy_custody,)
+                        reconciled_legacy = True
                 if existing:
                     transaction_id = existing[0]
-                    conn.execute(
-                        "UPDATE transactions SET cost_status=? WHERE id=?",
-                        (record["cost_status"], transaction_id),
-                    )
+                    if legacy_custody is None:
+                        conn.execute(
+                            "UPDATE transactions SET cost_status=? WHERE id=?",
+                            (record["cost_status"], transaction_id),
+                        )
                 else:
                     cursor = conn.execute(
                         "INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees, cost_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -63,20 +73,63 @@ class PortfolioDAO:
                     )
                     transaction_id = cursor.lastrowid
                     created = True
-            conn.execute(
-                "INSERT INTO b3_import_records (source_key, source_record, event_kind, transaction_id, status) VALUES (?, ?, ?, ?, ?)",
-                (
-                    record["source_key"],
-                    record["source_record"],
-                    record["event_kind"],
-                    transaction_id,
-                    "IGNORED" if ignored else "IMPORTED",
-                ),
-            )
+            if reconciled_legacy:
+                conn.execute(
+                    "UPDATE b3_import_records SET source_key=?, source_record=?, event_kind=?, status=? WHERE transaction_id=?",
+                    (
+                        record["source_key"],
+                        record["source_record"],
+                        record["event_kind"],
+                        "IMPORTED",
+                        transaction_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO b3_import_records (source_key, source_record, event_kind, transaction_id, status) VALUES (?, ?, ?, ?, ?)",
+                    (
+                        record["source_key"],
+                        record["source_record"],
+                        record["event_kind"],
+                        transaction_id,
+                        "IGNORED" if ignored else "IMPORTED",
+                    ),
+                )
             conn.commit()
             return created
         finally:
             conn.close()
+
+    @staticmethod
+    def _find_legacy_custody_transaction(conn, record: dict) -> int | None:
+        """Finds a positive-cost custody entry created by the pre-pending-cost parser."""
+        source = json.loads(record["source_record"])
+        candidates = conn.execute(
+            """
+            SELECT t.id, t.unit_price, t.fees, b.event_kind, b.source_record
+            FROM transactions t
+            LEFT JOIN b3_import_records b ON b.transaction_id = t.id
+            WHERE t.date = ? AND t.ticker = ? AND t.transaction_type = 'BUY'
+              AND t.quantity = ? AND t.unit_price > 0
+            ORDER BY t.id
+            """,
+            (record["date"], record["ticker"], record["quantity"]),
+        ).fetchall()
+        reported_prices = []
+        if source.get("price") is not None:
+            reported_prices.append(float(source["price"]))
+        if source.get("value") is not None and record["quantity"]:
+            reported_prices.append(float(source["value"]) / record["quantity"])
+
+        for candidate_id, unit_price, fees, event_kind, old_source_json in candidates:
+            if event_kind == "CUSTODY" and old_source_json:
+                old_source = json.loads(old_source_json)
+                stable_fields = ("date", "ticker", "quantity", "direction", "institution")
+                if all(old_source.get(field) == source.get(field) for field in stable_fields):
+                    return candidate_id
+            if any(abs(unit_price - price) < 1e-9 for price in reported_prices) and fees == 0:
+                return candidate_id
+        return None
 
     def get_pending_costs(self) -> pd.DataFrame:
         conn = self.get_personal_connection()

@@ -54,10 +54,16 @@ class PortfolioDAO:
                     values,
                 ).fetchone()
                 legacy_custody = None
+                legacy_pending_trade = None
                 if record["event_kind"] == "CUSTODY" and record["cost_status"] == "PENDING":
                     legacy_custody = self._find_legacy_custody_transaction(conn, record)
                     if legacy_custody is not None:
                         existing = (legacy_custody,)
+                        reconciled_legacy = True
+                elif record["event_kind"] == "TRADE" and record["cost_status"] == "PENDING":
+                    legacy_pending_trade = self._find_legacy_pending_trade(conn, record)
+                    if legacy_pending_trade is not None:
+                        existing = (legacy_pending_trade,)
                         reconciled_legacy = True
                 if existing:
                     transaction_id = existing[0]
@@ -154,6 +160,30 @@ class PortfolioDAO:
             ):
                 return candidate_id
         return None
+
+    @staticmethod
+    def _find_legacy_pending_trade(conn, record: dict) -> int | None:
+        """Finds one unprovenanced trade created before missing costs were tracked."""
+        candidates = conn.execute(
+            """
+            SELECT t.id
+            FROM transactions t
+            WHERE t.date = ? AND t.ticker = ? AND t.transaction_type = ?
+              AND t.quantity = ? AND t.unit_price > 0
+              AND t.transaction_origin = 'LEGACY'
+              AND NOT EXISTS (
+                  SELECT 1 FROM b3_import_records b WHERE b.transaction_id = t.id
+              )
+            ORDER BY t.id
+            """,
+            (
+                record["date"],
+                record["ticker"],
+                record["transaction_type"],
+                record["quantity"],
+            ),
+        ).fetchall()
+        return candidates[0][0] if len(candidates) == 1 else None
 
     def get_pending_costs(self) -> pd.DataFrame:
         conn = self.get_personal_connection()

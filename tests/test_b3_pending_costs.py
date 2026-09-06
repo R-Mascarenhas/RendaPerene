@@ -214,6 +214,32 @@ def test_reimport_adds_provenance_when_adopting_untracked_legacy_custody():
         assert conn.execute("SELECT event_kind FROM b3_import_records").fetchone()[0] == "CUSTODY"
 
 
+def test_reimport_reconciles_trade_previously_corrected_by_legacy_parser():
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        conn.execute(
+            "INSERT INTO transactions "
+            "(date, ticker, transaction_type, quantity, unit_price, fees) "
+            "VALUES ('2021-04-30', 'CXSE3', 'BUY', 340, 9.67, 0)"
+        )
+        conn.commit()
+    legacy_ipo = movement(
+        "Transferência - Liquidação",
+        date="30/04/2021",
+        quantity=340,
+    )
+    legacy_ipo["Produto"] = "CXSE3"
+
+    assert AssetService.process_b3_import(pd.DataFrame([legacy_ipo])) == (0, 0)
+
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        transaction = conn.execute(
+            "SELECT unit_price, cost_status FROM transactions WHERE ticker='CXSE3'"
+        ).fetchone()
+        assert transaction == (9.67, "PENDING")
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+        assert conn.execute("SELECT event_kind FROM b3_import_records").fetchone()[0] == "TRADE"
+
+
 def test_custody_price_fallback_does_not_adopt_provenanced_trade():
     frame = pd.DataFrame(
         [

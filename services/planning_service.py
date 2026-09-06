@@ -10,6 +10,7 @@ from core.constants import (
     DESIRED_INCOME_MW,
     DESIRED_INCOME_TYPE,
     INCOME_TYPE_MULTIPLIER,
+    INITIAL_EQUITY_AUTO,
     INITIAL_EQUITY_INPUT,
     MW_VALUE,
     PLANNING_START_DATE,
@@ -76,6 +77,7 @@ class SimulationService:
         bazin_target_yield=6.0,
         bazin_target_spread=3.0,
         planning_start_date=None,
+        initial_equity_auto=False,
     ):
         """Saves or updates the planning configuration in the database."""
         self._planning_repo.save_configuration(
@@ -91,6 +93,7 @@ class SimulationService:
             bazin_target_yield,
             bazin_target_spread,
             planning_start_date,
+            initial_equity_auto,
         )
 
     @hybridmethod
@@ -120,6 +123,20 @@ class SimulationService:
         denominator = ((interest_factor - 1) / rate) * (1 + rate)
         val = (fv - pv * interest_factor) / denominator if denominator > 0 else 0.0
         return max(0.0, val)
+
+    def _get_initial_equity_input(self, config):
+        """Returns the configured baseline, refreshing automatically derived values."""
+        if config.get(PLANNING_START_DATE) is None:
+            return 0.0
+        if config.get(INITIAL_EQUITY_AUTO, False) and hasattr(
+            self._portfolio_provider, "calculate_prior_invested_amount"
+        ):
+            return float(
+                self._portfolio_provider.calculate_prior_invested_amount(
+                    config[PLANNING_START_DATE]
+                )
+            )
+        return float(config[INITIAL_EQUITY_INPUT])
 
     @hybridmethod
     def get_current_simulation(self):
@@ -179,11 +196,7 @@ class SimulationService:
         )
 
         # Get initial equity input from database configuration (only used if planning start date is specified)
-        initial_equity_input = (
-            float(config[INITIAL_EQUITY_INPUT])
-            if config.get(PLANNING_START_DATE) is not None
-            else 0.0
-        )
+        initial_equity_input = self._get_initial_equity_input(config)
 
         required_monthly_contribution = self.pmt_annuity_due(
             monthly_interest_rate, total_time_months, initial_equity_input, target_equity
@@ -418,11 +431,7 @@ class SimulationService:
         if config:
             annual_interest_rate_val = float(config[ANNUAL_INTEREST_RATE])
             monthly_interest_rate = (1 + annual_interest_rate_val / 100) ** (1 / 12) - 1
-            initial_equity = (
-                float(config[INITIAL_EQUITY_INPUT])
-                if config.get(PLANNING_START_DATE) is not None
-                else 0.0
-            )
+            initial_equity = self._get_initial_equity_input(config)
         else:
             monthly_interest_rate = (1 + 6.0 / 100) ** (1 / 12) - 1
             initial_equity = 0.0

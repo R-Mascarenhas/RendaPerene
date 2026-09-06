@@ -153,6 +153,41 @@ def test_planning_initial_equity_integration(mock_db):
     assert sim_override["initial_equity_input"] == 10000.0
     assert sim_override["total_invested"] == 12000.0 # 2000 + 10000
 
+
+def test_auto_initial_equity_refreshes_after_pre_start_cost_regularization(mock_db):
+    """An auto-derived baseline must include a pre-start cost after regularization."""
+    pending_acquisition = {
+        "Movimentação": "Aquisição",
+        "Data": "01/01/2023",
+        "Produto": "BBAS3",
+        "Quantidade": 100,
+        "Preço unitário": 20,
+        "Valor da Operação": None,
+        "Entrada/Saída": "Crédito",
+    }
+    AssetService.process_b3_import(
+        pd.DataFrame([pending_acquisition])
+    )
+    SimulationService.save_configuration(
+        birth_date="1990-01-01",
+        retirement_age=65,
+        desired_income_mw=10.0,
+        annual_interest_rate=6.0,
+        mw_value=1412.0,
+        initial_equity_input=0.0,
+        planning_start_date="2024-01-01",
+        initial_equity_auto=True,
+    )
+
+    assert SimulationService.get_current_simulation()["initial_equity_input"] == 0.0
+    pending_id = int(AssetService.get_pending_costs().iloc[0]["id"])
+    assert AssetService.regularize_cost(pending_id, 20.0)
+
+    simulation = SimulationService.get_current_simulation()
+    assert simulation["initial_equity_input"] == 2000.0
+    assert simulation["total_invested"] == 2000.0
+
+
 def test_projection_chart_does_not_override_zero_initial_equity(mock_db):
     """
     Verifies that when initial_equity_input is exactly 0.0, but total_invested is greater than 0.0,

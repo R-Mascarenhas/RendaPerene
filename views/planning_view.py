@@ -3,6 +3,7 @@ import datetime
 import streamlit as st
 
 from core.constants import (
+    INITIAL_EQUITY_AUTO,
     SESSION_ANNUAL_INTEREST_RATE,
     SESSION_BIRTH_DATE,
     SESSION_DESIRED_INCOME_FIXED,
@@ -159,13 +160,14 @@ class PlanningView:
         st.session_state[SESSION_PLANNING_START_DATE_ENABLED] = enabled
         if enabled:
             current_initial = float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0))
-            if current_initial == 0.0:
+            if current_initial == 0.0 or st.session_state.get(INITIAL_EQUITY_AUTO, False):
                 from services.assets_service import AssetService
 
                 start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
                 start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
                 computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
                 st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
+                st.session_state[INITIAL_EQUITY_AUTO] = True
         self._save_params()
         st.rerun()
 
@@ -175,12 +177,13 @@ class PlanningView:
         st.session_state[SESSION_PLANNING_START_DATE] = start_date_val
 
         current_initial = float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0))
-        if current_initial == 0.0:
+        if current_initial == 0.0 or st.session_state.get(INITIAL_EQUITY_AUTO, False):
             from services.assets_service import AssetService
 
             new_start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
             computed_initial = AssetService.calculate_prior_invested_amount(new_start_date_str)
             st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
+            st.session_state[INITIAL_EQUITY_AUTO] = True
         self._save_params()
         st.rerun()
 
@@ -191,6 +194,7 @@ class PlanningView:
         )
         if dynamic_key in st.session_state:
             st.session_state[SESSION_INITIAL_EQUITY] = float(st.session_state[dynamic_key])
+            st.session_state[INITIAL_EQUITY_AUTO] = False
         self._save_params()
 
     def _save_params(self):
@@ -226,6 +230,7 @@ class PlanningView:
             desired_income_type=db_type,
             desired_income_fixed=desired_fixed,
             planning_start_date=start_date_str,
+            initial_equity_auto=st.session_state.get(INITIAL_EQUITY_AUTO, False),
         )
 
     def _render_life_parameters(self):

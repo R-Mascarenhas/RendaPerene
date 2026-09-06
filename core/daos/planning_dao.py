@@ -12,6 +12,7 @@ from core.constants import (
     DESIRED_INCOME_TYPE,
     GOAL_REINVEST_DIVIDENDS,
     GOAL_SHARE_QUANTITY,
+    INITIAL_EQUITY_AUTO,
     INITIAL_EQUITY_INPUT,
     MW_VALUE,
     PLANNING_START_DATE,
@@ -38,7 +39,7 @@ class PlanningDAO:
             cursor.execute(f"""
                 SELECT {BIRTH_DATE}, {RETIREMENT_AGE}, {DESIRED_INCOME_MW}, {ANNUAL_INTEREST_RATE},
                        {MW_VALUE}, {INITIAL_EQUITY_INPUT}, {DESIRED_INCOME_TYPE}, {DESIRED_INCOME_FIXED},
-                       {CEILING_MODEL_SELECTION}, {BAZIN_TARGET_YIELD}, {BAZIN_TARGET_SPREAD}, {PLANNING_START_DATE}
+                       {CEILING_MODEL_SELECTION}, {BAZIN_TARGET_YIELD}, {BAZIN_TARGET_SPREAD}, {PLANNING_START_DATE}, {INITIAL_EQUITY_AUTO}
                 FROM planning_configuration WHERE id = 1
             """)
             row = cursor.fetchone()
@@ -56,6 +57,7 @@ class PlanningDAO:
                     BAZIN_TARGET_YIELD: row[9] if row[9] is not None else 6.0,
                     BAZIN_TARGET_SPREAD: row[10] if row[10] is not None else 3.0,
                     PLANNING_START_DATE: row[11] if len(row) > 11 else None,
+                    INITIAL_EQUITY_AUTO: bool(row[12]) if len(row) > 12 else False,
                 }
             return None
         except Exception:
@@ -77,6 +79,7 @@ class PlanningDAO:
         bazin_target_yield: float = 6.0,
         bazin_target_spread: float = 3.0,
         planning_start_date: str = None,
+        initial_equity_auto: bool = False,
     ) -> None:
         """Saves or updates the planning configuration in the database."""
         conn = self.get_personal_connection()
@@ -90,7 +93,7 @@ class PlanningDAO:
                     SET {BIRTH_DATE} = ?, {RETIREMENT_AGE} = ?, {DESIRED_INCOME_MW} = ?, {ANNUAL_INTEREST_RATE} = ?,
                         {MW_VALUE} = ?, {INITIAL_EQUITY_INPUT} = ?, {DESIRED_INCOME_TYPE} = ?, {DESIRED_INCOME_FIXED} = ?,
                         {CEILING_MODEL_SELECTION} = ?, {BAZIN_TARGET_YIELD} = ?, {BAZIN_TARGET_SPREAD} = ?,
-                        {PLANNING_START_DATE} = ?
+                        {PLANNING_START_DATE} = ?, {INITIAL_EQUITY_AUTO} = ?
                     WHERE id = 1
                 """,
                     (
@@ -106,6 +109,7 @@ class PlanningDAO:
                         bazin_target_yield,
                         bazin_target_spread,
                         planning_start_date,
+                        int(initial_equity_auto),
                     ),
                 )
             else:
@@ -114,8 +118,8 @@ class PlanningDAO:
                     INSERT INTO planning_configuration
                     (id, {BIRTH_DATE}, {RETIREMENT_AGE}, {DESIRED_INCOME_MW}, {ANNUAL_INTEREST_RATE},
                      {MW_VALUE}, {INITIAL_EQUITY_INPUT}, {DESIRED_INCOME_TYPE}, {DESIRED_INCOME_FIXED},
-                     {CEILING_MODEL_SELECTION}, {BAZIN_TARGET_YIELD}, {BAZIN_TARGET_SPREAD}, {PLANNING_START_DATE})
-                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     {CEILING_MODEL_SELECTION}, {BAZIN_TARGET_YIELD}, {BAZIN_TARGET_SPREAD}, {PLANNING_START_DATE}, {INITIAL_EQUITY_AUTO})
+                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
                         birth_date,
@@ -130,6 +134,7 @@ class PlanningDAO:
                         bazin_target_yield,
                         bazin_target_spread,
                         planning_start_date,
+                        int(initial_equity_auto),
                     ),
                 )
             conn.commit()
@@ -279,9 +284,16 @@ class PlanningDAO:
                 {CEILING_MODEL_SELECTION} TEXT DEFAULT 'Bazin Clássico',
                 {BAZIN_TARGET_YIELD} REAL DEFAULT 6.0,
                 {BAZIN_TARGET_SPREAD} REAL DEFAULT 3.0,
-                {PLANNING_START_DATE} TEXT DEFAULT NULL
+                {PLANNING_START_DATE} TEXT DEFAULT NULL,
+                {INITIAL_EQUITY_AUTO} INTEGER NOT NULL DEFAULT 0
             )
         """)
+
+        columns = {row[1] for row in cursor.execute("PRAGMA table_info(planning_configuration)")}
+        if INITIAL_EQUITY_AUTO not in columns:
+            cursor.execute(
+                f"ALTER TABLE planning_configuration ADD COLUMN {INITIAL_EQUITY_AUTO} INTEGER NOT NULL DEFAULT 0"
+            )
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS asset_accumulation_goals (

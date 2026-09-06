@@ -12,6 +12,7 @@ from core.constants import (
     DESIRED_INCOME_FIXED,
     DESIRED_INCOME_MW,
     DESIRED_INCOME_TYPE,
+    INITIAL_EQUITY_AUTO,
     INITIAL_EQUITY_INPUT,
     MW_VALUE,
     PLANNING_START_DATE,
@@ -169,6 +170,7 @@ class SessionManager:
                 st.session_state[SESSION_ANNUAL_INTEREST_RATE] = float(config[ANNUAL_INTEREST_RATE])
                 st.session_state[SESSION_MW_VALUE] = float(config[MW_VALUE])
                 st.session_state[SESSION_INITIAL_EQUITY] = float(config[INITIAL_EQUITY_INPUT])
+                st.session_state[INITIAL_EQUITY_AUTO] = config.get(INITIAL_EQUITY_AUTO, False)
                 st.session_state[SESSION_DESIRED_INCOME_TYPE] = config.get(
                     DESIRED_INCOME_TYPE, "MULTIPLIER"
                 )
@@ -219,6 +221,8 @@ class SessionManager:
             st.session_state[SESSION_MW_VALUE] = MarketData.get_current_minimum_wage()
         if SESSION_INITIAL_EQUITY not in st.session_state:
             st.session_state[SESSION_INITIAL_EQUITY] = 0.0
+        if INITIAL_EQUITY_AUTO not in st.session_state:
+            st.session_state[INITIAL_EQUITY_AUTO] = False
         if SESSION_DESIRED_INCOME_TYPE not in st.session_state:
             st.session_state[SESSION_DESIRED_INCOME_TYPE] = "{INCOME_TYPE_MULTIPLIER}"
         if SESSION_DESIRED_INCOME_FIXED not in st.session_state:

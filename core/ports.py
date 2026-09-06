@@ -151,6 +151,7 @@ class PlanningConfigPort(Protocol):
         bazin_target_yield: float = 6.0,
         bazin_target_spread: float = 3.0,
         planning_start_date: str = None,
+        initial_equity_auto: bool = False,
     ) -> None: ...
 
     def get_min_transaction_date(self) -> str: ...
@@ -216,6 +217,8 @@ class PortfolioProviderPort(Protocol):
     def get_quantity_on_date(self, ticker: str, date_str: str, conn: Any = None) -> int: ...
 
     def get_raw_transactions_for_chart(self, ticker: str) -> pd.DataFrame: ...
+
+    def calculate_prior_invested_amount(self, start_date: str) -> float: ...
 
 
 class PlanningProviderPort(Protocol):

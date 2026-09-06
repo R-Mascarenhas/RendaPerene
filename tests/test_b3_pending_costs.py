@@ -191,6 +191,17 @@ def test_reimport_reconciles_legacy_positive_cost_custody_entry():
         assert conn.execute("SELECT COUNT(*) FROM b3_import_records").fetchone()[0] == 1
 
 
+def test_reimport_adds_provenance_when_adopting_untracked_legacy_custody():
+    AssetService.add_transaction("BBAS3", "2024-01-02", "BUY", 100, 20)
+    frame = pd.DataFrame([movement("Transferência", date="02/01/2024", value=2000, price=20)])
+
+    assert AssetService.process_b3_import(frame) == (0, 0)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM b3_import_records").fetchone()[0] == 1
+        assert conn.execute("SELECT event_kind FROM b3_import_records").fetchone()[0] == "CUSTODY"
+
+
 @pytest.mark.parametrize(
     "kind", ["Bonificação em Ativos", "Desdobro", "Desdobramento", "Grupamento"]
 )

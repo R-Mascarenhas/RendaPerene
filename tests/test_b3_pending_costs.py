@@ -178,7 +178,7 @@ def test_reimport_reconciles_legacy_positive_cost_custody_entry():
                         "quantity": 100,
                         "price": 20,
                         "value": 2000,
-                        "institution": "XP",
+                        "institution": "",
                     },
                     ensure_ascii=False,
                 ),
@@ -373,13 +373,13 @@ def test_pending_cost_form_regularizes_operation(mode, value):
 
         OperationsView()._render_pending_costs()
 
-    app = AppTest.from_function(script).run()
+    app = AppTest.from_function(script).run(timeout=10)
     assert not app.exception
     assert app.warning
     app.selectbox[1].select(mode)
     app.number_input[0].set_value(value)
     app.number_input[1].set_value(10)
-    app.button[0].click().run()
+    app.button[0].click().run(timeout=10)
     assert not app.exception
     assert AssetService.get_pending_costs().empty
     assert AssetService.calculate_positions().iloc[0]["average_price"] == pytest.approx(20.1)

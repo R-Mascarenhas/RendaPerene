@@ -2,6 +2,7 @@ import pytest
 import os
 import shutil
 import pandas as pd
+from core.utils.b3_parser import B3ExcelParserAdapter
 from services.assets_service import AssetService
 
 
@@ -72,6 +73,22 @@ def test_b3_importer_progress_callback():
     assert len(calls) == len(df_excel)
     assert calls[-1][0] == len(df_excel)
     assert calls[-1][1] == len(df_excel)
+
+
+def test_b3_source_identity_ignores_accents_in_text_fields():
+    data = {
+        "Movimentação": ["Compra", "Compra"],
+        "Data": ["02/01/2024", "02/01/2024"],
+        "Produto": ["BBAS3", "BBAS3"],
+        "Quantidade": [100, 100],
+        "Preço unitário": [20, 20],
+        "Valor da Operação": [2000, 2000],
+        "Entrada/Saída": ["Crédito", "Credito"],
+    }
+
+    transactions, _ = B3ExcelParserAdapter().parse_b3_excel(pd.DataFrame(data))
+
+    assert transactions.loc[0, "source_key"] == transactions.loc[1, "source_key"]
 
 
 def test_b3_split_logic():

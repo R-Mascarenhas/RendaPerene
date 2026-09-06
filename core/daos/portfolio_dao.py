@@ -136,7 +136,15 @@ class PortfolioDAO:
             if event_kind == "CUSTODY" and old_source_json:
                 old_source = json.loads(old_source_json)
                 stable_fields = ("date", "ticker", "quantity", "direction", "institution")
-                if all(old_source.get(field) == source.get(field) for field in stable_fields):
+                if all(
+                    (
+                        old_source.get(field) == source.get(field)
+                        if field == "quantity"
+                        else str(old_source.get(field, "")).strip().casefold()
+                        == str(source.get(field, "")).strip().casefold()
+                    )
+                    for field in stable_fields
+                ):
                     return candidate_id
             if (
                 event_kind in (None, "CUSTODY")

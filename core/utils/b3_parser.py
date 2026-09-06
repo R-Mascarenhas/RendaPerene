@@ -19,6 +19,16 @@ class B3ExcelParserAdapter:
         result = float(value)
         return result if math.isfinite(result) else 0.0
 
+    @staticmethod
+    def _canonical_text(value) -> str:
+        """Normalizes human-readable B3 fields before generating source identities."""
+        return (
+            unicodedata.normalize("NFKD", str(value).strip())
+            .encode("ascii", "ignore")
+            .decode()
+            .casefold()
+        )
+
     def parse_b3_excel(
         self, df: pd.DataFrame, progress_callback: Any = None
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -115,6 +125,16 @@ class B3ExcelParserAdapter:
                         "institution": str(row.get("Instituição", "")).strip(),
                     }
                     source_json = json.dumps(source, ensure_ascii=False, sort_keys=True)
+                    source_identity = {
+                        **source,
+                        **{
+                            field: self._canonical_text(source[field])
+                            for field in ("movement", "direction", "institution")
+                        },
+                    }
+                    source_identity_json = json.dumps(
+                        source_identity, ensure_ascii=False, sort_keys=True
+                    )
                     transactions_list.append(
                         {
                             "ticker": ticker,
@@ -129,7 +149,7 @@ class B3ExcelParserAdapter:
                             else "CORPORATE"
                             if corporate
                             else "TRADE",
-                            "source_key": hashlib.sha256(source_json.encode()).hexdigest(),
+                            "source_key": hashlib.sha256(source_identity_json.encode()).hexdigest(),
                             "source_record": source_json,
                             "matched_custody_transfer": False,
                         }

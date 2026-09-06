@@ -761,7 +761,7 @@ class AssetService:
         return timeline
 
     @hybridmethod
-    def get_ytd_contributions(self, current_year: int) -> float:
+    def get_ytd_contributions(self, current_year: int) -> float | None:
         """Calculates total net contributions made in the current year."""
         limit_date = f"{current_year}-01-01"
         return self._portfolio_repo.get_ytd_contributions_sum(limit_date)
@@ -773,6 +773,8 @@ class AssetService:
         if start_date is not None:
             df_transactions = df_transactions[df_transactions["date"] >= start_date]
         if df_transactions.empty:
+            return pd.DataFrame()
+        if df_transactions["cost_status"].eq("PENDING").any():
             return pd.DataFrame()
 
         df_transactions["amount"] = (

@@ -39,6 +39,13 @@ def test_acquisition_without_value_remains_visible_and_pending(missing):
     assert len(AssetService.get_pending_costs()) == 1
 
 
+def test_pending_trade_withholds_contribution_totals():
+    AssetService.process_b3_import(pd.DataFrame([movement()]))
+
+    assert AssetService.get_ytd_contributions(2024) is None
+    assert AssetService.get_monthly_contributions_by_year().empty
+
+
 @pytest.mark.parametrize("total_mode,value", [(False, 20), (True, 2000)])
 def test_regularization_replays_costs_after_sale_and_reimport(total_mode, value, monkeypatch):
     frame = pd.DataFrame([movement(), movement("Venda", "03/01/2024", 40, 1200, 30, "Débito")])

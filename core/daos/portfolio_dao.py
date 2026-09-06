@@ -520,6 +520,20 @@ class PortfolioDAO:
         conn = self.get_personal_connection()
         cursor = conn.cursor()
         try:
+            pending = cursor.execute(
+                """
+                SELECT 1 FROM transactions
+                WHERE transaction_type = 'BUY' AND date >= ? AND cost_status = 'PENDING'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM b3_import_records b
+                      WHERE b.transaction_id = transactions.id AND b.event_kind = 'CUSTODY'
+                  )
+                LIMIT 1
+                """,
+                (limit_date,),
+            ).fetchone()
+            if pending:
+                return None
             cursor.execute(
                 "SELECT SUM(quantity * unit_price + fees) FROM transactions WHERE transaction_type = 'BUY' AND date >= ? AND NOT EXISTS (SELECT 1 FROM b3_import_records b WHERE b.transaction_id=transactions.id AND b.event_kind='CUSTODY')",
                 (limit_date,),
@@ -534,7 +548,7 @@ class PortfolioDAO:
         conn = self.get_personal_connection()
         try:
             return pd.read_sql_query(
-                "SELECT date, quantity, unit_price, fees FROM transactions WHERE transaction_type = 'BUY' AND NOT EXISTS (SELECT 1 FROM b3_import_records b WHERE b.transaction_id=transactions.id AND b.event_kind='CUSTODY')",
+                "SELECT date, quantity, unit_price, fees, cost_status FROM transactions WHERE transaction_type = 'BUY' AND NOT EXISTS (SELECT 1 FROM b3_import_records b WHERE b.transaction_id=transactions.id AND b.event_kind='CUSTODY')",
                 conn,
             )
         finally:

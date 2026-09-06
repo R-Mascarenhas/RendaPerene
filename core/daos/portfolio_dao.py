@@ -54,16 +54,15 @@ class PortfolioDAO:
                     values,
                 ).fetchone()
                 legacy_custody = None
-                legacy_pending_trade = None
                 if record["event_kind"] == "CUSTODY" and record["cost_status"] == "PENDING":
                     legacy_custody = self._find_legacy_custody_transaction(conn, record)
                     if legacy_custody is not None:
                         existing = (legacy_custody,)
                         reconciled_legacy = True
                 elif record["event_kind"] == "TRADE" and record["cost_status"] == "PENDING":
-                    legacy_pending_trade = self._find_legacy_pending_trade(conn, record)
-                    if legacy_pending_trade is not None:
-                        existing = (legacy_pending_trade,)
+                    legacy_correction = self._find_legacy_parser_correction(conn, record)
+                    if legacy_correction is not None:
+                        existing = (legacy_correction,)
                         reconciled_legacy = True
                 if existing:
                     transaction_id = existing[0]
@@ -119,57 +118,56 @@ class PortfolioDAO:
 
     @staticmethod
     def _find_legacy_custody_transaction(conn, record: dict) -> int | None:
-        """Finds a positive-cost custody entry created by the pre-pending-cost parser."""
+        """Finds an already-provenanced custody entry with a superseded source key."""
         source = json.loads(record["source_record"])
         candidates = conn.execute(
             """
-            SELECT t.id, t.unit_price, t.fees, t.transaction_origin, b.event_kind, b.source_record
+            SELECT t.id, b.source_record
             FROM transactions t
-            LEFT JOIN b3_import_records b ON b.transaction_id = t.id
+            JOIN b3_import_records b ON b.transaction_id = t.id
             WHERE t.date = ? AND t.ticker = ? AND t.transaction_type = 'BUY'
-              AND t.quantity = ? AND t.unit_price > 0
+              AND t.quantity = ? AND t.unit_price > 0 AND b.event_kind = 'CUSTODY'
             ORDER BY t.id
             """,
             (record["date"], record["ticker"], record["quantity"]),
         ).fetchall()
-        reported_prices = []
-        if source.get("price") is not None:
-            reported_prices.append(float(source["price"]))
-        if source.get("value") is not None and record["quantity"]:
-            reported_prices.append(float(source["value"]) / record["quantity"])
-
-        for candidate_id, unit_price, fees, origin, event_kind, old_source_json in candidates:
-            if event_kind == "CUSTODY" and old_source_json:
-                old_source = json.loads(old_source_json)
-                stable_fields = ("date", "ticker", "quantity", "direction", "institution")
-                if all(
-                    (
-                        old_source.get(field) == source.get(field)
-                        if field == "quantity"
-                        else str(old_source.get(field, "")).strip().casefold()
-                        == str(source.get(field, "")).strip().casefold()
-                    )
-                    for field in stable_fields
-                ):
-                    return candidate_id
-            if (
-                event_kind in (None, "CUSTODY")
-                and origin != "MANUAL"
-                and any(abs(unit_price - price) < 1e-9 for price in reported_prices)
-                and fees == 0
+        for candidate_id, old_source_json in candidates:
+            old_source = json.loads(old_source_json)
+            stable_fields = ("date", "ticker", "quantity", "direction", "institution")
+            if all(
+                (
+                    old_source.get(field) == source.get(field)
+                    if field == "quantity"
+                    else str(old_source.get(field, "")).strip().casefold()
+                    == str(source.get(field, "")).strip().casefold()
+                )
+                for field in stable_fields
             ):
                 return candidate_id
         return None
 
     @staticmethod
-    def _find_legacy_pending_trade(conn, record: dict) -> int | None:
-        """Finds one unprovenanced trade created before missing costs were tracked."""
+    def _find_legacy_parser_correction(conn, record: dict) -> int | None:
+        """Finds a transaction produced by a known correction in the old B3 parser."""
+        legacy_signature = {
+            "date": "2021-04-30",
+            "ticker": "CXSE3",
+            "transaction_type": "BUY",
+            "quantity": 340,
+            "unit_price": 9.67,
+        }
+        if any(
+            record[field] != legacy_signature[field]
+            for field in legacy_signature
+            if field != "unit_price"
+        ):
+            return None
         candidates = conn.execute(
             """
             SELECT t.id
             FROM transactions t
             WHERE t.date = ? AND t.ticker = ? AND t.transaction_type = ?
-              AND t.quantity = ? AND t.unit_price > 0
+              AND t.quantity = ? AND t.unit_price = ? AND t.fees = 0
               AND t.transaction_origin = 'LEGACY'
               AND NOT EXISTS (
                   SELECT 1 FROM b3_import_records b WHERE b.transaction_id = t.id
@@ -181,6 +179,7 @@ class PortfolioDAO:
                 record["ticker"],
                 record["transaction_type"],
                 record["quantity"],
+                legacy_signature["unit_price"],
             ),
         ).fetchall()
         return candidates[0][0] if len(candidates) == 1 else None

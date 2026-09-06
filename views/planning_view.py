@@ -197,6 +197,15 @@ class PlanningView:
             st.session_state[INITIAL_EQUITY_AUTO] = False
         self._save_params()
 
+    def _sync_automatic_initial_equity(self, computed_initial: float) -> None:
+        """Keeps the saved and displayed automatic baseline aligned with portfolio costs."""
+        if not st.session_state.get(INITIAL_EQUITY_AUTO, False):
+            return
+        current_initial = float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0))
+        if current_initial != computed_initial:
+            st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
+            self._save_params()
+
     def _save_params(self):
         """Callback to save the current session state parameters to the database."""
         core_birth_date = st.session_state[SESSION_BIRTH_DATE]
@@ -394,6 +403,7 @@ class PlanningView:
                 start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
                 start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
                 computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
+                self._sync_automatic_initial_equity(computed_initial)
                 st.number_input(
                     "Patrimônio Inicial (R$)",
                     min_value=0.0,

@@ -592,6 +592,24 @@ def test_planning_view_start_date_change_callback(mock_db, monkeypatch):
     assert st.session_state[SESSION_INITIAL_EQUITY] == 3000.0
 
 
+def test_planning_view_synchronizes_refreshed_automatic_initial_equity(monkeypatch):
+    from core.constants import INITIAL_EQUITY_AUTO, SESSION_INITIAL_EQUITY
+
+    monkeypatch.setattr(
+        st,
+        "session_state",
+        {SESSION_INITIAL_EQUITY: 0.0, INITIAL_EQUITY_AUTO: True},
+    )
+    saved = []
+    view = PlanningView()
+    monkeypatch.setattr(view, "_save_params", lambda: saved.append(True))
+
+    view._sync_automatic_initial_equity(2000.0)
+
+    assert st.session_state[SESSION_INITIAL_EQUITY] == 2000.0
+    assert saved == [True]
+
+
 def test_chart_theme_adapter_applies_light_defaults(monkeypatch):
     from plotly.graph_objects import Figure
 

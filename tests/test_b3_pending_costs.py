@@ -198,7 +198,7 @@ def test_reimport_reconciles_legacy_positive_cost_custody_entry():
         assert conn.execute("SELECT COUNT(*) FROM b3_import_records").fetchone()[0] == 1
 
 
-def test_reimport_adds_provenance_when_adopting_untracked_legacy_custody():
+def test_reimport_does_not_adopt_unprovenanced_legacy_custody():
     with closing(PortfolioDAO().get_personal_connection()) as conn:
         conn.execute(
             "INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees) "
@@ -207,9 +207,9 @@ def test_reimport_adds_provenance_when_adopting_untracked_legacy_custody():
         conn.commit()
     frame = pd.DataFrame([movement("Transferência", date="02/01/2024", value=2000, price=20)])
 
-    assert AssetService.process_b3_import(frame) == (0, 0)
+    assert AssetService.process_b3_import(frame) == (1, 0)
     with closing(PortfolioDAO().get_personal_connection()) as conn:
-        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
         assert conn.execute("SELECT COUNT(*) FROM b3_import_records").fetchone()[0] == 1
         assert conn.execute("SELECT event_kind FROM b3_import_records").fetchone()[0] == "CUSTODY"
 
@@ -238,6 +238,21 @@ def test_reimport_reconciles_trade_previously_corrected_by_legacy_parser():
         assert transaction == (9.67, "PENDING")
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
         assert conn.execute("SELECT event_kind FROM b3_import_records").fetchone()[0] == "TRADE"
+
+
+def test_pending_import_does_not_adopt_an_unidentified_legacy_trade():
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        conn.execute(
+            "INSERT INTO transactions "
+            "(date, ticker, transaction_type, quantity, unit_price, fees) "
+            "VALUES ('2024-01-02', 'BBAS3', 'BUY', 100, 20, 0)"
+        )
+        conn.commit()
+
+    assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (1, 0)
+
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
 
 
 def test_custody_price_fallback_does_not_adopt_provenanced_trade():

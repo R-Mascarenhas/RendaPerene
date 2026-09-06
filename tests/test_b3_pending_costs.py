@@ -199,7 +199,12 @@ def test_reimport_reconciles_legacy_positive_cost_custody_entry():
 
 
 def test_reimport_adds_provenance_when_adopting_untracked_legacy_custody():
-    AssetService.add_transaction("BBAS3", "2024-01-02", "BUY", 100, 20)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        conn.execute(
+            "INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees) "
+            "VALUES ('2024-01-02', 'BBAS3', 'BUY', 100, 20, 0)"
+        )
+        conn.commit()
     frame = pd.DataFrame([movement("Transferência", date="02/01/2024", value=2000, price=20)])
 
     assert AssetService.process_b3_import(frame) == (0, 0)
@@ -223,6 +228,15 @@ def test_custody_price_fallback_does_not_adopt_provenanced_trade():
     assert position["cost_pending"]
     with closing(PortfolioDAO().get_personal_connection()) as conn:
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
+
+
+def test_custody_price_fallback_does_not_adopt_manual_trade():
+    AssetService.add_transaction("BBAS3", "2024-01-02", "BUY", 100, 20)
+    frame = pd.DataFrame([movement("Transferência", date="02/01/2024", value=2000, price=20)])
+
+    assert AssetService.process_b3_import(frame) == (1, 0)
+    position = AssetService.calculate_positions().iloc[0]
+    assert position["quantity"] == 200
 
 
 @pytest.mark.parametrize(

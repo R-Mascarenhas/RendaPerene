@@ -59,6 +59,7 @@ INCOME_TYPE_FIXED = "FIXED"
 
 # Database transactions and dividends column keys
 TRANSACTION_TYPE = "transaction_type"
+TRANSACTION_ORIGIN = "transaction_origin"
 UNIT_PRICE = "unit_price"
 FEES = "fees"
 DATE = "date"

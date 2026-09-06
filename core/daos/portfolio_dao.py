@@ -68,8 +68,8 @@ class PortfolioDAO:
                         )
                 else:
                     cursor = conn.execute(
-                        "INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees, cost_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (*values, record["cost_status"]),
+                        "INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees, cost_status, transaction_origin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (*values, record["cost_status"], "B3"),
                     )
                     transaction_id = cursor.lastrowid
                     created = True
@@ -117,7 +117,7 @@ class PortfolioDAO:
         source = json.loads(record["source_record"])
         candidates = conn.execute(
             """
-            SELECT t.id, t.unit_price, t.fees, b.event_kind, b.source_record
+            SELECT t.id, t.unit_price, t.fees, t.transaction_origin, b.event_kind, b.source_record
             FROM transactions t
             LEFT JOIN b3_import_records b ON b.transaction_id = t.id
             WHERE t.date = ? AND t.ticker = ? AND t.transaction_type = 'BUY'
@@ -132,7 +132,7 @@ class PortfolioDAO:
         if source.get("value") is not None and record["quantity"]:
             reported_prices.append(float(source["value"]) / record["quantity"])
 
-        for candidate_id, unit_price, fees, event_kind, old_source_json in candidates:
+        for candidate_id, unit_price, fees, origin, event_kind, old_source_json in candidates:
             if event_kind == "CUSTODY" and old_source_json:
                 old_source = json.loads(old_source_json)
                 stable_fields = ("date", "ticker", "quantity", "direction", "institution")
@@ -140,6 +140,7 @@ class PortfolioDAO:
                     return candidate_id
             if (
                 event_kind in (None, "CUSTODY")
+                and origin != "MANUAL"
                 and any(abs(unit_price - price) < 1e-9 for price in reported_prices)
                 and fees == 0
             ):
@@ -207,8 +208,8 @@ class PortfolioDAO:
         try:
             cursor.execute(
                 """
-                INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees, transaction_origin)
+                VALUES (?, ?, ?, ?, ?, ?, 'MANUAL')
             """,
                 (date, ticker, transaction_type, quantity, unit_price, fees),
             )
@@ -566,7 +567,8 @@ class PortfolioDAO:
                 transaction_type TEXT NOT NULL,
                 quantity INTEGER NOT NULL,
                 unit_price REAL NOT NULL,
-                fees REAL DEFAULT 0.0
+                fees REAL DEFAULT 0.0,
+                transaction_origin TEXT NOT NULL DEFAULT 'LEGACY'
             )
         """)
 
@@ -584,6 +586,10 @@ class PortfolioDAO:
         if "cost_status" not in columns:
             cursor.execute(
                 "ALTER TABLE transactions ADD COLUMN cost_status TEXT NOT NULL DEFAULT 'KNOWN'"
+            )
+        if "transaction_origin" not in columns:
+            cursor.execute(
+                "ALTER TABLE transactions ADD COLUMN transaction_origin TEXT NOT NULL DEFAULT 'LEGACY'"
             )
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS b3_import_records (

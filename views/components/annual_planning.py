@@ -62,4 +62,4 @@ class AnnualPlanningWidget:
         else:
             st.markdown(MSG_ALL_GOALS_MET)
 
-        GoalProgressBar.render(goal["progress_percentage"])
+        GoalProgressBar.render(goal["progress_percentage"] or 0.0)

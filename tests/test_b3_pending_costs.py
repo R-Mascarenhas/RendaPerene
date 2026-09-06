@@ -202,6 +202,22 @@ def test_reimport_adds_provenance_when_adopting_untracked_legacy_custody():
         assert conn.execute("SELECT event_kind FROM b3_import_records").fetchone()[0] == "CUSTODY"
 
 
+def test_custody_price_fallback_does_not_adopt_provenanced_trade():
+    frame = pd.DataFrame(
+        [
+            movement("Compra", date="02/01/2024", value=2000, price=20),
+            movement("Transferência", date="02/01/2024", value=2000, price=20),
+        ]
+    )
+
+    assert AssetService.process_b3_import(frame) == (2, 0)
+    position = AssetService.calculate_positions().iloc[0]
+    assert position["quantity"] == 200
+    assert position["cost_pending"]
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
+
+
 @pytest.mark.parametrize(
     "kind", ["Bonificação em Ativos", "Desdobro", "Desdobramento", "Grupamento"]
 )

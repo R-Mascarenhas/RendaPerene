@@ -138,7 +138,11 @@ class PortfolioDAO:
                 stable_fields = ("date", "ticker", "quantity", "direction", "institution")
                 if all(old_source.get(field) == source.get(field) for field in stable_fields):
                     return candidate_id
-            if any(abs(unit_price - price) < 1e-9 for price in reported_prices) and fees == 0:
+            if (
+                event_kind in (None, "CUSTODY")
+                and any(abs(unit_price - price) < 1e-9 for price in reported_prices)
+                and fees == 0
+            ):
                 return candidate_id
         return None
 

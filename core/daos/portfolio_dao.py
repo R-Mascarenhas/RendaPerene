@@ -84,6 +84,10 @@ class PortfolioDAO:
                 if reconciled_b3 is not None:
                     existing = (reconciled_b3[0],)
                     record.get("_reconciliation_context", set()).add(reconciled_b3[0])
+                    conn.execute(
+                        "UPDATE transactions SET transaction_origin='B3' WHERE id=? AND transaction_origin='LEGACY'",
+                        (reconciled_b3[0],),
+                    )
                 if existing:
                     transaction_id = existing[0]
                     if record["cost_status"] == "PENDING":
@@ -207,7 +211,7 @@ class PortfolioDAO:
             JOIN b3_import_records b ON b.transaction_id = t.id
             WHERE t.date = ? AND t.ticker = ? AND t.transaction_type = ?
               AND t.quantity = ? AND t.cost_status IN ('PENDING', 'CORRECTED', 'KNOWN')
-              AND t.transaction_origin = 'B3' AND b.event_kind = ?
+              AND b.event_kind = ?
             ORDER BY t.id
             """,
             (

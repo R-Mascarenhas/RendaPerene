@@ -53,6 +53,23 @@ def test_pending_trade_withholds_historical_investment_evolution():
     assert AssetService.calculate_historical_evolution().empty
 
 
+def test_reimport_with_known_cost_reconciles_pending_b3_purchase():
+    assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (1, 0)
+    assert len(AssetService.get_pending_costs()) == 1
+
+    assert AssetService.process_b3_import(
+        pd.DataFrame([movement(value=2000, price=20)])
+    ) == (0, 0)
+
+    position = AssetService.calculate_positions().iloc[0]
+    assert position["quantity"] == 100
+    assert position["average_price"] == pytest.approx(20)
+    assert not position["cost_pending"]
+    assert AssetService.get_pending_costs().empty
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+
+
 @pytest.mark.parametrize("total_mode,value", [(False, 20), (True, 2000)])
 def test_regularization_replays_costs_after_sale_and_reimport(total_mode, value, monkeypatch):
     frame = pd.DataFrame([movement(), movement("Venda", "03/01/2024", 40, 1200, 30, "Débito")])

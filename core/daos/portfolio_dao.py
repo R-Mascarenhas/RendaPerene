@@ -37,6 +37,7 @@ class PortfolioDAO:
             transaction_id = None
             created = False
             reconciled_legacy = False
+            reconciled_pending = False
             if not ignored:
                 values = tuple(
                     record[key]
@@ -69,9 +70,23 @@ class PortfolioDAO:
                     if legacy_correction is not None:
                         existing = (legacy_correction,)
                         reconciled_legacy = True
+                pending_b3 = self._find_pending_b3_transaction(conn, record)
+                if pending_b3 is not None:
+                    existing = (pending_b3,)
+                    reconciled_pending = True
                 if existing:
                     transaction_id = existing[0]
-                    if legacy_custody is None:
+                    if reconciled_pending:
+                        conn.execute(
+                            "UPDATE transactions SET unit_price=?, fees=?, cost_status=? WHERE id=?",
+                            (
+                                record["unit_price"],
+                                record["fees"],
+                                record["cost_status"],
+                                transaction_id,
+                            ),
+                        )
+                    elif legacy_custody is None:
                         conn.execute(
                             "UPDATE transactions SET cost_status=? WHERE id=?",
                             (record["cost_status"], transaction_id),
@@ -83,7 +98,7 @@ class PortfolioDAO:
                     )
                     transaction_id = cursor.lastrowid
                     created = True
-            if reconciled_legacy:
+            if reconciled_legacy or reconciled_pending:
                 updated = conn.execute(
                     "UPDATE b3_import_records SET source_key=?, source_record=?, event_kind=?, status=? WHERE transaction_id=?",
                     (
@@ -150,6 +165,40 @@ class PortfolioDAO:
             ):
                 return candidate_id
         return None
+
+    @staticmethod
+    def _find_pending_b3_transaction(conn, record: dict) -> int | None:
+        """Finds a pending B3 transaction whose stable source fields still match."""
+        source = json.loads(record["source_record"])
+        candidates = conn.execute(
+            """
+            SELECT t.id, b.source_record
+            FROM transactions t
+            JOIN b3_import_records b ON b.transaction_id = t.id
+            WHERE t.date = ? AND t.ticker = ? AND t.transaction_type = ?
+              AND t.quantity = ? AND t.cost_status = 'PENDING'
+              AND t.transaction_origin = 'B3' AND b.event_kind = ?
+            ORDER BY t.id
+            """,
+            (
+                record["date"],
+                record["ticker"],
+                record["transaction_type"],
+                record["quantity"],
+                record["event_kind"],
+            ),
+        ).fetchall()
+        stable_fields = ("date", "ticker", "movement", "direction", "institution")
+        matches = []
+        for candidate_id, old_source_json in candidates:
+            old_source = json.loads(old_source_json)
+            if all(
+                str(old_source.get(field, "")).strip().casefold()
+                == str(source.get(field, "")).strip().casefold()
+                for field in stable_fields
+            ) and old_source.get("quantity") == source.get("quantity"):
+                matches.append(candidate_id)
+        return matches[0] if len(matches) == 1 else None
 
     @staticmethod
     def _find_legacy_parser_correction(conn, record: dict) -> int | None:

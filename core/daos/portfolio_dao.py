@@ -259,7 +259,11 @@ class PortfolioDAO:
             ]
             if len(exact_known) == 1:
                 return exact_known[0]["id"], exact_known[0]["status"]
-            exact_correction = [match for match in matches if match["same_corrected_cost"]]
+            exact_correction = [
+                match
+                for match in matches
+                if match["same_corrected_cost"] and match["same_occurrence"]
+            ]
             if len(exact_correction) == 1:
                 return exact_correction[0]["id"], exact_correction[0]["status"]
             pending_occurrence = [

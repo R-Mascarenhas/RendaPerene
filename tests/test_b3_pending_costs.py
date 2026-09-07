@@ -448,6 +448,20 @@ def test_known_b3_adoption_reconciles_legacy_origin_after_value_change():
         ).fetchone() == ("B3", "KNOWN")
 
 
+def test_known_import_reconciles_derived_price_with_official_price():
+    derived_price = pd.DataFrame([movement(value=2000, price=0)])
+    official_price = pd.DataFrame([movement(value=2000, price=19.99)])
+
+    assert AssetService.process_b3_import(derived_price) == (1, 0)
+    assert AssetService.process_b3_import(official_price) == (0, 0)
+
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+        assert conn.execute("SELECT unit_price FROM transactions").fetchone()[0] == pytest.approx(
+            19.99
+        )
+
+
 def test_pending_import_does_not_adopt_manual_zero_cost_entry():
     AssetService.add_transaction("BBAS3", "2024-01-02", "BUY", 100, 0, 0)
 

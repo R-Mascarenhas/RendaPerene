@@ -95,7 +95,10 @@ class PortfolioDAO:
                             "UPDATE transactions SET transaction_origin='B3' WHERE id=? AND transaction_origin='LEGACY'",
                             (transaction_id,),
                         )
-                    if reconciled_b3 is not None and reconciled_b3[1] == "PENDING":
+                    if reconciled_b3 is not None and (
+                        reconciled_b3[1] == "PENDING"
+                        or (reconciled_b3[1] == "KNOWN" and reconciled_b3[2])
+                    ):
                         conn.execute(
                             "UPDATE transactions SET unit_price=?, fees=?, cost_status=? WHERE id=?",
                             (
@@ -201,7 +204,9 @@ class PortfolioDAO:
         return None
 
     @staticmethod
-    def _find_reconcilable_b3_transaction(conn, record: dict) -> tuple[int, str] | None:
+    def _find_reconcilable_b3_transaction(
+        conn, record: dict
+    ) -> tuple[int, str, bool] | None:
         """Finds a B3 transaction whose stable source fields still match."""
         source = json.loads(record["source_record"])
         candidates = conn.execute(
@@ -236,10 +241,16 @@ class PortfolioDAO:
             same_current_cost = (
                 abs(unit_price - record["unit_price"]) < 1e-9 and abs(fees - record["fees"]) < 1e-9
             )
+            same_reported_total = (
+                old_source.get("price", 0) == 0
+                and source.get("price", 0) > 0
+                and abs(old_source.get("value", 0) - source.get("value", 0)) < 1e-9
+            )
             if (
                 cost_status == "KNOWN"
                 and record["cost_status"] == "KNOWN"
                 and not same_current_cost
+                and not same_reported_total
             ):
                 continue
             if all(
@@ -253,6 +264,7 @@ class PortfolioDAO:
                         "status": cost_status,
                         "same_occurrence": same_occurrence,
                         "same_current_cost": same_current_cost,
+                        "same_reported_total": same_reported_total,
                         "same_corrected_cost": cost_status == "CORRECTED" and same_current_cost,
                     }
                 )
@@ -265,30 +277,43 @@ class PortfolioDAO:
                 and match["same_occurrence"]
             ]
             if len(exact_known) == 1:
-                return exact_known[0]["id"], exact_known[0]["status"]
+                return exact_known[0]["id"], exact_known[0]["status"], False
+            known_price_population = [
+                match
+                for match in matches
+                if match["status"] == "KNOWN"
+                and match["same_reported_total"]
+                and match["same_occurrence"]
+            ]
+            if len(known_price_population) == 1:
+                return (
+                    known_price_population[0]["id"],
+                    known_price_population[0]["status"],
+                    True,
+                )
             exact_correction = [
                 match
                 for match in matches
                 if match["same_corrected_cost"] and match["same_occurrence"]
             ]
             if len(exact_correction) == 1:
-                return exact_correction[0]["id"], exact_correction[0]["status"]
+                return exact_correction[0]["id"], exact_correction[0]["status"], False
             corrected_cost = [match for match in matches if match["same_corrected_cost"]]
             if len(corrected_cost) == 1:
-                return corrected_cost[0]["id"], corrected_cost[0]["status"]
+                return corrected_cost[0]["id"], corrected_cost[0]["status"], False
             pending_occurrence = [
                 match
                 for match in matches
                 if match["status"] == "PENDING" and match["same_occurrence"]
             ]
             if len(pending_occurrence) == 1:
-                return pending_occurrence[0]["id"], pending_occurrence[0]["status"]
+                return pending_occurrence[0]["id"], pending_occurrence[0]["status"], False
             pending = [match for match in matches if match["status"] == "PENDING"]
             if len(pending) == 1:
-                return pending[0]["id"], pending[0]["status"]
+                return pending[0]["id"], pending[0]["status"], False
         occurrence_matches = [match for match in matches if match["same_occurrence"]]
         if len(occurrence_matches) == 1:
-            return occurrence_matches[0]["id"], occurrence_matches[0]["status"]
+            return occurrence_matches[0]["id"], occurrence_matches[0]["status"], False
         return None
 
     @staticmethod

@@ -213,19 +213,18 @@ class PortfolioDAO:
             old_cost_known = any(
                 float(old_source.get(field) or 0) > 0 for field in ("price", "value")
             )
-            same_known_cost = old_cost_known and all(
-                old_source.get(field) == source.get(field) for field in ("price", "value")
-            )
             same_occurrence = (
                 "occurrence" not in old_source
                 or "occurrence" not in source
                 or old_source["occurrence"] == source["occurrence"]
             )
+            same_current_cost = (
+                abs(unit_price - record["unit_price"]) < 1e-9 and abs(fees - record["fees"]) < 1e-9
+            )
             if (
                 cost_status == "KNOWN"
                 and record["cost_status"] == "KNOWN"
-                and old_cost_known
-                and (not same_known_cost or not same_occurrence)
+                and not same_current_cost
             ):
                 continue
             if all(
@@ -237,13 +236,22 @@ class PortfolioDAO:
                     {
                         "id": candidate_id,
                         "status": cost_status,
+                        "old_cost_known": old_cost_known,
                         "same_occurrence": same_occurrence,
-                        "same_corrected_cost": cost_status == "CORRECTED"
-                        and abs(unit_price - record["unit_price"]) < 1e-9
-                        and abs(fees - record["fees"]) < 1e-9,
+                        "same_current_cost": same_current_cost,
+                        "same_corrected_cost": cost_status == "CORRECTED" and same_current_cost,
                     }
                 )
         if record["cost_status"] == "KNOWN":
+            exact_known = [
+                match
+                for match in matches
+                if match["status"] == "KNOWN"
+                and match["same_current_cost"]
+                and (match["same_occurrence"] or not match["old_cost_known"])
+            ]
+            if len(exact_known) == 1:
+                return exact_known[0]["id"], exact_known[0]["status"]
             exact_correction = [match for match in matches if match["same_corrected_cost"]]
             if len(exact_correction) == 1:
                 return exact_correction[0]["id"], exact_correction[0]["status"]

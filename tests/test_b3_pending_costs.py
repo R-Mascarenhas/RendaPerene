@@ -57,12 +57,8 @@ def test_reimport_with_known_cost_reconciles_pending_b3_purchase():
     assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (1, 0)
     assert len(AssetService.get_pending_costs()) == 1
 
-    assert AssetService.process_b3_import(
-        pd.DataFrame([movement(value=2000, price=20)])
-    ) == (0, 0)
-    assert AssetService.process_b3_import(
-        pd.DataFrame([movement(value=2000, price=20)])
-    ) == (0, 0)
+    assert AssetService.process_b3_import(pd.DataFrame([movement(value=2000, price=20)])) == (0, 0)
+    assert AssetService.process_b3_import(pd.DataFrame([movement(value=2000, price=20)])) == (0, 0)
     assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (0, 0)
 
     position = AssetService.calculate_positions().iloc[0]
@@ -79,9 +75,7 @@ def test_reimport_with_known_cost_preserves_manual_b3_correction():
     pending_id = int(AssetService.get_pending_costs().iloc[0]["id"])
     assert AssetService.regularize_cost(pending_id, 15)
 
-    assert AssetService.process_b3_import(
-        pd.DataFrame([movement(value=2000, price=20)])
-    ) == (0, 0)
+    assert AssetService.process_b3_import(pd.DataFrame([movement(value=2000, price=20)])) == (0, 0)
 
     with closing(PortfolioDAO().get_personal_connection()) as conn:
         transaction = conn.execute(
@@ -113,9 +107,7 @@ def test_same_day_known_b3_trades_with_distinct_costs_remain_separate():
 
 
 def test_partial_export_reuses_known_trade_identity():
-    full_frame = pd.DataFrame(
-        [movement(value=2000, price=20), movement(value=3000, price=30)]
-    )
+    full_frame = pd.DataFrame([movement(value=2000, price=20), movement(value=3000, price=30)])
     partial_frame = pd.DataFrame([movement(value=3000, price=30)])
 
     assert AssetService.process_b3_import(full_frame) == (2, 0)
@@ -126,9 +118,7 @@ def test_partial_export_reuses_known_trade_identity():
 
 def test_pending_occurrences_align_with_divergent_known_costs():
     pending_frame = pd.DataFrame([movement(), movement()])
-    known_frame = pd.DataFrame(
-        [movement(value=2000, price=20), movement(value=3000, price=30)]
-    )
+    known_frame = pd.DataFrame([movement(value=2000, price=20), movement(value=3000, price=30)])
 
     assert AssetService.process_b3_import(pending_frame) == (2, 0)
     assert AssetService.process_b3_import(known_frame) == (0, 0)
@@ -144,15 +134,32 @@ def test_partial_known_cost_targets_remaining_pending_operation():
     first_pending_id = int(AssetService.get_pending_costs().iloc[0]["id"])
     assert AssetService.regularize_cost(first_pending_id, 15)
 
-    assert AssetService.process_b3_import(
-        pd.DataFrame([movement(value=3000, price=30)])
-    ) == (0, 0)
+    assert AssetService.process_b3_import(pd.DataFrame([movement(value=3000, price=30)])) == (0, 0)
     assert AssetService.get_pending_costs().empty
     with closing(PortfolioDAO().get_personal_connection()) as conn:
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
         assert conn.execute(
             "SELECT unit_price, cost_status FROM transactions ORDER BY id"
         ).fetchall() == [(15.0, "CORRECTED"), (30.0, "KNOWN")]
+
+
+def test_reordered_full_export_does_not_reconcile_to_wrong_known_cost():
+    assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (1, 0)
+    assert AssetService.process_b3_import(pd.DataFrame([movement(value=3000, price=30)])) == (0, 0)
+
+    reordered_full_frame = pd.DataFrame(
+        [movement(value=2000, price=20), movement(value=3000, price=30)]
+    )
+    assert AssetService.process_b3_import(reordered_full_frame) == (1, 0)
+
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
+        assert conn.execute(
+            "SELECT quantity, unit_price, cost_status FROM transactions ORDER BY id"
+        ).fetchall() == [(100, 30.0, "KNOWN"), (100, 20.0, "KNOWN")]
+        assert conn.execute("SELECT SUM(quantity * unit_price) FROM transactions").fetchone()[
+            0
+        ] == pytest.approx(5000)
 
 
 def test_identical_same_day_b3_trades_remain_separate_and_idempotent():
@@ -460,9 +467,12 @@ def test_import_does_not_adopt_ambiguous_legacy_transaction():
     assert AssetService.calculate_positions().iloc[0]["quantity"] == 200
     assert len(AssetService.get_pending_costs()) == 1
     with closing(PortfolioDAO().get_personal_connection()) as conn:
-        assert conn.execute(
-            "SELECT COUNT(*) FROM transactions WHERE transaction_origin='B3'"
-        ).fetchone()[0] == 1
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM transactions WHERE transaction_origin='B3'"
+            ).fetchone()[0]
+            == 1
+        )
 
 
 def test_regularized_transfer_is_not_a_new_contribution():

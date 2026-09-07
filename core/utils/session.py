@@ -174,8 +174,7 @@ class SessionManager:
                 st.session_state[SESSION_INITIAL_EQUITY] = float(config[INITIAL_EQUITY_INPUT])
                 st.session_state[INITIAL_EQUITY_AUTO] = config.get(INITIAL_EQUITY_AUTO, False)
                 st.session_state[INITIAL_EQUITY_MANUAL_OVERRIDE] = bool(
-                    config.get(PLANNING_START_DATE) is not None
-                    and not config.get(INITIAL_EQUITY_AUTO, False)
+                    config.get(INITIAL_EQUITY_MANUAL_OVERRIDE, False)
                 )
                 st.session_state[SESSION_DESIRED_INCOME_TYPE] = config.get(
                     DESIRED_INCOME_TYPE, "MULTIPLIER"

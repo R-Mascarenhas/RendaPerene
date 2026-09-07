@@ -60,6 +60,9 @@ def test_reimport_with_known_cost_reconciles_pending_b3_purchase():
     assert AssetService.process_b3_import(
         pd.DataFrame([movement(value=2000, price=20)])
     ) == (0, 0)
+    assert AssetService.process_b3_import(
+        pd.DataFrame([movement(value=2000, price=20)])
+    ) == (0, 0)
     assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (0, 0)
 
     position = AssetService.calculate_positions().iloc[0]
@@ -396,6 +399,8 @@ def test_import_adopts_matching_legacy_transaction():
     assert AssetService.process_b3_import(frame) == (0, 0)
     assert AssetService.calculate_positions().iloc[0]["quantity"] == 100
     assert len(AssetService.get_pending_costs()) == 1
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT transaction_origin FROM transactions").fetchone()[0] == "B3"
 
 
 def test_regularized_transfer_is_not_a_new_contribution():

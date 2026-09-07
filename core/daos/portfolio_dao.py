@@ -75,6 +75,11 @@ class PortfolioDAO:
                     existing = (reconciled_b3[0],)
                 if existing:
                     transaction_id = existing[0]
+                    if record["cost_status"] == "PENDING":
+                        conn.execute(
+                            "UPDATE transactions SET transaction_origin='B3' WHERE id=? AND transaction_origin='LEGACY'",
+                            (transaction_id,),
+                        )
                     if reconciled_b3 is not None and reconciled_b3[1] == "PENDING":
                         conn.execute(
                             "UPDATE transactions SET unit_price=?, fees=?, cost_status=? WHERE id=?",
@@ -123,17 +128,7 @@ class PortfolioDAO:
                             "IMPORTED",
                         ),
                     )
-            elif reconciled_b3 is not None:
-                conn.execute(
-                    "UPDATE b3_import_records SET source_record=?, event_kind=?, status=? WHERE transaction_id=?",
-                    (
-                        record["source_record"],
-                        record["event_kind"],
-                        "IMPORTED",
-                        transaction_id,
-                    ),
-                )
-            else:
+            elif reconciled_b3 is None:
                 conn.execute(
                     "INSERT INTO b3_import_records (source_key, source_record, event_kind, transaction_id, status) VALUES (?, ?, ?, ?, ?)",
                     (
@@ -204,9 +199,12 @@ class PortfolioDAO:
         stable_fields = ("date", "ticker", "movement", "direction", "institution")
         matches = []
         for candidate_id, cost_status, old_source_json in candidates:
-            if cost_status == "KNOWN" and record["cost_status"] == "KNOWN":
-                continue
             old_source = json.loads(old_source_json)
+            old_cost_known = any(
+                float(old_source.get(field) or 0) > 0 for field in ("price", "value")
+            )
+            if cost_status == "KNOWN" and record["cost_status"] == "KNOWN" and old_cost_known:
+                continue
             if all(
                 str(old_source.get(field, "")).strip().casefold()
                 == str(source.get(field, "")).strip().casefold()

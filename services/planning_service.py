@@ -78,6 +78,7 @@ class SimulationService:
         bazin_target_spread=3.0,
         planning_start_date=None,
         initial_equity_auto=False,
+        initial_equity_manual_override=False,
     ):
         """Saves or updates the planning configuration in the database."""
         self._planning_repo.save_configuration(
@@ -94,6 +95,7 @@ class SimulationService:
             bazin_target_spread,
             planning_start_date,
             initial_equity_auto,
+            initial_equity_manual_override,
         )
 
     @hybridmethod

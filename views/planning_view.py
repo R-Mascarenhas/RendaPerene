@@ -248,6 +248,9 @@ class PlanningView:
             desired_income_fixed=desired_fixed,
             planning_start_date=start_date_str,
             initial_equity_auto=st.session_state.get(INITIAL_EQUITY_AUTO, False),
+            initial_equity_manual_override=st.session_state.get(
+                INITIAL_EQUITY_MANUAL_OVERRIDE, False
+            ),
         )
 
     def _render_life_parameters(self):

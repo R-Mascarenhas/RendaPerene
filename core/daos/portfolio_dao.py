@@ -213,7 +213,20 @@ class PortfolioDAO:
             old_cost_known = any(
                 float(old_source.get(field) or 0) > 0 for field in ("price", "value")
             )
-            if cost_status == "KNOWN" and record["cost_status"] == "KNOWN" and old_cost_known:
+            same_known_cost = old_cost_known and all(
+                old_source.get(field) == source.get(field) for field in ("price", "value")
+            )
+            same_occurrence = (
+                "occurrence" not in old_source
+                or "occurrence" not in source
+                or old_source["occurrence"] == source["occurrence"]
+            )
+            if (
+                cost_status == "KNOWN"
+                and record["cost_status"] == "KNOWN"
+                and old_cost_known
+                and (not same_known_cost or not same_occurrence)
+            ):
                 continue
             if (
                 all(
@@ -222,11 +235,7 @@ class PortfolioDAO:
                     for field in stable_fields
                 )
                 and old_source.get("quantity") == source.get("quantity")
-                and (
-                    "occurrence" not in old_source
-                    or "occurrence" not in source
-                    or old_source["occurrence"] == source["occurrence"]
-                )
+                and same_occurrence
             ):
                 matches.append((candidate_id, cost_status))
         return matches[0] if len(matches) == 1 else None

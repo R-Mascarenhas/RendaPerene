@@ -124,6 +124,20 @@ def test_partial_export_reuses_known_trade_identity():
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
 
 
+def test_pending_occurrences_align_with_divergent_known_costs():
+    pending_frame = pd.DataFrame([movement(), movement()])
+    known_frame = pd.DataFrame(
+        [movement(value=2000, price=20), movement(value=3000, price=30)]
+    )
+
+    assert AssetService.process_b3_import(pending_frame) == (2, 0)
+    assert AssetService.process_b3_import(known_frame) == (0, 0)
+    assert AssetService.get_pending_costs().empty
+    position = AssetService.calculate_positions().iloc[0]
+    assert position["quantity"] == 200
+    assert position["invested_amount"] == pytest.approx(5000)
+
+
 def test_identical_same_day_b3_trades_remain_separate_and_idempotent():
     frame = pd.DataFrame([movement(value=2000, price=20), movement(value=2000, price=20)])
 

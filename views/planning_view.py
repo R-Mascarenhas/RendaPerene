@@ -170,7 +170,8 @@ class PlanningView:
             start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
             start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
             computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
-            st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
+            if computed_initial is not None:
+                st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
             st.session_state[INITIAL_EQUITY_AUTO] = True
         self._save_params()
         st.rerun()
@@ -187,7 +188,8 @@ class PlanningView:
 
             new_start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
             computed_initial = AssetService.calculate_prior_invested_amount(new_start_date_str)
-            st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
+            if computed_initial is not None:
+                st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
             st.session_state[INITIAL_EQUITY_AUTO] = True
         self._save_params()
         st.rerun()
@@ -203,14 +205,14 @@ class PlanningView:
             st.session_state[INITIAL_EQUITY_MANUAL_OVERRIDE] = True
         self._save_params()
 
-    def _sync_automatic_initial_equity(self, computed_initial: float) -> None:
+    def _sync_automatic_initial_equity(self, computed_initial: float | None) -> None:
         """Keeps the saved and displayed automatic baseline aligned with portfolio costs."""
         if st.session_state.get(INITIAL_EQUITY_MANUAL_OVERRIDE, False) or not st.session_state.get(
             INITIAL_EQUITY_AUTO, False
         ):
             return
         current_initial = float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0))
-        if current_initial != computed_initial:
+        if computed_initial is not None and current_initial != computed_initial:
             st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
             self._save_params()
 

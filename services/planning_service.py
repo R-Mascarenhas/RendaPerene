@@ -438,6 +438,8 @@ class SimulationService:
         else:
             monthly_interest_rate = (1 + 6.0 / 100) ** (1 / 12) - 1
             initial_equity = 0.0
+        if initial_equity is None:
+            return pd.DataFrame()
 
         monthly_contribution = self.get_required_contribution()
 

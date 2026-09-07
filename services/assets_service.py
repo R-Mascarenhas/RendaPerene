@@ -700,6 +700,14 @@ class AssetService:
         if df_transactions.empty and df_dividends.empty:
             return pd.DataFrame()
 
+        pending_trade = df_transactions.get(
+            "cost_status", pd.Series(False, index=df_transactions.index)
+        ).eq("PENDING") & df_transactions.get(
+            "event_kind", pd.Series("TRADE", index=df_transactions.index)
+        ).ne("CUSTODY")
+        if pending_trade.any():
+            return pd.DataFrame()
+
         df_transactions[MONTH_STR] = df_transactions[DATE].str[:7]
         df_dividends[MONTH_STR] = df_dividends[DATE].str[:7]
 

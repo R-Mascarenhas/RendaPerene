@@ -46,6 +46,13 @@ def test_pending_trade_withholds_contribution_totals():
     assert AssetService.get_monthly_contributions_by_year().empty
 
 
+def test_pending_trade_withholds_historical_investment_evolution():
+    AssetService.process_b3_import(pd.DataFrame([movement()]))
+    AssetService.add_transaction("BBAS3", "2024-02-01", "SELL", 10, 25)
+
+    assert AssetService.calculate_historical_evolution().empty
+
+
 @pytest.mark.parametrize("total_mode,value", [(False, 20), (True, 2000)])
 def test_regularization_replays_costs_after_sale_and_reimport(total_mode, value, monkeypatch):
     frame = pd.DataFrame([movement(), movement("Venda", "03/01/2024", 40, 1200, 30, "Débito")])

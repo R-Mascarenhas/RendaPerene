@@ -152,6 +152,7 @@ class PlanningConfigPort(Protocol):
         bazin_target_spread: float = 3.0,
         planning_start_date: str = None,
         initial_equity_auto: bool = False,
+        initial_equity_manual_override: bool = False,
     ) -> None: ...
 
     def get_min_transaction_date(self) -> str: ...

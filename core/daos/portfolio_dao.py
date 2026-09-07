@@ -1,4 +1,5 @@
 import json
+import unicodedata
 
 import pandas as pd
 
@@ -14,6 +15,15 @@ class PortfolioDAO:
     def get_personal_connection(self):
         """Delegates and returns an active SQLite database connection."""
         return self.db.get_personal_connection()
+
+    @staticmethod
+    def _canonical_source_text(value) -> str:
+        return (
+            unicodedata.normalize("NFKD", str(value).strip())
+            .encode("ascii", "ignore")
+            .decode()
+            .casefold()
+        )
 
     def import_b3_transaction(self, record: dict, transfer_classifier) -> bool:
         """Persist source identity and ledger effect together under a SQLite write lock."""
@@ -166,8 +176,8 @@ class PortfolioDAO:
                 (
                     old_source.get(field) == source.get(field)
                     if field == "quantity"
-                    else str(old_source.get(field, "")).strip().casefold()
-                    == str(source.get(field, "")).strip().casefold()
+                    else PortfolioDAO._canonical_source_text(old_source.get(field, ""))
+                    == PortfolioDAO._canonical_source_text(source.get(field, ""))
                 )
                 for field in stable_fields
             ):
@@ -205,11 +215,19 @@ class PortfolioDAO:
             )
             if cost_status == "KNOWN" and record["cost_status"] == "KNOWN" and old_cost_known:
                 continue
-            if all(
-                str(old_source.get(field, "")).strip().casefold()
-                == str(source.get(field, "")).strip().casefold()
-                for field in stable_fields
-            ) and old_source.get("quantity") == source.get("quantity"):
+            if (
+                all(
+                    PortfolioDAO._canonical_source_text(old_source.get(field, ""))
+                    == PortfolioDAO._canonical_source_text(source.get(field, ""))
+                    for field in stable_fields
+                )
+                and old_source.get("quantity") == source.get("quantity")
+                and (
+                    "occurrence" not in old_source
+                    or "occurrence" not in source
+                    or old_source["occurrence"] == source["occurrence"]
+                )
+            ):
                 matches.append((candidate_id, cost_status))
         return matches[0] if len(matches) == 1 else None
 

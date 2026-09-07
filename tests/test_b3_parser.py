@@ -88,7 +88,8 @@ def test_b3_source_identity_ignores_accents_in_text_fields():
 
     transactions, _ = B3ExcelParserAdapter().parse_b3_excel(pd.DataFrame(data))
 
-    assert transactions.loc[0, "source_key"] == transactions.loc[1, "source_key"]
+    assert transactions.loc[0, "source_key"] != transactions.loc[1, "source_key"]
+    assert transactions.loc[0, "source_record"] != transactions.loc[1, "source_record"]
 
 
 def test_b3_split_logic():

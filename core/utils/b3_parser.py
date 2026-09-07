@@ -37,6 +37,7 @@ class B3ExcelParserAdapter:
 
         transactions_list = []
         dividends_list = []
+        occurrence_counts = {}
         total_rows = len(df)
 
         for idx, (_, row) in enumerate(df.iterrows()):
@@ -124,6 +125,17 @@ class B3ExcelParserAdapter:
                         "value": total_value,
                         "institution": str(row.get("Instituição", "")).strip(),
                     }
+                    occurrence_key = (
+                        date,
+                        ticker,
+                        self._canonical_text(movement),
+                        self._canonical_text(entry_exit),
+                        quantity,
+                        self._canonical_text(source["institution"]),
+                        t_type,
+                    )
+                    occurrence_counts[occurrence_key] = occurrence_counts.get(occurrence_key, 0) + 1
+                    source["occurrence"] = occurrence_counts[occurrence_key]
                     source_json = json.dumps(source, ensure_ascii=False, sort_keys=True)
                     source_identity = {
                         **source,

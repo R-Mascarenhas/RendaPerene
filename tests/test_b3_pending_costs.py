@@ -91,6 +91,14 @@ def test_reimport_with_known_cost_preserves_manual_b3_correction():
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
 
 
+def test_reimport_with_accent_variant_reconciles_pending_b3_purchase():
+    assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (1, 0)
+    assert AssetService.process_b3_import(
+        pd.DataFrame([movement(value=2000, price=20, direction="Credito")])
+    ) == (0, 0)
+    assert AssetService.calculate_positions().iloc[0]["quantity"] == 100
+
+
 def test_same_day_known_b3_trades_with_distinct_costs_remain_separate():
     first = movement(value=2000, price=20)
     second = movement(value=3000, price=30)
@@ -100,6 +108,15 @@ def test_same_day_known_b3_trades_with_distinct_costs_remain_separate():
     position = AssetService.calculate_positions().iloc[0]
     assert position["quantity"] == 200
     assert position["invested_amount"] == pytest.approx(5000)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
+
+
+def test_identical_same_day_b3_trades_remain_separate_and_idempotent():
+    frame = pd.DataFrame([movement(value=2000, price=20), movement(value=2000, price=20)])
+
+    assert AssetService.process_b3_import(frame) == (2, 0)
+    assert AssetService.process_b3_import(frame) == (0, 0)
     with closing(PortfolioDAO().get_personal_connection()) as conn:
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
 

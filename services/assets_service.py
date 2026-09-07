@@ -148,14 +148,17 @@ class AssetService:
 
         processed_transactions = 0
         processed_dividends = 0
+        reconciliation_context = set()
 
         # Record standardized transactions
         if not transactions_df.empty:
             transactions_df = transactions_df.sort_values("date", kind="stable")
         for _, row in transactions_df.iterrows():
             if row.get("source_key"):
+                record = row.to_dict()
+                record["_reconciliation_context"] = reconciliation_context
                 success = self._portfolio_repo.import_b3_transaction(
-                    row.to_dict(), self._has_sufficient_cost_history
+                    record, self._has_sufficient_cost_history
                 )
                 if success:
                     self.register_fallback_asset(row["ticker"])

@@ -83,6 +83,7 @@ class PortfolioDAO:
                 reconciled_b3 = self._find_reconcilable_b3_transaction(conn, record)
                 if reconciled_b3 is not None:
                     existing = (reconciled_b3[0],)
+                    record.get("_reconciliation_context", set()).add(reconciled_b3[0])
                 if existing:
                     transaction_id = existing[0]
                     if record["cost_status"] == "PENDING":
@@ -220,6 +221,8 @@ class PortfolioDAO:
         stable_fields = ("date", "ticker", "movement", "direction", "institution")
         matches = []
         for candidate_id, cost_status, unit_price, fees, old_source_json in candidates:
+            if candidate_id in record.get("_reconciliation_context", set()):
+                continue
             old_source = json.loads(old_source_json)
             same_occurrence = (
                 "occurrence" not in old_source
@@ -266,6 +269,9 @@ class PortfolioDAO:
             ]
             if len(exact_correction) == 1:
                 return exact_correction[0]["id"], exact_correction[0]["status"]
+            corrected_cost = [match for match in matches if match["same_corrected_cost"]]
+            if len(corrected_cost) == 1:
+                return corrected_cost[0]["id"], corrected_cost[0]["status"]
             pending_occurrence = [
                 match
                 for match in matches

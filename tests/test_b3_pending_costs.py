@@ -197,6 +197,24 @@ def test_reconciled_corrected_trade_does_not_consume_duplicate_known_trade():
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
 
 
+def test_partial_export_reconciles_corrected_trade_after_occurrence_renumbering():
+    assert AssetService.process_b3_import(pd.DataFrame([movement(), movement()])) == (2, 0)
+    pending = AssetService.get_pending_costs()
+    first_id = int(pending.iloc[0]["id"])
+    second_id = int(pending.iloc[1]["id"])
+    assert AssetService.regularize_cost(first_id, 30)
+    assert AssetService.regularize_cost(second_id, 20)
+
+    partial_export = pd.DataFrame([movement(value=2000, price=20)])
+    assert AssetService.process_b3_import(partial_export) == (0, 0)
+
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
+        assert conn.execute(
+            "SELECT unit_price, cost_status FROM transactions ORDER BY id"
+        ).fetchall() == [(30.0, "CORRECTED"), (20.0, "CORRECTED")]
+
+
 def test_identical_same_day_b3_trades_remain_separate_and_idempotent():
     frame = pd.DataFrame([movement(value=2000, price=20), movement(value=2000, price=20)])
 

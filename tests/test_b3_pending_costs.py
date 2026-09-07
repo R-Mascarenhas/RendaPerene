@@ -162,6 +162,24 @@ def test_reordered_full_export_does_not_reconcile_to_wrong_known_cost():
         ] == pytest.approx(5000)
 
 
+def test_reconciled_trade_does_not_consume_duplicate_known_trade():
+    assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (1, 0)
+    assert AssetService.process_b3_import(
+        pd.DataFrame([movement(value=2000, price=20)])
+    ) == (0, 0)
+
+    duplicate_export = pd.DataFrame(
+        [movement(value=2000, price=20), movement(value=2000, price=20)]
+    )
+    assert AssetService.process_b3_import(duplicate_export) == (1, 0)
+
+    position = AssetService.calculate_positions().iloc[0]
+    assert position["quantity"] == 200
+    assert position["invested_amount"] == pytest.approx(4000)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
+
+
 def test_identical_same_day_b3_trades_remain_separate_and_idempotent():
     frame = pd.DataFrame([movement(value=2000, price=20), movement(value=2000, price=20)])
 

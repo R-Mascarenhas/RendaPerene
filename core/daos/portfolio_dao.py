@@ -100,6 +100,17 @@ class PortfolioDAO:
                                 transaction_id,
                             ),
                         )
+                        if record["cost_status"] == "KNOWN":
+                            conn.execute(
+                                "UPDATE b3_import_records SET source_key=?, source_record=?, event_kind=?, status=? WHERE transaction_id=?",
+                                (
+                                    record["source_key"],
+                                    record["source_record"],
+                                    record["event_kind"],
+                                    "IMPORTED",
+                                    transaction_id,
+                                ),
+                            )
                     elif legacy_custody is None and reconciled_b3 is None:
                         conn.execute(
                             "UPDATE transactions SET cost_status=? WHERE id=?",
@@ -210,9 +221,6 @@ class PortfolioDAO:
         matches = []
         for candidate_id, cost_status, unit_price, fees, old_source_json in candidates:
             old_source = json.loads(old_source_json)
-            old_cost_known = any(
-                float(old_source.get(field) or 0) > 0 for field in ("price", "value")
-            )
             same_occurrence = (
                 "occurrence" not in old_source
                 or "occurrence" not in source
@@ -236,7 +244,6 @@ class PortfolioDAO:
                     {
                         "id": candidate_id,
                         "status": cost_status,
-                        "old_cost_known": old_cost_known,
                         "same_occurrence": same_occurrence,
                         "same_current_cost": same_current_cost,
                         "same_corrected_cost": cost_status == "CORRECTED" and same_current_cost,
@@ -248,7 +255,7 @@ class PortfolioDAO:
                 for match in matches
                 if match["status"] == "KNOWN"
                 and match["same_current_cost"]
-                and (match["same_occurrence"] or not match["old_cost_known"])
+                and match["same_occurrence"]
             ]
             if len(exact_known) == 1:
                 return exact_known[0]["id"], exact_known[0]["status"]

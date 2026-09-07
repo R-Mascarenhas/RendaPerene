@@ -67,7 +67,7 @@ class PortfolioDAO:
                       AND id NOT IN (SELECT transaction_id FROM b3_import_records WHERE transaction_id IS NOT NULL)
                 """
                 if record["cost_status"] == "PENDING":
-                    exact_query += " AND transaction_origin != 'MANUAL'"
+                    exact_query += " AND transaction_origin NOT IN ('MANUAL', 'LEGACY')"
                 existing = conn.execute(exact_query, values).fetchone()
                 legacy_custody = None
                 if record["event_kind"] == "CUSTODY" and record["cost_status"] == "PENDING":
@@ -190,7 +190,7 @@ class PortfolioDAO:
         source = json.loads(record["source_record"])
         candidates = conn.execute(
             """
-            SELECT t.id, t.cost_status, b.source_record
+            SELECT t.id, t.cost_status, t.unit_price, t.fees, b.source_record
             FROM transactions t
             JOIN b3_import_records b ON b.transaction_id = t.id
             WHERE t.date = ? AND t.ticker = ? AND t.transaction_type = ?
@@ -208,7 +208,7 @@ class PortfolioDAO:
         ).fetchall()
         stable_fields = ("date", "ticker", "movement", "direction", "institution")
         matches = []
-        for candidate_id, cost_status, old_source_json in candidates:
+        for candidate_id, cost_status, unit_price, fees, old_source_json in candidates:
             old_source = json.loads(old_source_json)
             old_cost_known = any(
                 float(old_source.get(field) or 0) > 0 for field in ("price", "value")
@@ -228,17 +228,39 @@ class PortfolioDAO:
                 and (not same_known_cost or not same_occurrence)
             ):
                 continue
-            if (
-                all(
-                    PortfolioDAO._canonical_source_text(old_source.get(field, ""))
-                    == PortfolioDAO._canonical_source_text(source.get(field, ""))
-                    for field in stable_fields
+            if all(
+                PortfolioDAO._canonical_source_text(old_source.get(field, ""))
+                == PortfolioDAO._canonical_source_text(source.get(field, ""))
+                for field in stable_fields
+            ) and old_source.get("quantity") == source.get("quantity"):
+                matches.append(
+                    {
+                        "id": candidate_id,
+                        "status": cost_status,
+                        "same_occurrence": same_occurrence,
+                        "same_corrected_cost": cost_status == "CORRECTED"
+                        and abs(unit_price - record["unit_price"]) < 1e-9
+                        and abs(fees - record["fees"]) < 1e-9,
+                    }
                 )
-                and old_source.get("quantity") == source.get("quantity")
-                and same_occurrence
-            ):
-                matches.append((candidate_id, cost_status))
-        return matches[0] if len(matches) == 1 else None
+        if record["cost_status"] == "KNOWN":
+            exact_correction = [match for match in matches if match["same_corrected_cost"]]
+            if len(exact_correction) == 1:
+                return exact_correction[0]["id"], exact_correction[0]["status"]
+            pending_occurrence = [
+                match
+                for match in matches
+                if match["status"] == "PENDING" and match["same_occurrence"]
+            ]
+            if len(pending_occurrence) == 1:
+                return pending_occurrence[0]["id"], pending_occurrence[0]["status"]
+            pending = [match for match in matches if match["status"] == "PENDING"]
+            if len(pending) == 1:
+                return pending[0]["id"], pending[0]["status"]
+        occurrence_matches = [match for match in matches if match["same_occurrence"]]
+        if len(occurrence_matches) == 1:
+            return occurrence_matches[0]["id"], occurrence_matches[0]["status"]
+        return None
 
     @staticmethod
     def _find_legacy_parser_correction(conn, record: dict) -> int | None:

@@ -138,6 +138,23 @@ def test_pending_occurrences_align_with_divergent_known_costs():
     assert position["invested_amount"] == pytest.approx(5000)
 
 
+def test_partial_known_cost_targets_remaining_pending_operation():
+    pending_frame = pd.DataFrame([movement(), movement()])
+    assert AssetService.process_b3_import(pending_frame) == (2, 0)
+    first_pending_id = int(AssetService.get_pending_costs().iloc[0]["id"])
+    assert AssetService.regularize_cost(first_pending_id, 15)
+
+    assert AssetService.process_b3_import(
+        pd.DataFrame([movement(value=3000, price=30)])
+    ) == (0, 0)
+    assert AssetService.get_pending_costs().empty
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
+        assert conn.execute(
+            "SELECT unit_price, cost_status FROM transactions ORDER BY id"
+        ).fetchall() == [(15.0, "CORRECTED"), (30.0, "KNOWN")]
+
+
 def test_identical_same_day_b3_trades_remain_separate_and_idempotent():
     frame = pd.DataFrame([movement(value=2000, price=20), movement(value=2000, price=20)])
 
@@ -431,7 +448,7 @@ def test_schema_migration_is_idempotent_and_preserves_legacy_cost():
     conn.close()
 
 
-def test_import_adopts_matching_legacy_transaction():
+def test_import_does_not_adopt_ambiguous_legacy_transaction():
     with closing(PortfolioDAO().get_personal_connection()) as conn:
         conn.execute(
             "INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees) "
@@ -439,11 +456,13 @@ def test_import_adopts_matching_legacy_transaction():
         )
         conn.commit()
     frame = pd.DataFrame([movement()])
-    assert AssetService.process_b3_import(frame) == (0, 0)
-    assert AssetService.calculate_positions().iloc[0]["quantity"] == 100
+    assert AssetService.process_b3_import(frame) == (1, 0)
+    assert AssetService.calculate_positions().iloc[0]["quantity"] == 200
     assert len(AssetService.get_pending_costs()) == 1
     with closing(PortfolioDAO().get_personal_connection()) as conn:
-        assert conn.execute("SELECT transaction_origin FROM transactions").fetchone()[0] == "B3"
+        assert conn.execute(
+            "SELECT COUNT(*) FROM transactions WHERE transaction_origin='B3'"
+        ).fetchone()[0] == 1
 
 
 def test_regularized_transfer_is_not_a_new_contribution():

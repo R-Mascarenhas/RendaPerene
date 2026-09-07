@@ -515,8 +515,8 @@ class AssetService:
         return self._portfolio_repo.get_dividend_corrections(ticker)
 
     @hybridmethod
-    def calculate_prior_invested_amount(self, start_date) -> float:
-        """Calculates the net sum of all transactions prior to start_date, bounded to >= 0."""
+    def calculate_prior_invested_amount(self, start_date) -> float | None:
+        """Calculates the prior net investment, or None when a prior cost is pending."""
         if start_date is None:
             return 0.0
         df_all_tx = self._portfolio_repo.get_all_transactions()
@@ -526,6 +526,8 @@ class AssetService:
         df_prev_tx = df_all_tx[df_all_tx["date"] < start_date]
         if df_prev_tx.empty:
             return 0.0
+        if "cost_status" in df_prev_tx and df_prev_tx["cost_status"].eq("PENDING").any():
+            return None
 
         from core.constants import FEES, QUANTITY, TRANSACTION_TYPE, UNIT_PRICE
 

@@ -126,18 +126,17 @@ class SimulationService:
         val = (fv - pv * interest_factor) / denominator if denominator > 0 else 0.0
         return max(0.0, val)
 
-    def _get_initial_equity_input(self, config):
+    def _get_initial_equity_input(self, config) -> float | None:
         """Returns the configured baseline, refreshing automatically derived values."""
         if config.get(PLANNING_START_DATE) is None:
             return 0.0
         if config.get(INITIAL_EQUITY_AUTO, False) and hasattr(
             self._portfolio_provider, "calculate_prior_invested_amount"
         ):
-            return float(
-                self._portfolio_provider.calculate_prior_invested_amount(
-                    config[PLANNING_START_DATE]
-                )
+            prior_amount = self._portfolio_provider.calculate_prior_invested_amount(
+                config[PLANNING_START_DATE]
             )
+            return None if prior_amount is None else float(prior_amount)
         return float(config[INITIAL_EQUITY_INPUT])
 
     @hybridmethod
@@ -199,6 +198,8 @@ class SimulationService:
 
         # Get initial equity input from database configuration (only used if planning start date is specified)
         initial_equity_input = self._get_initial_equity_input(config)
+        if initial_equity_input is None:
+            return None
 
         required_monthly_contribution = self.pmt_annuity_due(
             monthly_interest_rate, total_time_months, initial_equity_input, target_equity

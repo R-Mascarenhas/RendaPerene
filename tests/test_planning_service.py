@@ -179,7 +179,7 @@ def test_auto_initial_equity_refreshes_after_pre_start_cost_regularization(mock_
         initial_equity_auto=True,
     )
 
-    assert SimulationService.get_current_simulation()["initial_equity_input"] == 0.0
+    assert SimulationService.get_current_simulation() is None
     pending_id = int(AssetService.get_pending_costs().iloc[0]["id"])
     assert AssetService.regularize_cost(pending_id, 20.0)
 

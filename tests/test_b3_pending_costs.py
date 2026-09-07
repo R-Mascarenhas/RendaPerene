@@ -60,6 +60,7 @@ def test_reimport_with_known_cost_reconciles_pending_b3_purchase():
     assert AssetService.process_b3_import(
         pd.DataFrame([movement(value=2000, price=20)])
     ) == (0, 0)
+    assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (0, 0)
 
     position = AssetService.calculate_positions().iloc[0]
     assert position["quantity"] == 100

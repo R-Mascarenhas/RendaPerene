@@ -4,6 +4,7 @@ import streamlit as st
 
 from core.constants import (
     INITIAL_EQUITY_AUTO,
+    INITIAL_EQUITY_MANUAL_OVERRIDE,
     SESSION_ANNUAL_INTEREST_RATE,
     SESSION_BIRTH_DATE,
     SESSION_DESIRED_INCOME_FIXED,
@@ -157,8 +158,13 @@ class PlanningView:
     def _on_planning_start_date_enabled_change(self):
         """Syncs custom start date toggle back to core state and saves it."""
         enabled = st.session_state[WIDGET_PLANNING_START_DATE_ENABLED]
+        was_enabled = st.session_state.get(SESSION_PLANNING_START_DATE_ENABLED, False)
         st.session_state[SESSION_PLANNING_START_DATE_ENABLED] = enabled
-        if enabled and st.session_state.get(INITIAL_EQUITY_AUTO, False):
+        if (
+            enabled
+            and not st.session_state.get(INITIAL_EQUITY_MANUAL_OVERRIDE, False)
+            and (st.session_state.get(INITIAL_EQUITY_AUTO, False) or not was_enabled)
+        ):
             from services.assets_service import AssetService
 
             start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
@@ -174,7 +180,9 @@ class PlanningView:
         start_date_val = st.session_state[WIDGET_PLANNING_START_DATE]
         st.session_state[SESSION_PLANNING_START_DATE] = start_date_val
 
-        if st.session_state.get(INITIAL_EQUITY_AUTO, False):
+        if not st.session_state.get(INITIAL_EQUITY_MANUAL_OVERRIDE, False) and st.session_state.get(
+            INITIAL_EQUITY_AUTO, False
+        ):
             from services.assets_service import AssetService
 
             new_start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
@@ -192,11 +200,14 @@ class PlanningView:
         if dynamic_key in st.session_state:
             st.session_state[SESSION_INITIAL_EQUITY] = float(st.session_state[dynamic_key])
             st.session_state[INITIAL_EQUITY_AUTO] = False
+            st.session_state[INITIAL_EQUITY_MANUAL_OVERRIDE] = True
         self._save_params()
 
     def _sync_automatic_initial_equity(self, computed_initial: float) -> None:
         """Keeps the saved and displayed automatic baseline aligned with portfolio costs."""
-        if not st.session_state.get(INITIAL_EQUITY_AUTO, False):
+        if st.session_state.get(INITIAL_EQUITY_MANUAL_OVERRIDE, False) or not st.session_state.get(
+            INITIAL_EQUITY_AUTO, False
+        ):
             return
         current_initial = float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0))
         if current_initial != computed_initial:

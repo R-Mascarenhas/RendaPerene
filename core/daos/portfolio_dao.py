@@ -97,7 +97,7 @@ class PortfolioDAO:
                     )
                     transaction_id = cursor.lastrowid
                     created = True
-            if reconciled_legacy or reconciled_b3 is not None:
+            if reconciled_legacy:
                 updated = conn.execute(
                     "UPDATE b3_import_records SET source_key=?, source_record=?, event_kind=?, status=? WHERE transaction_id=?",
                     (
@@ -119,6 +119,16 @@ class PortfolioDAO:
                             "IMPORTED",
                         ),
                     )
+            elif reconciled_b3 is not None:
+                conn.execute(
+                    "UPDATE b3_import_records SET source_record=?, event_kind=?, status=? WHERE transaction_id=?",
+                    (
+                        record["source_record"],
+                        record["event_kind"],
+                        "IMPORTED",
+                        transaction_id,
+                    ),
+                )
             else:
                 conn.execute(
                     "INSERT INTO b3_import_records (source_key, source_record, event_kind, transaction_id, status) VALUES (?, ?, ?, ?, ?)",
@@ -175,7 +185,7 @@ class PortfolioDAO:
             FROM transactions t
             JOIN b3_import_records b ON b.transaction_id = t.id
             WHERE t.date = ? AND t.ticker = ? AND t.transaction_type = ?
-              AND t.quantity = ? AND t.cost_status IN ('PENDING', 'CORRECTED')
+              AND t.quantity = ? AND t.cost_status IN ('PENDING', 'CORRECTED', 'KNOWN')
               AND t.transaction_origin = 'B3' AND b.event_kind = ?
             ORDER BY t.id
             """,

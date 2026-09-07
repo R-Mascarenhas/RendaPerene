@@ -204,9 +204,7 @@ class PortfolioDAO:
         return None
 
     @staticmethod
-    def _find_reconcilable_b3_transaction(
-        conn, record: dict
-    ) -> tuple[int, str, bool] | None:
+    def _find_reconcilable_b3_transaction(conn, record: dict) -> tuple[int, str, bool] | None:
         """Finds a B3 transaction whose stable source fields still match."""
         source = json.loads(record["source_record"])
         candidates = conn.execute(

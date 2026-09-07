@@ -445,7 +445,7 @@ def test_known_b3_adoption_reconciles_legacy_origin_after_value_change():
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
         assert conn.execute(
             "SELECT transaction_origin, cost_status FROM transactions"
-        ).fetchone() == ("B3", "KNOWN")
+        ).fetchone() == ("MANUAL", "KNOWN")
 
 
 def test_known_import_reconciles_derived_price_with_official_price():

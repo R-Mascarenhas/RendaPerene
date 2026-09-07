@@ -756,6 +756,30 @@ def test_annual_investment_and_reinvestment_goal_is_owned_by_goal_service(mock_d
     assert contribution_only_goal["total_goal"] == 12_000
 
 
+def test_annual_goal_is_unavailable_when_planning_simulation_is_pending(mock_db):
+    class UnavailablePlanningProvider:
+        @staticmethod
+        def get_current_simulation():
+            return None
+
+        @staticmethod
+        def get_updated_required_contribution():
+            return 0.0
+
+    service = GoalService(
+        settings_repo=PlanningDAO(),
+        portfolio_provider=StubPortfolioProvider([], ytd_contributions=15_000),
+        planning_provider=UnavailablePlanningProvider(),
+    )
+
+    goal = service.get_annual_investment_goal(2026, ytd_dividends=1_000)
+
+    assert goal["planning_pending"] is True
+    assert goal["contributions_pending"] is True
+    assert goal["progress_percentage"] is None
+    assert goal["remaining_to_invest"] is None
+
+
 def test_dividend_income_goal_freezes_baseline_and_uses_equal_initial_allocation(mock_db):
     portfolio = StubPortfolioProvider(
         [

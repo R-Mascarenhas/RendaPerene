@@ -417,6 +417,11 @@ class PlanningView:
                 start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
                 computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
                 self._sync_automatic_initial_equity(computed_initial)
+                initial_equity_help = (
+                    Formatter.format_currency(computed_initial)
+                    if computed_initial is not None
+                    else "Indisponível até a regularização dos custos pendentes"
+                )
                 st.number_input(
                     "Patrimônio Inicial (R$)",
                     min_value=0.0,
@@ -425,9 +430,7 @@ class PlanningView:
                     key=f"{WIDGET_INITIAL_EQUITY_DYNAMIC_PREFIX}{st.session_state[SESSION_INITIAL_EQUITY]}",
                     step=1000.0,
                     on_change=self._on_initial_equity_change,
-                    help=HELP_INITIAL_EQUITY_INPUT_DYNAMIC.format(
-                        value=Formatter.format_currency(computed_initial)
-                    ),
+                    help=HELP_INITIAL_EQUITY_INPUT_DYNAMIC.format(value=initial_equity_help),
                 )
 
         return current_age, months_age

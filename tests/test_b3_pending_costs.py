@@ -88,6 +88,19 @@ def test_reimport_with_known_cost_preserves_manual_b3_correction():
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
 
 
+def test_same_day_known_b3_trades_with_distinct_costs_remain_separate():
+    first = movement(value=2000, price=20)
+    second = movement(value=3000, price=30)
+
+    assert AssetService.process_b3_import(pd.DataFrame([first, second])) == (2, 0)
+
+    position = AssetService.calculate_positions().iloc[0]
+    assert position["quantity"] == 200
+    assert position["invested_amount"] == pytest.approx(5000)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
+
+
 @pytest.mark.parametrize("total_mode,value", [(False, 20), (True, 2000)])
 def test_regularization_replays_costs_after_sale_and_reimport(total_mode, value, monkeypatch):
     frame = pd.DataFrame([movement(), movement("Venda", "03/01/2024", 40, 1200, 30, "Débito")])
@@ -275,9 +288,9 @@ def test_reimport_reconciles_trade_previously_corrected_by_legacy_parser():
 
     with closing(PortfolioDAO().get_personal_connection()) as conn:
         transaction = conn.execute(
-            "SELECT unit_price, cost_status FROM transactions WHERE ticker='CXSE3'"
+            "SELECT unit_price, cost_status, transaction_origin FROM transactions WHERE ticker='CXSE3'"
         ).fetchone()
-        assert transaction == (9.67, "PENDING")
+        assert transaction == (9.67, "PENDING", "B3")
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
         assert conn.execute("SELECT event_kind FROM b3_import_records").fetchone()[0] == "TRADE"
 

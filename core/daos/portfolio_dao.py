@@ -98,6 +98,10 @@ class PortfolioDAO:
                     transaction_id = cursor.lastrowid
                     created = True
             if reconciled_legacy:
+                conn.execute(
+                    "UPDATE transactions SET transaction_origin='B3' WHERE id=?",
+                    (transaction_id,),
+                )
                 updated = conn.execute(
                     "UPDATE b3_import_records SET source_key=?, source_record=?, event_kind=?, status=? WHERE transaction_id=?",
                     (
@@ -200,6 +204,8 @@ class PortfolioDAO:
         stable_fields = ("date", "ticker", "movement", "direction", "institution")
         matches = []
         for candidate_id, cost_status, old_source_json in candidates:
+            if cost_status == "KNOWN" and record["cost_status"] == "KNOWN":
+                continue
             old_source = json.loads(old_source_json)
             if all(
                 str(old_source.get(field, "")).strip().casefold()

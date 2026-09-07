@@ -70,6 +70,23 @@ def test_reimport_with_known_cost_reconciles_pending_b3_purchase():
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
 
 
+def test_reimport_with_known_cost_preserves_manual_b3_correction():
+    assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (1, 0)
+    pending_id = int(AssetService.get_pending_costs().iloc[0]["id"])
+    assert AssetService.regularize_cost(pending_id, 15)
+
+    assert AssetService.process_b3_import(
+        pd.DataFrame([movement(value=2000, price=20)])
+    ) == (0, 0)
+
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        transaction = conn.execute(
+            "SELECT unit_price, cost_status FROM transactions WHERE id=?", (pending_id,)
+        ).fetchone()
+        assert transaction == (15.0, "CORRECTED")
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+
+
 @pytest.mark.parametrize("total_mode,value", [(False, 20), (True, 2000)])
 def test_regularization_replays_costs_after_sale_and_reimport(total_mode, value, monkeypatch):
     frame = pd.DataFrame([movement(), movement("Venda", "03/01/2024", 40, 1200, 30, "Débito")])

@@ -547,6 +547,7 @@ def test_planning_view_start_date_change_callback(mock_db, monkeypatch):
     calculates prior invested amount, and runs without a NameError.
     """
     from core.constants import (
+        INITIAL_EQUITY_AUTO,
         SESSION_BIRTH_DATE,
         SESSION_RETIREMENT_AGE,
         SESSION_DESIRED_INCOME_MW,
@@ -573,6 +574,7 @@ def test_planning_view_start_date_change_callback(mock_db, monkeypatch):
         SESSION_PLANNING_START_DATE: datetime.date(2024, 1, 1),
         SESSION_PLANNING_START_DATE_ENABLED: True,
         WIDGET_PLANNING_START_DATE: datetime.date(2024, 1, 1),
+        INITIAL_EQUITY_AUTO: True,
     }
 
     monkeypatch.setattr(st, "session_state", mock_session)
@@ -590,6 +592,48 @@ def test_planning_view_start_date_change_callback(mock_db, monkeypatch):
     # Assertions
     assert st.session_state[SESSION_PLANNING_START_DATE] == datetime.date(2024, 1, 1)
     assert st.session_state[SESSION_INITIAL_EQUITY] == 3000.0
+
+
+def test_planning_view_start_date_change_preserves_explicit_zero_initial_equity(
+    mock_db, monkeypatch
+):
+    from core.constants import (
+        INITIAL_EQUITY_AUTO,
+        SESSION_BIRTH_DATE,
+        SESSION_DESIRED_INCOME_FIXED,
+        SESSION_DESIRED_INCOME_MW,
+        SESSION_INITIAL_EQUITY,
+        SESSION_MW_VALUE,
+        SESSION_PLANNING_START_DATE,
+        SESSION_PLANNING_START_DATE_ENABLED,
+        SESSION_RETIREMENT_AGE,
+        SESSION_ANNUAL_INTEREST_RATE,
+        SESSION_DESIRED_INCOME_TYPE,
+        WIDGET_PLANNING_START_DATE,
+    )
+
+    mock_session = {
+        SESSION_BIRTH_DATE: datetime.date(1990, 1, 1),
+        SESSION_RETIREMENT_AGE: 65,
+        SESSION_DESIRED_INCOME_MW: 10.0,
+        SESSION_ANNUAL_INTEREST_RATE: 6.0,
+        SESSION_MW_VALUE: 1412.00,
+        SESSION_DESIRED_INCOME_TYPE: "MULTIPLIER",
+        SESSION_DESIRED_INCOME_FIXED: 10000.0,
+        SESSION_INITIAL_EQUITY: 0.0,
+        INITIAL_EQUITY_AUTO: False,
+        SESSION_PLANNING_START_DATE: datetime.date(2024, 1, 1),
+        SESSION_PLANNING_START_DATE_ENABLED: True,
+        WIDGET_PLANNING_START_DATE: datetime.date(2024, 1, 1),
+    }
+    monkeypatch.setattr(st, "session_state", mock_session)
+    monkeypatch.setattr(st, "rerun", lambda: None)
+    AssetService.add_transaction("BBAS3", "2021-01-01", "BUY", 100, 30.00)
+
+    PlanningView()._on_planning_start_date_change()
+
+    assert st.session_state[SESSION_INITIAL_EQUITY] == 0.0
+    assert st.session_state[INITIAL_EQUITY_AUTO] is False
 
 
 def test_planning_view_synchronizes_refreshed_automatic_initial_equity(monkeypatch):

@@ -158,16 +158,14 @@ class PlanningView:
         """Syncs custom start date toggle back to core state and saves it."""
         enabled = st.session_state[WIDGET_PLANNING_START_DATE_ENABLED]
         st.session_state[SESSION_PLANNING_START_DATE_ENABLED] = enabled
-        if enabled:
-            current_initial = float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0))
-            if current_initial == 0.0 or st.session_state.get(INITIAL_EQUITY_AUTO, False):
-                from services.assets_service import AssetService
+        if enabled and st.session_state.get(INITIAL_EQUITY_AUTO, False):
+            from services.assets_service import AssetService
 
-                start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
-                start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
-                computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
-                st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
-                st.session_state[INITIAL_EQUITY_AUTO] = True
+            start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
+            start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
+            computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
+            st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
+            st.session_state[INITIAL_EQUITY_AUTO] = True
         self._save_params()
         st.rerun()
 
@@ -176,8 +174,7 @@ class PlanningView:
         start_date_val = st.session_state[WIDGET_PLANNING_START_DATE]
         st.session_state[SESSION_PLANNING_START_DATE] = start_date_val
 
-        current_initial = float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0))
-        if current_initial == 0.0 or st.session_state.get(INITIAL_EQUITY_AUTO, False):
+        if st.session_state.get(INITIAL_EQUITY_AUTO, False):
             from services.assets_service import AssetService
 
             new_start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None

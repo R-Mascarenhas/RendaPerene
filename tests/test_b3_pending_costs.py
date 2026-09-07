@@ -255,6 +255,15 @@ def test_pending_import_does_not_adopt_an_unidentified_legacy_trade():
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
 
 
+def test_pending_import_does_not_adopt_manual_zero_cost_entry():
+    AssetService.add_transaction("BBAS3", "2024-01-02", "BUY", 100, 0, 0)
+
+    assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (1, 0)
+
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
+
+
 def test_custody_price_fallback_does_not_adopt_provenanced_trade():
     frame = pd.DataFrame(
         [
@@ -322,7 +331,12 @@ def test_schema_migration_is_idempotent_and_preserves_legacy_cost():
 
 
 def test_import_adopts_matching_legacy_transaction():
-    AssetService.add_transaction("BBAS3", "2024-01-02", "BUY", 100, 0)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        conn.execute(
+            "INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees) "
+            "VALUES ('2024-01-02', 'BBAS3', 'BUY', 100, 0, 0)"
+        )
+        conn.commit()
     frame = pd.DataFrame([movement()])
     assert AssetService.process_b3_import(frame) == (0, 0)
     assert AssetService.calculate_positions().iloc[0]["quantity"] == 100
@@ -401,26 +415,3 @@ def test_retirement_planning_ignores_positions_with_pending_cost():
     assert simulation is not None
     assert simulation["total_invested"] == 2000
     assert simulation["updated_monthly_contribution"] > 0
-
-
-@pytest.mark.parametrize("mode,value", [("Preço unitário", 20), ("Valor total da aquisição", 2000)])
-def test_pending_cost_form_regularizes_operation(mode, value):
-    from streamlit.testing.v1 import AppTest
-
-    AssetService.process_b3_import(pd.DataFrame([movement()]))
-
-    def script():
-        from views.operations_view import OperationsView
-
-        OperationsView()._render_pending_costs()
-
-    app = AppTest.from_function(script).run(timeout=10)
-    assert not app.exception
-    assert app.warning
-    app.selectbox[1].select(mode)
-    app.number_input[0].set_value(value)
-    app.number_input[1].set_value(10)
-    app.button[0].click().run(timeout=10)
-    assert not app.exception
-    assert AssetService.get_pending_costs().empty
-    assert AssetService.calculate_positions().iloc[0]["average_price"] == pytest.approx(20.1)

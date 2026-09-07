@@ -49,10 +49,15 @@ class PortfolioDAO:
                         "fees",
                     )
                 )
-                existing = conn.execute(
-                    "SELECT id FROM transactions WHERE date=? AND ticker=? AND transaction_type=? AND quantity=? AND unit_price=? AND fees=? AND id NOT IN (SELECT transaction_id FROM b3_import_records WHERE transaction_id IS NOT NULL)",
-                    values,
-                ).fetchone()
+                exact_query = """
+                    SELECT id FROM transactions
+                    WHERE date=? AND ticker=? AND transaction_type=? AND quantity=?
+                      AND unit_price=? AND fees=?
+                      AND id NOT IN (SELECT transaction_id FROM b3_import_records WHERE transaction_id IS NOT NULL)
+                """
+                if record["cost_status"] == "PENDING":
+                    exact_query += " AND transaction_origin != 'MANUAL'"
+                existing = conn.execute(exact_query, values).fetchone()
                 legacy_custody = None
                 if record["event_kind"] == "CUSTODY" and record["cost_status"] == "PENDING":
                     legacy_custody = self._find_legacy_custody_transaction(conn, record)

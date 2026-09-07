@@ -112,6 +112,18 @@ def test_same_day_known_b3_trades_with_distinct_costs_remain_separate():
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
 
 
+def test_partial_export_reuses_known_trade_identity():
+    full_frame = pd.DataFrame(
+        [movement(value=2000, price=20), movement(value=3000, price=30)]
+    )
+    partial_frame = pd.DataFrame([movement(value=3000, price=30)])
+
+    assert AssetService.process_b3_import(full_frame) == (2, 0)
+    assert AssetService.process_b3_import(partial_frame) == (0, 0)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
+
+
 def test_identical_same_day_b3_trades_remain_separate_and_idempotent():
     frame = pd.DataFrame([movement(value=2000, price=20), movement(value=2000, price=20)])
 

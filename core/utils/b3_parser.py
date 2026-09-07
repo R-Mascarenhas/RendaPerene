@@ -133,6 +133,7 @@ class B3ExcelParserAdapter:
                         quantity,
                         self._canonical_text(source["institution"]),
                         t_type,
+                        (price, total_value) if not pending else (0.0, 0.0),
                     )
                     occurrence_counts[occurrence_key] = occurrence_counts.get(occurrence_key, 0) + 1
                     source["occurrence"] = occurrence_counts[occurrence_key]

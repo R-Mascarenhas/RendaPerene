@@ -187,6 +187,12 @@ class ShareQuantityGoalService:
             for ticker in tickers
         }
 
+    @staticmethod
+    def _is_corporate_action(transaction: pd.Series) -> bool:
+        """Treat explicit corporate events and unprovenanced zero-cost buys as actions."""
+        event_kind = transaction.get("event_kind")
+        return pd.isna(event_kind) or event_kind == "CORPORATE"
+
     def _get_corporate_action_adjusted_progress(
         self, goal: dict, year_start_date: str, target_action_cutoff: str | None = None
     ) -> tuple[float, float, float] | None:
@@ -203,7 +209,7 @@ class ShareQuantityGoalService:
                 or (
                     row[TRANSACTION_TYPE] == "BUY"
                     and row.get("cost_status") != "PENDING"
-                    and row.get("event_kind", "CORPORATE") == "CORPORATE"
+                    and self._is_corporate_action(row)
                     and float(row[UNIT_PRICE]) <= 0
                 )
                 else 1
@@ -228,7 +234,7 @@ class ShareQuantityGoalService:
                 continue
             if transaction_type == "BUY":
                 unit_price = float(transaction[UNIT_PRICE])
-                is_corporate_action = transaction.get("event_kind", "CORPORATE") == "CORPORATE"
+                is_corporate_action = self._is_corporate_action(transaction)
                 if (
                     transaction.get("cost_status") == "PENDING"
                     or (math.isfinite(unit_price) and unit_price > 0)

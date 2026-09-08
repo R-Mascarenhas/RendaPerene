@@ -354,6 +354,35 @@ def test_zero_cost_deposit_does_not_rebase_accumulation_goal(mock_db):
     assert result == (100.0, 150.0, 50.0)
 
 
+def test_manual_zero_cost_buy_is_rebased_as_corporate_action(mock_db):
+    goal = {
+        "ticker": "BBAS3",
+        "start_quantity": 100,
+        "target_quantity": 150,
+    }
+    portfolio = StubPortfolioProvider(
+        [{"ticker": "BBAS3", "quantity": 200}],
+        transactions={
+            "BBAS3": [
+                {
+                    "date": "2026-01-02",
+                    "transaction_type": "BUY",
+                    "quantity": 100,
+                    "unit_price": 0.0,
+                    "fees": 0.0,
+                    "cost_status": "KNOWN",
+                    "event_kind": None,
+                }
+            ]
+        },
+    )
+    service = ShareQuantityGoalService(portfolio_provider=portfolio)
+
+    result = service._get_corporate_action_adjusted_progress(goal, "2026-01-01")
+
+    assert result == (200.0, 300.0, 0.0)
+
+
 def test_pending_cost_acquisitions_count_as_accumulation_progress(mock_db):
     repository = PlanningDAO()
     repository.upsert_accumulation_goal(

@@ -35,8 +35,42 @@ def test_acquisition_without_value_remains_visible_and_pending(missing):
     assert position["quantity"] == 100
     assert position["cost_pending"]
     assert pd.isna(position["average_price"])
-    assert pd.isna(position["invested_amount"])
+    assert position["invested_amount"] == 0.0
     assert len(AssetService.get_pending_costs()) == 1
+
+
+def test_deposit_without_value_is_a_zero_cost_acquisition():
+    assert AssetService.process_b3_import(pd.DataFrame([movement("Depósito", quantity=6)])) == (
+        1,
+        0,
+    )
+
+    position = AssetService.calculate_positions().iloc[0]
+    assert position["quantity"] == 6
+    assert position["invested_amount"] == 0.0
+    assert not position["cost_pending"]
+    assert AssetService.get_pending_costs().empty
+
+
+def test_known_invested_capital_remains_visible_with_pending_acquisition(monkeypatch):
+    AssetService.add_transaction("BBAS3", "2026-01-02", "BUY", 100, 20)
+    AssetService.process_b3_import(pd.DataFrame([movement("Aquisição", quantity=6)]))
+
+    position = AssetService.calculate_positions().iloc[0]
+    assert position["quantity"] == 106
+    assert position["invested_amount"] == pytest.approx(2000)
+    assert position["cost_pending"]
+
+    api = AssetService.get_default()._market_data_api
+    monkeypatch.setattr(api, "get_batch_quotes", lambda tickers: {"BBAS3": 30})
+    positions, metrics = AssetService.get_portfolio_summary_metrics(
+        AssetService.calculate_positions()
+    )
+    assert metrics["total_invested"] == pytest.approx(2000)
+    display, _ = AssetService.get_detailed_holdings_dataframe(positions, 6)
+    from core.strings import DISPLAY_INVESTED
+
+    assert display.iloc[0][DISPLAY_INVESTED] != "Custo pendente"
 
 
 def test_pending_trade_withholds_contribution_totals():
@@ -619,7 +653,7 @@ def test_pending_cost_hides_portfolio_profit_and_holdings_metrics(monkeypatch):
     from core.strings import DISPLAY_AVG_PRICE, DISPLAY_INVESTED, DISPLAY_RETURN_PCT
 
     assert display.iloc[0][DISPLAY_AVG_PRICE] == "Custo pendente"
-    assert display.iloc[0][DISPLAY_INVESTED] == "Custo pendente"
+    assert display.iloc[0][DISPLAY_INVESTED] == "R$ 0,00"
     assert display.iloc[0][DISPLAY_RETURN_PCT] == "Custo pendente"
 
 

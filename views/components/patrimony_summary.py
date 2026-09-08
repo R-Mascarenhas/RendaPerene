@@ -42,8 +42,10 @@ class PatrimonySummaryWidget:
         )
         m2.metric(
             LABEL_CAPITAL_INVESTED,
-            "Custo pendente" if pending else Formatter.format_currency(metrics["total_invested"]),
-            HELP_PLANNING_PARAM,
+            Formatter.format_currency(metrics["total_invested"]),
+            "Valor conhecido até o momento. Há custos pendentes para regularização."
+            if pending
+            else HELP_PLANNING_PARAM,
         )
         m3.metric(
             LABEL_DIVIDENDS_TOTAL,

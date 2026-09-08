@@ -269,9 +269,9 @@ def test_discrepancies_parser():
     # 3. BBAS3 assertions
     assert "BBAS3" in df_positions.index
     assert df_positions.loc["BBAS3", "quantity"] == 106
-    # Deposit has unknown cost; the known 100 shares cover the subsequent transfer.
-    assert df_positions.loc["BBAS3", "cost_pending"]
-    assert pd.isna(df_positions.loc["BBAS3", "average_price"])
+    # The deposit is a zero-cost acquisition; the known 100 shares cover the subsequent transfer.
+    assert not df_positions.loc["BBAS3", "cost_pending"]
+    assert df_positions.loc["BBAS3", "invested_amount"] == 2625.0
 
     # 4. IRBR3 assertions
     assert "IRBR3" in df_positions.index

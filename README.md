@@ -75,9 +75,11 @@ O acesso à rede é necessário para obter dados atualizados:
 
 A importação da B3 é iniciada pelo usuário: baixe a planilha oficial no Portal do Investidor da B3 e envie-a pela aplicação. Bancos locais e planilhas pessoais são ignorados pelo Git; não faça commit desses arquivos.
 
-Entradas de aquisição, subscrição ou depósito com valor financeiro zero ou ausente ficam com
-**custo pendente**. A quantidade permanece na carteira, mas preço médio, custo e rentabilidade
-ficam indisponíveis até a regularização em **Ativos → Operações → Custos pendentes da B3**.
+Entradas de aquisição ou subscrição com valor financeiro zero ou ausente ficam com
+**custo pendente**. A quantidade permanece na carteira e o capital de custo já conhecido
+continua visível, mas preço médio e rentabilidade ficam indisponíveis até a regularização em
+**Ativos → Operações → Custos pendentes da B3**. Entradas de **Depósito** representam ações
+recebidas e são registradas como compras a R$ 0,00, sem custo pendente.
 Informe o preço unitário ou o valor total da aquisição, sem taxas, e acrescente as taxas
 opcionais no campo separado. Consulte o comprovante da oferta, extrato financeiro,
 nota/comprovante de liquidação ou declaração de IR. A aplicação não infere custos por

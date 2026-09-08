@@ -71,6 +71,7 @@ class B3ExcelParserAdapter:
                 )
                 is_credit = entry_exit in ("credito", "crédito")
                 is_custody = "transfer" in normalized and "liquidacao" not in normalized
+                is_zero_cost_deposit = "deposito" in normalized
 
                 transaction_type = None
                 if "Compra" in movement or "aquisicao" in normalized or "subscricao" in normalized:
@@ -106,7 +107,11 @@ class B3ExcelParserAdapter:
                     corporate = transaction_type in ("SPLIT", "GROUP")
                     pending = not corporate and (
                         transaction_type == "TRANSFER_IN"
-                        or (transaction_type == "BUY" and total_value <= 0)
+                        or (
+                            transaction_type == "BUY"
+                            and total_value <= 0
+                            and not is_zero_cost_deposit
+                        )
                     )
                     t_type = (
                         "BUY" if transaction_type in ("SPLIT", "TRANSFER_IN") else transaction_type

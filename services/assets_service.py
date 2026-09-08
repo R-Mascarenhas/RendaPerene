@@ -588,7 +588,11 @@ class AssetService:
             fees = row[FEES]
 
             if ticker not in portfolio_state:
-                portfolio_state[ticker] = {QUANTITY: 0, AVERAGE_PRICE: 0.0}
+                portfolio_state[ticker] = {
+                    QUANTITY: 0,
+                    AVERAGE_PRICE: 0.0,
+                    INVESTED_AMOUNT: 0.0,
+                }
 
             current_state = portfolio_state[ticker]
             old_qty = current_state[QUANTITY]
@@ -596,20 +600,32 @@ class AssetService:
 
             if txn_type == "BUY":
                 new_qty = old_qty + qty
-                new_avg_price = (
-                    (old_qty * old_avg_price + qty * price + fees) / new_qty if new_qty > 0 else 0.0
-                )
-                portfolio_state[ticker] = {QUANTITY: new_qty, AVERAGE_PRICE: new_avg_price}
+                if row.get("cost_status") == "PENDING":
+                    new_avg_price = old_avg_price
+                    new_invested_amount = current_state[INVESTED_AMOUNT]
+                else:
+                    new_invested_amount = current_state[INVESTED_AMOUNT] + qty * price + fees
+                    new_avg_price = new_invested_amount / new_qty if new_qty > 0 else 0.0
+                portfolio_state[ticker] = {
+                    QUANTITY: new_qty,
+                    AVERAGE_PRICE: new_avg_price,
+                    INVESTED_AMOUNT: new_invested_amount,
+                }
             elif txn_type == "SELL":
                 new_qty = max(0, old_qty - qty)
                 portfolio_state[ticker] = {
                     QUANTITY: new_qty,
                     AVERAGE_PRICE: old_avg_price if new_qty > 0 else 0.0,
+                    INVESTED_AMOUNT: max(0.0, current_state[INVESTED_AMOUNT] - qty * old_avg_price),
                 }
             elif txn_type == "GROUP":
                 new_qty = qty
-                new_avg_price = (old_qty * old_avg_price) / qty if qty > 0 else 0.0
-                portfolio_state[ticker] = {QUANTITY: new_qty, AVERAGE_PRICE: new_avg_price}
+                new_avg_price = current_state[INVESTED_AMOUNT] / qty if qty > 0 else 0.0
+                portfolio_state[ticker] = {
+                    QUANTITY: new_qty,
+                    AVERAGE_PRICE: new_avg_price,
+                    INVESTED_AMOUNT: current_state[INVESTED_AMOUNT],
+                }
 
             pending = (
                 current_state.get("cost_pending", False) or row.get("cost_status") == "PENDING"
@@ -664,9 +680,7 @@ class AssetService:
                         AVERAGE_PRICE: float("nan")
                         if info.get("cost_pending")
                         else info[AVERAGE_PRICE],
-                        INVESTED_AMOUNT: float("nan")
-                        if info.get("cost_pending")
-                        else info[QUANTITY] * info[AVERAGE_PRICE],
+                        INVESTED_AMOUNT: info[INVESTED_AMOUNT],
                         TOTAL_DIVIDENDS: total_dividends,
                         L12M_DIVIDENDS: l12m_dividends,
                         YTD_DIVIDENDS: ytd_dividends,
@@ -1081,7 +1095,6 @@ class AssetService:
             for column in (
                 DISPLAY_AVG_PRICE,
                 DISPLAY_ADJ_PRICE,
-                DISPLAY_INVESTED,
                 DISPLAY_RETURN_PCT,
                 DISPLAY_RESULT,
                 DISPLAY_YOC,

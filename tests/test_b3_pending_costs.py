@@ -164,9 +164,7 @@ def test_reordered_full_export_does_not_reconcile_to_wrong_known_cost():
 
 def test_reconciled_trade_does_not_consume_duplicate_known_trade():
     assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (1, 0)
-    assert AssetService.process_b3_import(
-        pd.DataFrame([movement(value=2000, price=20)])
-    ) == (0, 0)
+    assert AssetService.process_b3_import(pd.DataFrame([movement(value=2000, price=20)])) == (0, 0)
 
     duplicate_export = pd.DataFrame(
         [movement(value=2000, price=20), movement(value=2000, price=20)]
@@ -574,6 +572,23 @@ def test_regularized_transfer_is_not_a_new_contribution():
     )
     assert AssetService.process_b3_import(frame) == (0, 0)
     assert AssetService.calculate_positions().iloc[0]["invested_amount"] == pytest.approx(2010)
+
+
+def test_regularized_transfer_does_not_consume_duplicate_transfer():
+    frame = pd.DataFrame([movement("Transferência", value=2000, price=20)])
+    assert AssetService.process_b3_import(frame) == (1, 0)
+    identifier = int(AssetService.get_pending_costs().iloc[0]["id"])
+    assert AssetService.regularize_cost(identifier, 20)
+
+    duplicate_export = pd.DataFrame(
+        [
+            movement("Transferência", value=2000, price=20),
+            movement("Transferência", value=2000, price=20),
+        ]
+    )
+    assert AssetService.process_b3_import(duplicate_export) == (1, 0)
+    assert AssetService.calculate_positions().iloc[0]["quantity"] == 200
+    assert len(AssetService.get_pending_costs()) == 1
 
 
 def test_corporate_event_does_not_turn_unknown_cost_into_known_cost():

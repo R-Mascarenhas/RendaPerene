@@ -30,9 +30,13 @@ class PortfolioDAO:
         conn = self.get_personal_connection()
         try:
             conn.execute("BEGIN IMMEDIATE")
-            if conn.execute(
-                "SELECT 1 FROM b3_import_records WHERE source_key = ?", (record["source_key"],)
-            ).fetchone():
+            existing_source = conn.execute(
+                "SELECT transaction_id FROM b3_import_records WHERE source_key = ?",
+                (record["source_key"],),
+            ).fetchone()
+            if existing_source:
+                if existing_source[0] is not None:
+                    record.get("_reconciliation_context", set()).add(existing_source[0])
                 return False
             ignored = record["transaction_type"] == "TRANSFER_OUT" or record.get(
                 "matched_custody_transfer", False
@@ -189,6 +193,8 @@ class PortfolioDAO:
             (record["date"], record["ticker"], record["quantity"]),
         ).fetchall()
         for candidate_id, old_source_json in candidates:
+            if candidate_id in record.get("_reconciliation_context", set()):
+                continue
             old_source = json.loads(old_source_json)
             stable_fields = ("date", "ticker", "quantity", "direction", "institution")
             if all(

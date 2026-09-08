@@ -65,6 +65,20 @@ def test_zero_cost_deposit_covers_later_custody_transfer():
     assert AssetService.get_pending_costs().empty
 
 
+def test_zero_cost_deposit_covers_transfer_after_pending_acquisition():
+    frame = pd.DataFrame(
+        [
+            movement("Aquisição", date="01/01/2024", quantity=6),
+            movement("Depósito", date="02/01/2024", quantity=6),
+            movement("Transferência", date="03/01/2024", quantity=6),
+        ]
+    )
+
+    assert AssetService.process_b3_import(frame) == (2, 0)
+    assert AssetService.calculate_positions().iloc[0]["quantity"] == 12
+    assert len(AssetService.get_pending_costs()) == 1
+
+
 def test_known_invested_capital_remains_visible_with_pending_acquisition(monkeypatch):
     AssetService.add_transaction("BBAS3", "2026-01-02", "BUY", 100, 20)
     AssetService.process_b3_import(pd.DataFrame([movement("Aquisição", quantity=6)]))

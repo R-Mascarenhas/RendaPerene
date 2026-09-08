@@ -199,10 +199,19 @@ class AssetService:
             qty = row["quantity"]
             if row["transaction_type"] == "BUY":
                 if row.get("cost_status") != "PENDING":
+                    is_zero_cost_deposit = (
+                        row.get("event_kind") == "TRADE" and row["unit_price"] == 0
+                    )
                     quantity_factor = known_quantity / quantity if quantity > 0 else 1.0
-                    known_quantity += qty * quantity_factor if row["unit_price"] == 0 else qty
-                    if row.get("event_kind") == "TRADE" and row["unit_price"] == 0:
-                        known_zero_cost_quantity += qty * quantity_factor
+                    known_quantity += (
+                        qty
+                        if is_zero_cost_deposit
+                        else qty * quantity_factor
+                        if row["unit_price"] == 0
+                        else qty
+                    )
+                    if is_zero_cost_deposit:
+                        known_zero_cost_quantity += qty
                     cost += qty * row["unit_price"] + row["fees"]
                 quantity += qty
             elif row["transaction_type"] == "SELL":

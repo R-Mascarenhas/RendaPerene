@@ -296,13 +296,23 @@ class PlanningDAO:
         """)
 
         columns = {row[1] for row in cursor.execute("PRAGMA table_info(planning_configuration)")}
+        manual_override_added = False
         if INITIAL_EQUITY_AUTO not in columns:
             cursor.execute(
                 f"ALTER TABLE planning_configuration ADD COLUMN {INITIAL_EQUITY_AUTO} INTEGER NOT NULL DEFAULT 0"
             )
         if INITIAL_EQUITY_MANUAL_OVERRIDE not in columns:
+            manual_override_added = True
             cursor.execute(
                 f"ALTER TABLE planning_configuration ADD COLUMN {INITIAL_EQUITY_MANUAL_OVERRIDE} INTEGER NOT NULL DEFAULT 0"
+            )
+        if manual_override_added:
+            cursor.execute(
+                f"""
+                UPDATE planning_configuration
+                SET {INITIAL_EQUITY_MANUAL_OVERRIDE} = 1
+                WHERE {INITIAL_EQUITY_INPUT} <> 0
+                """
             )
 
         cursor.execute("""

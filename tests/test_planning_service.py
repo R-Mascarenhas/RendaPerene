@@ -1,6 +1,8 @@
 import pytest
 import datetime
+import sqlite3
 import pandas as pd
+from core.daos.planning_dao import PlanningDAO
 from services.assets_service import AssetService
 from services.planning_service import SimulationService
 
@@ -155,6 +157,45 @@ def test_planning_initial_equity_integration(mock_db):
     assert sim_override is not None
     assert sim_override["initial_equity_input"] == 10000.0
     assert sim_override["total_invested"] == 12000.0  # 2000 + 10000
+
+
+def test_planning_migration_preserves_legacy_nonzero_equity_as_manual():
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        """
+        CREATE TABLE planning_configuration (
+            id INTEGER PRIMARY KEY DEFAULT 1,
+            birth_date TEXT NOT NULL,
+            retirement_age INTEGER NOT NULL,
+            desired_income_mw REAL NOT NULL,
+            annual_interest_rate REAL NOT NULL,
+            mw_value REAL NOT NULL,
+            initial_equity_input REAL NOT NULL,
+            desired_income_type TEXT,
+            desired_income_fixed REAL,
+            ceiling_model_selection TEXT,
+            bazin_target_yield REAL,
+            bazin_target_spread REAL
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO planning_configuration VALUES
+        (1, '1990-01-01', 65, 10, 6, 1412, 5000, 'MULTIPLIER',
+         10000, 'Bazin Clássico', 6, 3)
+        """
+    )
+
+    PlanningDAO().initialize_tables(conn)
+
+    assert conn.execute(
+        """
+        SELECT initial_equity_auto, initial_equity_manual_override
+        FROM planning_configuration
+        """
+    ).fetchone() == (0, 1)
+    conn.close()
 
 
 def test_auto_initial_equity_refreshes_after_pre_start_cost_regularization(mock_db):

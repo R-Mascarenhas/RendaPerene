@@ -302,13 +302,9 @@ class PortfolioDAO:
                     known_price_population[0]["status"],
                     True,
                 )
-            known_occurrence = [
-                match
-                for match in matches
-                if match["status"] == "KNOWN" and match["same_occurrence"]
-            ]
-            if len(known_occurrence) == 1 and record.get("_import_occurrence_count", 1) == 1:
-                return known_occurrence[0]["id"], known_occurrence[0]["status"], True
+            # A changed known cost has no stable identity in a partial export:
+            # occurrence numbers are recomputed for each import. Keep the new
+            # trade instead of overwriting an existing one without evidence.
             exact_correction = [
                 match
                 for match in matches

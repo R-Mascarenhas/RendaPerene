@@ -548,21 +548,18 @@ def test_known_import_reconciles_derived_price_with_official_price():
         )
 
 
-def test_known_import_reconciles_changed_known_cost():
+def test_partial_known_import_with_changed_cost_preserves_both_trades():
     assert AssetService.process_b3_import(pd.DataFrame([movement(value=2000, price=20)])) == (
         1,
         0,
     )
-    assert AssetService.process_b3_import(pd.DataFrame([movement(value=2100, price=21)])) == (
-        0,
-        0,
-    )
+    assert AssetService.process_b3_import(pd.DataFrame([movement(value=2100, price=21)])) == (1, 0)
 
     position = AssetService.calculate_positions().iloc[0]
-    assert position["quantity"] == 100
-    assert position["invested_amount"] == pytest.approx(2100)
+    assert position["quantity"] == 200
+    assert position["invested_amount"] == pytest.approx(4100)
     with closing(PortfolioDAO().get_personal_connection()) as conn:
-        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
 
 
 def test_pending_import_does_not_adopt_manual_zero_cost_entry():

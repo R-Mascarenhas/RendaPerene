@@ -780,6 +780,20 @@ def test_annual_goal_is_unavailable_when_planning_simulation_is_pending(mock_db)
     assert goal["remaining_to_invest"] is None
 
 
+def test_annual_goal_is_available_without_planning_configuration(mock_db):
+    service = GoalService(
+        settings_repo=PlanningDAO(),
+        portfolio_provider=StubPortfolioProvider([], ytd_contributions=15_000),
+        planning_provider=StubPlanningProvider(),
+    )
+
+    goal = service.get_annual_investment_goal(2026, ytd_dividends=1_000)
+
+    assert goal["planning_pending"] is False
+    assert goal["contributions_pending"] is False
+    assert goal["annual_salary_goal"] == 12_000
+
+
 def test_dividend_income_goal_freezes_baseline_and_uses_equal_initial_allocation(mock_db):
     portfolio = StubPortfolioProvider(
         [

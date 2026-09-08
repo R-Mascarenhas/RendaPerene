@@ -64,7 +64,12 @@ class GoalService:
             raise RuntimeError("Os provedores das metas anuais não estão configurados.")
 
         reinvestment_enabled = self.get_reinvestment_goal_enabled()
-        planning_pending = self._planning_provider.get_current_simulation() is None
+        current_simulation = self._planning_provider.get_current_simulation()
+        if hasattr(self._planning_provider, "get_configuration"):
+            planning_config = self._planning_provider.get_configuration()
+            planning_pending = planning_config is not None and current_simulation is None
+        else:
+            planning_pending = current_simulation is None
         annual_salary_goal = (
             0.0
             if planning_pending

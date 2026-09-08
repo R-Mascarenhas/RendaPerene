@@ -676,7 +676,9 @@ class AssetService:
         return pd.DataFrame(active_assets)
 
     @hybridmethod
-    def calculate_historical_evolution(self, start_date=None) -> pd.DataFrame:
+    def calculate_historical_evolution(
+        self, start_date=None, include_pending_costs: bool = False
+    ) -> pd.DataFrame:
         """
         Consolidates a month-by-month chronological sequence of your portfolio evolution.
         Ensures a seamless monthly series without gaps since the first transaction or custom start_date.
@@ -710,7 +712,7 @@ class AssetService:
         ).eq("PENDING") & df_transactions.get(
             "event_kind", pd.Series("TRADE", index=df_transactions.index)
         ).ne("CUSTODY")
-        if pending_trade.any():
+        if pending_trade.any() and not include_pending_costs:
             return pd.DataFrame()
 
         df_transactions[MONTH_STR] = df_transactions[DATE].str[:7]

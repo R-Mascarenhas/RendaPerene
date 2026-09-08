@@ -404,7 +404,7 @@ class SimulationService:
         config = self.get_configuration()
         start_date_val = config.get(PLANNING_START_DATE) if config else None
         df_evolution = self._portfolio_provider.calculate_historical_evolution(
-            start_date=start_date_val
+            start_date=start_date_val, include_pending_costs=True
         )
         if df_evolution.empty:
             return pd.DataFrame()

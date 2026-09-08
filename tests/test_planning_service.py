@@ -4,6 +4,7 @@ import pandas as pd
 from services.assets_service import AssetService
 from services.planning_service import SimulationService
 
+
 def test_get_current_simulation_math():
     """Verifies that the core retirement simulation correctly loads DB config and runs the correct PMT math."""
     SimulationService.save_configuration(
@@ -12,7 +13,7 @@ def test_get_current_simulation_math():
         desired_income_mw=5.0,
         annual_interest_rate=6.0,
         mw_value=1412.0,
-        initial_equity_input=0.0
+        initial_equity_input=0.0,
     )
     AssetService.add_transaction("BBAS3", "2021-12-15", "BUY", 10, 10.00)
     sim = SimulationService.get_current_simulation()
@@ -24,6 +25,7 @@ def test_get_current_simulation_math():
     assert sim["target_monthly_income"] == 7060.0
     assert sim["required_monthly_contribution"] > 0.0
     assert sim["total_time_months"] > 0
+
 
 def test_planning_custom_start_date(mock_db):
     """
@@ -50,7 +52,7 @@ def test_planning_custom_start_date(mock_db):
         initial_equity_input=0.0,
         desired_income_type="MULTIPLIER",
         desired_income_fixed=10000.0,
-        planning_start_date=None
+        planning_start_date=None,
     )
 
     sim_default = SimulationService.get_current_simulation()
@@ -81,7 +83,7 @@ def test_planning_custom_start_date(mock_db):
         initial_equity_input=0.0,
         desired_income_type="MULTIPLIER",
         desired_income_fixed=10000.0,
-        planning_start_date="2024-01-01"
+        planning_start_date="2024-01-01",
     )
 
     sim_custom = SimulationService.get_current_simulation()
@@ -100,6 +102,7 @@ def test_planning_custom_start_date(mock_db):
     df_contribs_custom = AssetService.get_monthly_contributions_by_year(start_date="2024-01-01")
     assert "2021" not in df_contribs_custom["year"].values
     assert "2024" in df_contribs_custom["year"].values
+
 
 def test_planning_initial_equity_integration(mock_db):
     """
@@ -127,13 +130,13 @@ def test_planning_initial_equity_integration(mock_db):
         initial_equity_input=computed_prior,
         desired_income_type="MULTIPLIER",
         desired_income_fixed=10000.0,
-        planning_start_date="2024-01-01"
+        planning_start_date="2024-01-01",
     )
 
     sim = SimulationService.get_current_simulation()
     assert sim is not None
     assert sim["initial_equity_input"] == 3000.0
-    assert sim["total_invested"] == 5000.0 # 2000 + 3000
+    assert sim["total_invested"] == 5000.0  # 2000 + 3000
 
     # 3. Save config with custom start date "2024-01-01" and a manual override (e.g., 10000.0)
     SimulationService.save_configuration(
@@ -145,13 +148,13 @@ def test_planning_initial_equity_integration(mock_db):
         initial_equity_input=10000.0,
         desired_income_type="MULTIPLIER",
         desired_income_fixed=10000.0,
-        planning_start_date="2024-01-01"
+        planning_start_date="2024-01-01",
     )
 
     sim_override = SimulationService.get_current_simulation()
     assert sim_override is not None
     assert sim_override["initial_equity_input"] == 10000.0
-    assert sim_override["total_invested"] == 12000.0 # 2000 + 10000
+    assert sim_override["total_invested"] == 12000.0  # 2000 + 10000
 
 
 def test_auto_initial_equity_refreshes_after_pre_start_cost_regularization(mock_db):
@@ -165,9 +168,7 @@ def test_auto_initial_equity_refreshes_after_pre_start_cost_regularization(mock_
         "Valor da Operação": None,
         "Entrada/Saída": "Crédito",
     }
-    AssetService.process_b3_import(
-        pd.DataFrame([pending_acquisition])
-    )
+    AssetService.process_b3_import(pd.DataFrame([pending_acquisition]))
     SimulationService.save_configuration(
         birth_date="1990-01-01",
         retirement_age=65,
@@ -214,13 +215,40 @@ def test_projection_is_unavailable_with_pending_automatic_baseline(mock_db):
     assert SimulationService.get_projection_chart_dataset().empty
 
 
+def test_projection_preserves_planned_dividends_with_post_start_pending_cost(mock_db):
+    pending_acquisition = {
+        "Movimentação": "Aquisição",
+        "Data": "15/05/2024",
+        "Produto": "BBAS3",
+        "Quantidade": 100,
+        "Preço unitário": 20,
+        "Valor da Operação": None,
+        "Entrada/Saída": "Crédito",
+    }
+    AssetService.process_b3_import(pd.DataFrame([pending_acquisition]))
+    SimulationService.save_configuration(
+        birth_date="1990-01-01",
+        retirement_age=65,
+        desired_income_mw=10.0,
+        annual_interest_rate=6.0,
+        mw_value=1412.0,
+        initial_equity_input=0.0,
+        planning_start_date="2024-01-01",
+    )
+
+    projection = SimulationService.get_projection_chart_dataset()
+
+    assert not projection.empty
+    assert "planned_dividends" in projection
+
+
 def test_projection_chart_does_not_override_zero_initial_equity(mock_db):
     """
     Verifies that when initial_equity_input is exactly 0.0, but total_invested is greater than 0.0,
     the projection and monthly cashflow dataframes are built using 0.0 and not overridden by total_invested.
     """
     # 1. Add some active holdings so that total_invested > 0
-    AssetService.add_transaction("BBAS3", "2024-05-15", "BUY", 50, 40.00) # Invested: 2000.00
+    AssetService.add_transaction("BBAS3", "2024-05-15", "BUY", 50, 40.00)  # Invested: 2000.00
 
     # 2. Save configuration with planning start date, but initial_equity_input as 0.0
     SimulationService.save_configuration(
@@ -232,13 +260,13 @@ def test_projection_chart_does_not_override_zero_initial_equity(mock_db):
         initial_equity_input=0.0,
         desired_income_type="MULTIPLIER",
         desired_income_fixed=10000.0,
-        planning_start_date="2024-01-01"
+        planning_start_date="2024-01-01",
     )
 
     sim = SimulationService.get_current_simulation()
     assert sim is not None
     assert sim["initial_equity_input"] == 0.0
-    assert sim["total_invested"] == 2000.0 # 2000.0 from holdings + 0.0 initial_equity_input
+    assert sim["total_invested"] == 2000.0  # 2000.0 from holdings + 0.0 initial_equity_input
 
     # 3. Test that build_projection_dataframe correctly uses 0.0 as initial_equity
     df_projection = SimulationService.build_projection_dataframe(
@@ -247,7 +275,7 @@ def test_projection_chart_does_not_override_zero_initial_equity(mock_db):
         sim["initial_equity_input"],
         sim["required_monthly_contribution"],
         sim["monthly_interest_rate"],
-        sim["target_equity"]
+        sim["target_equity"],
     )
 
     assert not df_projection.empty
@@ -262,6 +290,7 @@ def test_decoupled_planning_config_seam(mock_db):
     stub for configuration using the set_adapters seam, completely decoupling
     the simulation from any database or file-system dependencies.
     """
+
     class StubPlanningConfig:
         @staticmethod
         def get_configuration() -> dict | None:
@@ -277,7 +306,7 @@ def test_decoupled_planning_config_seam(mock_db):
                 "ceiling_model_selection": "Bazin Clássico",
                 "bazin_target_yield": 6.0,
                 "bazin_target_spread": 3.0,
-                "planning_start_date": "2024-01-01"
+                "planning_start_date": "2024-01-01",
             }
 
         @staticmethod
@@ -303,11 +332,12 @@ def test_decoupled_planning_config_seam(mock_db):
         sim = SimulationService.get_current_simulation()
         assert sim is not None
         assert sim["retirement_age"] == 50
-        assert sim["target_monthly_income"] == 15000.0 # 10.0 * 1500.0
+        assert sim["target_monthly_income"] == 15000.0  # 10.0 * 1500.0
         assert sim["initial_equity_input"] == 10000.0
     finally:
         # Reset to default adapter (DIP restore hygiene)
         from core.daos.planning_dao import PlanningDAO
+
         SimulationService.set_adapters(planning_repo=PlanningDAO)
 
 
@@ -317,6 +347,7 @@ def test_decoupled_portfolio_provider_seam(mock_db):
     stub for its portfolio provider using the set_adapters seam, completely decoupling
     the simulation calculations and projection datasets from any database or AssetService dependencies.
     """
+
     class StubPlanningConfig:
         @staticmethod
         def get_configuration() -> dict | None:
@@ -332,7 +363,7 @@ def test_decoupled_portfolio_provider_seam(mock_db):
                 "ceiling_model_selection": "Bazin Clássico",
                 "bazin_target_yield": 6.0,
                 "bazin_target_spread": 3.0,
-                "planning_start_date": "2024-01-01"
+                "planning_start_date": "2024-01-01",
             }
 
         @staticmethod
@@ -346,12 +377,16 @@ def test_decoupled_portfolio_provider_seam(mock_db):
     class StubPortfolioProvider:
         def calculate_positions(self, today_date=None, start_date=None) -> pd.DataFrame:
             # Under planning_start_date="2024-01-01", return custom mock positions
-            return pd.DataFrame([
-                {"ticker": "MOCK1", "invested_amount": 10000.0},
-                {"ticker": "MOCK2", "invested_amount": 25000.0}
-            ])
+            return pd.DataFrame(
+                [
+                    {"ticker": "MOCK1", "invested_amount": 10000.0},
+                    {"ticker": "MOCK2", "invested_amount": 25000.0},
+                ]
+            )
 
-        def calculate_historical_evolution(self, start_date=None) -> pd.DataFrame:
+        def calculate_historical_evolution(
+            self, start_date=None, include_pending_costs=False
+        ) -> pd.DataFrame:
             # Generate months from 2024-01 to today
             start = pd.to_datetime("2024-01-01")
             end = pd.to_datetime(datetime.date.today())
@@ -361,26 +396,27 @@ def test_decoupled_portfolio_provider_seam(mock_db):
             # Create cumulative values that grow over time
             data = []
             for i, m in enumerate(months):
-                data.append({
-                    "month_str": m,
-                    "cumulative_invested": 10000.0 + i * 1000.0,
-                    "cumulative_dividends": 100.0 + i * 10.0,
-                    "net_cashflow": 1000.0,
-                    "monthly_dividend": 10.0
-                })
+                data.append(
+                    {
+                        "month_str": m,
+                        "cumulative_invested": 10000.0 + i * 1000.0,
+                        "cumulative_dividends": 100.0 + i * 10.0,
+                        "net_cashflow": 1000.0,
+                        "monthly_dividend": 10.0,
+                    }
+                )
             return pd.DataFrame(data)
 
     # Inject BOTH stub config and stub portfolio provider
     SimulationService.set_adapters(
-        planning_repo=StubPlanningConfig,
-        portfolio_provider=StubPortfolioProvider()
+        planning_repo=StubPlanningConfig, portfolio_provider=StubPortfolioProvider()
     )
 
     try:
         # Verify that get_current_simulation sum of invested amount is 35000.0 (from mock)
         sim = SimulationService.get_current_simulation()
         assert sim is not None
-        assert sim["total_invested"] == 35000.0 # 10000 + 25000
+        assert sim["total_invested"] == 35000.0  # 10000 + 25000
 
         # Verify that get_projection_chart_dataset uses the mock's historical evolution
         df_proj = SimulationService.get_projection_chart_dataset()
@@ -392,7 +428,7 @@ def test_decoupled_portfolio_provider_seam(mock_db):
         # Restore original test environment adapters (hygiene)
         from core.daos.planning_dao import PlanningDAO
         from services.assets_service import AssetService
+
         SimulationService.set_adapters(
-            planning_repo=PlanningDAO,
-            portfolio_provider=AssetService.get_default()
+            planning_repo=PlanningDAO, portfolio_provider=AssetService.get_default()
         )

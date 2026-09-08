@@ -212,6 +212,10 @@ class AssetService:
                     )
                     if is_zero_cost_deposit:
                         known_zero_cost_quantity += qty
+                    elif row.get("event_kind") == "CORPORATE" and row["unit_price"] == 0:
+                        known_zero_cost_quantity += (
+                            qty * quantity_factor if known_zero_cost_quantity > 0 else 0.0
+                        )
                     cost += qty * row["unit_price"] + row["fees"]
                 quantity += qty
             elif row["transaction_type"] == "SELL":
@@ -632,7 +636,13 @@ class AssetService:
                 portfolio_state[ticker] = {
                     QUANTITY: new_qty,
                     AVERAGE_PRICE: old_avg_price if new_qty > 0 else 0.0,
-                    INVESTED_AMOUNT: max(0.0, current_state[INVESTED_AMOUNT] - qty * old_avg_price),
+                    INVESTED_AMOUNT: max(
+                        0.0,
+                        current_state[INVESTED_AMOUNT]
+                        - qty * current_state[INVESTED_AMOUNT] / old_qty
+                        if old_qty > 0
+                        else current_state[INVESTED_AMOUNT],
+                    ),
                 }
             elif txn_type == "GROUP":
                 new_qty = qty

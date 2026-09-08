@@ -79,6 +79,20 @@ def test_zero_cost_deposit_covers_transfer_after_pending_acquisition():
     assert len(AssetService.get_pending_costs()) == 1
 
 
+def test_zero_cost_deposit_coverage_scales_through_split():
+    frame = pd.DataFrame(
+        [
+            movement("Depósito", date="01/01/2024", quantity=100),
+            movement("Desdobramento", date="02/01/2024", quantity=100),
+            movement("Transferência", date="03/01/2024", quantity=150),
+        ]
+    )
+
+    assert AssetService.process_b3_import(frame) == (2, 0)
+    assert AssetService.calculate_positions().iloc[0]["quantity"] == 200
+    assert AssetService.get_pending_costs().empty
+
+
 def test_known_invested_capital_remains_visible_with_pending_acquisition(monkeypatch):
     AssetService.add_transaction("BBAS3", "2026-01-02", "BUY", 100, 20)
     AssetService.process_b3_import(pd.DataFrame([movement("Aquisição", quantity=6)]))
@@ -98,6 +112,19 @@ def test_known_invested_capital_remains_visible_with_pending_acquisition(monkeyp
     from core.strings import DISPLAY_INVESTED
 
     assert display.iloc[0][DISPLAY_INVESTED] != "Custo pendente"
+
+
+def test_sale_reduces_known_capital_proportionally_after_pending_acquisition():
+    AssetService.add_transaction("BBAS3", "2024-01-01", "BUY", 100, 10)
+    AssetService.process_b3_import(
+        pd.DataFrame([movement("Aquisição", date="02/01/2024", quantity=100)])
+    )
+    AssetService.add_transaction("BBAS3", "2024-01-03", "SELL", 50, 12)
+
+    position = AssetService.calculate_positions().iloc[0]
+    assert position["quantity"] == 150
+    assert position["invested_amount"] == pytest.approx(750)
+    assert position["cost_pending"]
 
 
 def test_pending_trade_withholds_contribution_totals():

@@ -203,6 +203,7 @@ class ShareQuantityGoalService:
                 or (
                     row[TRANSACTION_TYPE] == "BUY"
                     and row.get("cost_status") != "PENDING"
+                    and row.get("event_kind", "CORPORATE") == "CORPORATE"
                     and float(row[UNIT_PRICE]) <= 0
                 )
                 else 1
@@ -227,8 +228,11 @@ class ShareQuantityGoalService:
                 continue
             if transaction_type == "BUY":
                 unit_price = float(transaction[UNIT_PRICE])
-                if transaction.get("cost_status") == "PENDING" or (
-                    math.isfinite(unit_price) and unit_price > 0
+                is_corporate_action = transaction.get("event_kind", "CORPORATE") == "CORPORATE"
+                if (
+                    transaction.get("cost_status") == "PENDING"
+                    or (math.isfinite(unit_price) and unit_price > 0)
+                    or not is_corporate_action
                 ):
                     adjusted_acquisition_delta += quantity
                 elif quantity_before_action > 0:

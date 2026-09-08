@@ -37,11 +37,12 @@ class StubPortfolioProvider:
         return self.year_start_quantities.get(ticker, 0)
 
     def get_raw_transactions_for_chart(self, ticker):
+        records = [
+            {**transaction, "event_kind": transaction.get("event_kind", "CORPORATE")}
+            for transaction in self.transactions.get(ticker, [])
+        ]
         return pd.DataFrame(
-            self.transactions.get(
-                ticker,
-                [],
-            ),
+            records,
             columns=[
                 "date",
                 "transaction_type",
@@ -49,6 +50,7 @@ class StubPortfolioProvider:
                 "unit_price",
                 "fees",
                 "cost_status",
+                "event_kind",
             ],
         )
 
@@ -321,6 +323,35 @@ def test_corporate_actions_do_not_count_as_accumulation_progress(mock_db):
 
     assert progress["current_quantity"] == 200
     assert progress["progress_percentage"] == 0
+
+
+def test_zero_cost_deposit_does_not_rebase_accumulation_goal(mock_db):
+    goal = {
+        "ticker": "BBAS3",
+        "start_quantity": 100,
+        "target_quantity": 150,
+    }
+    portfolio = StubPortfolioProvider(
+        [{"ticker": "BBAS3", "quantity": 125}],
+        transactions={
+            "BBAS3": [
+                {
+                    "date": "2026-01-02",
+                    "transaction_type": "BUY",
+                    "quantity": 25,
+                    "unit_price": 0.0,
+                    "fees": 0.0,
+                    "cost_status": "KNOWN",
+                    "event_kind": "TRADE",
+                }
+            ]
+        },
+    )
+    service = ShareQuantityGoalService(portfolio_provider=portfolio)
+
+    result = service._get_corporate_action_adjusted_progress(goal, "2026-01-01")
+
+    assert result == (100.0, 150.0, 50.0)
 
 
 def test_pending_cost_acquisitions_count_as_accumulation_progress(mock_db):

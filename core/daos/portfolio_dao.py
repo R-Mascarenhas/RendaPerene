@@ -509,7 +509,7 @@ class PortfolioDAO:
         conn = self.get_personal_connection()
         try:
             return pd.read_sql_query(
-                "SELECT t.date, CASE WHEN b.event_kind='CUSTODY' THEN 'TRANSFER_IN' ELSE t.transaction_type END AS transaction_type, t.quantity, t.unit_price, t.fees, t.cost_status FROM transactions t LEFT JOIN b3_import_records b ON b.transaction_id=t.id WHERE t.ticker = ? ORDER BY t.date, t.id",
+                "SELECT t.date, CASE WHEN b.event_kind='CUSTODY' THEN 'TRANSFER_IN' ELSE t.transaction_type END AS transaction_type, t.quantity, t.unit_price, t.fees, t.cost_status, b.event_kind FROM transactions t LEFT JOIN b3_import_records b ON b.transaction_id=t.id WHERE t.ticker = ? ORDER BY t.date, t.id",
                 conn,
                 params=(ticker,),
             )

@@ -26,6 +26,14 @@ Read `ARCHITECTURE.md` when a task changes module boundaries, persistence, data 
 - When a change affects the documented architecture, persistence model, integration, user workflow, setup, or validation commands, update `ARCHITECTURE.md` and `README.md` in the same change as needed.
 - Keep changes scoped to the request. Ask before a destructive change, an external write, or a material expansion of scope.
 
+## Code Review Rules
+
+- Report actionable defects with concrete impact on correctness, financial calculations, data integrity, security, or existing user workflows. Skip style preferences, optional refactors, speculative concerns, and checks already covered by lint.
+- When previous reviews and their reviewed commits are available, prioritize changes since the last reviewed commit and regressions caused by attempted fixes. Inspect surrounding code and earlier PR changes when needed to validate their impact. If the previous review baseline is unavailable, review the current PR diff without claiming incremental coverage.
+- When previous comments are available, do not duplicate existing findings or repeat findings already fixed. Re-report a resolved finding only when the current code demonstrates that the defect remains or was reintroduced. Explain the concrete failing scenario.
+
+The Pre-PR review checklist applies to the coding agent preparing and pushing changes. It does not require the automated reviewer to repeat previously reported findings.
+
 ## Pre-PR review
 
 Before pushing commits or opening/updating a pull request:

@@ -43,7 +43,13 @@ class PortfolioDAO:
             )
             if record["event_kind"] == "CUSTODY" and not ignored:
                 history = pd.read_sql_query(
-                    "SELECT * FROM transactions WHERE ticker = ? AND date < ? ORDER BY date, id",
+                    """
+                    SELECT t.*, b.event_kind
+                    FROM transactions t
+                    LEFT JOIN b3_import_records b ON b.transaction_id = t.id
+                    WHERE t.ticker = ? AND t.date < ?
+                    ORDER BY t.date, t.id
+                    """,
                     conn,
                     params=(record["ticker"], record["date"]),
                 )

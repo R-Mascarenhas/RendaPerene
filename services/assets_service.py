@@ -194,27 +194,34 @@ class AssetService:
 
     @staticmethod
     def _has_sufficient_cost_history(history: pd.DataFrame, required_quantity: int) -> bool:
-        quantity, known_quantity, cost = 0, 0.0, 0.0
+        quantity, known_quantity, known_zero_cost_quantity, cost = 0, 0.0, 0.0, 0.0
         for row in history.to_dict("records"):
             qty = row["quantity"]
             if row["transaction_type"] == "BUY":
                 if row.get("cost_status") != "PENDING":
-                    known_quantity += (
-                        qty * known_quantity / quantity
-                        if row["unit_price"] == 0 and quantity > 0
-                        else qty
-                    )
+                    quantity_factor = known_quantity / quantity if quantity > 0 else 1.0
+                    known_quantity += qty * quantity_factor if row["unit_price"] == 0 else qty
+                    if row.get("event_kind") == "TRADE" and row["unit_price"] == 0:
+                        known_zero_cost_quantity += qty * quantity_factor
                     cost += qty * row["unit_price"] + row["fees"]
                 quantity += qty
             elif row["transaction_type"] == "SELL":
                 remaining = max(0, quantity - qty)
                 cost = cost * remaining / quantity if quantity else 0.0
                 known_quantity = known_quantity * remaining / quantity if quantity else 0.0
+                known_zero_cost_quantity = (
+                    known_zero_cost_quantity * remaining / quantity if quantity else 0.0
+                )
                 quantity = remaining
             elif row["transaction_type"] == "GROUP":
                 known_quantity = known_quantity * qty / quantity if quantity else 0.0
+                known_zero_cost_quantity = (
+                    known_zero_cost_quantity * qty / quantity if quantity else 0.0
+                )
                 quantity = qty
-        return known_quantity >= required_quantity and cost > 0
+        return known_quantity >= required_quantity and (
+            cost > 0 or known_zero_cost_quantity >= required_quantity
+        )
 
     @hybridmethod
     def get_pending_costs(self) -> pd.DataFrame:

@@ -149,6 +149,21 @@ class AssetService:
         processed_transactions = 0
         processed_dividends = 0
         reconciliation_context = set()
+        import_occurrence_counts = {}
+        for record in transactions_df.to_dict("records"):
+            if not record.get("source_key") or not record.get("source_record"):
+                continue
+            source = json.loads(record["source_record"])
+            identity = (
+                record["date"],
+                record["ticker"],
+                record["transaction_type"],
+                record["quantity"],
+                source.get("movement", ""),
+                source.get("direction", ""),
+                source.get("institution", ""),
+            )
+            import_occurrence_counts[identity] = import_occurrence_counts.get(identity, 0) + 1
 
         # Record standardized transactions
         if not transactions_df.empty:
@@ -157,6 +172,19 @@ class AssetService:
             if row.get("source_key"):
                 record = row.to_dict()
                 record["_reconciliation_context"] = reconciliation_context
+                if not record.get("source_record"):
+                    continue
+                source = json.loads(record["source_record"])
+                identity = (
+                    record["date"],
+                    record["ticker"],
+                    record["transaction_type"],
+                    record["quantity"],
+                    source.get("movement", ""),
+                    source.get("direction", ""),
+                    source.get("institution", ""),
+                )
+                record["_import_occurrence_count"] = import_occurrence_counts[identity]
                 success = self._portfolio_repo.import_b3_transaction(
                     record, self._has_sufficient_cost_history
                 )
@@ -212,7 +240,7 @@ class AssetService:
                     )
                     if is_zero_cost_deposit:
                         known_zero_cost_quantity += qty
-                    elif row.get("event_kind") == "CORPORATE" and row["unit_price"] == 0:
+                    elif row.get("event_kind") != "TRADE" and row["unit_price"] == 0:
                         known_zero_cost_quantity += (
                             qty * quantity_factor if known_zero_cost_quantity > 0 else 0.0
                         )

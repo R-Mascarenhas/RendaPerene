@@ -261,6 +261,7 @@ class PortfolioDAO:
                 and record["cost_status"] == "KNOWN"
                 and not same_current_cost
                 and not same_reported_total
+                and not same_occurrence
             ):
                 continue
             if all(
@@ -301,6 +302,13 @@ class PortfolioDAO:
                     known_price_population[0]["status"],
                     True,
                 )
+            known_occurrence = [
+                match
+                for match in matches
+                if match["status"] == "KNOWN" and match["same_occurrence"]
+            ]
+            if len(known_occurrence) == 1 and record.get("_import_occurrence_count", 1) == 1:
+                return known_occurrence[0]["id"], known_occurrence[0]["status"], True
             exact_correction = [
                 match
                 for match in matches
@@ -321,7 +329,17 @@ class PortfolioDAO:
             pending = [match for match in matches if match["status"] == "PENDING"]
             if len(pending) == 1:
                 return pending[0]["id"], pending[0]["status"], False
-        occurrence_matches = [match for match in matches if match["same_occurrence"]]
+        occurrence_matches = [
+            match
+            for match in matches
+            if match["same_occurrence"]
+            and not (
+                match["status"] == "KNOWN"
+                and record["cost_status"] == "KNOWN"
+                and not match["same_current_cost"]
+                and not match["same_reported_total"]
+            )
+        ]
         if len(occurrence_matches) == 1:
             return occurrence_matches[0]["id"], occurrence_matches[0]["status"], False
         return None

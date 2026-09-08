@@ -548,6 +548,23 @@ def test_known_import_reconciles_derived_price_with_official_price():
         )
 
 
+def test_known_import_reconciles_changed_known_cost():
+    assert AssetService.process_b3_import(pd.DataFrame([movement(value=2000, price=20)])) == (
+        1,
+        0,
+    )
+    assert AssetService.process_b3_import(pd.DataFrame([movement(value=2100, price=21)])) == (
+        0,
+        0,
+    )
+
+    position = AssetService.calculate_positions().iloc[0]
+    assert position["quantity"] == 100
+    assert position["invested_amount"] == pytest.approx(2100)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+
+
 def test_pending_import_does_not_adopt_manual_zero_cost_entry():
     AssetService.add_transaction("BBAS3", "2024-01-02", "BUY", 100, 0, 0)
 
@@ -660,6 +677,18 @@ def test_regularized_transfer_is_not_a_new_contribution():
     )
     assert AssetService.process_b3_import(frame) == (0, 0)
     assert AssetService.calculate_positions().iloc[0]["invested_amount"] == pytest.approx(2010)
+
+
+def test_manual_zero_cost_split_preserves_zero_cost_deposit_coverage():
+    AssetService.process_b3_import(
+        pd.DataFrame([movement("Depósito", date="01/01/2024", quantity=100)])
+    )
+    AssetService.add_transaction("BBAS3", "2024-01-02", "BUY", 100, 0)
+
+    transfer = pd.DataFrame([movement("Transferência", date="03/01/2024", quantity=150)])
+    assert AssetService.process_b3_import(transfer) == (0, 0)
+    assert AssetService.calculate_positions().iloc[0]["quantity"] == 200
+    assert AssetService.get_pending_costs().empty
 
 
 def test_regularized_transfer_does_not_consume_duplicate_transfer():

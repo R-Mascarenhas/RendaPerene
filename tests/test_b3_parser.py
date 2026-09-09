@@ -54,11 +54,29 @@ def test_b3_importer_deduplication():
     t2, p2 = AssetService.process_b3_import(df_excel)
     assert t2 == 0
     assert p2 == 0
-
     df_positions = AssetService.calculate_positions()
     assert len(df_positions) == 1
     assert df_positions.loc[0, "quantity"] == 150
     assert df_positions.loc[0, "total_dividends"] == 80.00
+
+
+def test_missing_institution_values_have_stable_source_identity():
+    parser = B3ExcelParserAdapter()
+    base = {
+        "Movimentação": "Aquisição",
+        "Data": "02/01/2024",
+        "Produto": "BBAS3",
+        "Quantidade": 100,
+        "Preço unitário": 20,
+        "Valor da Operação": 2000,
+        "Entrada/Saída": "Crédito",
+    }
+
+    without_column, _ = parser.parse_b3_excel(pd.DataFrame([base]))
+    with_nan, _ = parser.parse_b3_excel(pd.DataFrame([{**base, "Instituição": float("nan")}]))
+
+    assert without_column.iloc[0]["source_key"] == with_nan.iloc[0]["source_key"]
+    assert without_column.iloc[0]["source_record"] == with_nan.iloc[0]["source_record"]
 
 
 def test_b3_importer_progress_callback():

@@ -121,6 +121,8 @@ class B3ExcelParserAdapter:
                         if corporate or pending
                         else (price if price > 0 else total_value / quantity)
                     )
+                    raw_institution = row.get("Instituição", "")
+                    institution = "" if pd.isna(raw_institution) else str(raw_institution).strip()
                     source = {
                         "date": date,
                         "ticker": ticker,
@@ -129,7 +131,7 @@ class B3ExcelParserAdapter:
                         "quantity": quantity,
                         "price": price,
                         "value": total_value,
-                        "institution": str(row.get("Instituição", "")).strip(),
+                        "institution": institution,
                     }
                     occurrence_key = (
                         date,

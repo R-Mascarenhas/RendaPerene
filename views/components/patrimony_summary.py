@@ -26,7 +26,7 @@ class PatrimonySummaryWidget:
             return
 
         st.session_state.calculated_equity_cache = metrics["total_equity"]
-        pending = metrics.get("cost_pending", False)
+        pending = metrics.get("cost_pending", False) or not AssetService.get_pending_costs().empty
         if pending:
             st.warning(
                 "Custo pendente: regularize as entradas em Ativos → Operações. A rentabilidade ficará disponível após a correção."
@@ -43,7 +43,7 @@ class PatrimonySummaryWidget:
         m2.metric(
             LABEL_CAPITAL_INVESTED,
             Formatter.format_currency(metrics["total_invested"]),
-            "Valor conhecido até o momento. Há custos pendentes para regularização."
+            "Há custos pendentes para regularização."
             if pending
             else HELP_PLANNING_PARAM,
         )

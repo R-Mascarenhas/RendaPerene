@@ -27,6 +27,13 @@ class PortfolioView:
             st.info(MSG_PORTFOLIO_EMPTY_ASSETS)
             return
 
+        pending_costs = AssetService.get_pending_costs()
+        ticker_pending = not pending_costs.empty
+        if ticker_pending:
+            st.warning(
+                f"Custo pendente em {pending_costs}. Regularize a entrada na tela de Operações para calcular os indicadores de custo."
+            )
+
         tickers = sorted(df_positions["ticker"].tolist())
 
         # Premium segmented control to isolate and lazy-load details for exactly one asset (extremely fast and matches tabs style!)
@@ -181,10 +188,6 @@ class PortfolioView:
     def _render_indicators_block(self, row_pos, details):
         """SECTION 2: Renders general financial and valuation indicators for the asset."""
         pending = row_pos.get("cost_pending", False)
-        if pending:
-            st.warning(
-                "Custo pendente. Regularize a entrada na tela de Operações para calcular os indicadores de custo."
-            )
         current_price = details.get("current_price", 0.0)
         dy = details.get("dy", 0.0)
         pe = details.get("pe", 0.0)

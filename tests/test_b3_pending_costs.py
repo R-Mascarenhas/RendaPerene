@@ -519,6 +519,18 @@ def test_pending_import_does_not_adopt_an_unidentified_legacy_trade():
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
 
 
+def test_known_deposit_does_not_adopt_manual_zero_cost_split():
+    AssetService.add_transaction("BBAS3", "2024-01-02", "BUY", 100, 0)
+
+    assert AssetService.process_b3_import(
+        pd.DataFrame([movement("Depósito", quantity=100, value=0, price=0)])
+    ) == (1, 0)
+
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM b3_import_records").fetchone()[0] == 1
+
+
 def test_known_b3_adoption_reconciles_legacy_origin_after_value_change():
     AssetService.add_transaction("BBAS3", "2024-01-02", "BUY", 100, 20)
     first_import = pd.DataFrame([movement(value=2000, price=20)])

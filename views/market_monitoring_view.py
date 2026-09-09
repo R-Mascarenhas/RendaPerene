@@ -9,6 +9,8 @@ from core.constants import (
     DESIRED_INCOME_FIXED,
     DESIRED_INCOME_MW,
     DESIRED_INCOME_TYPE,
+    INITIAL_EQUITY_AUTO,
+    INITIAL_EQUITY_MANUAL_OVERRIDE,
     MARKET_HIGH_52W,
     MARKET_LOW_52W,
     MW_VALUE,
@@ -321,4 +323,6 @@ class MarketMonitoringView:
                 ceiling_model_selection=model,
                 bazin_target_yield=yield_val,
                 bazin_target_spread=spread_val,
+                initial_equity_auto=config[INITIAL_EQUITY_AUTO],
+                initial_equity_manual_override=config[INITIAL_EQUITY_MANUAL_OVERRIDE],
             )

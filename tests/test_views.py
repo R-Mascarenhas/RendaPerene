@@ -549,6 +549,7 @@ def test_market_monitoring_preserves_initial_equity_flags(mock_db, monkeypatch):
         DESIRED_INCOME_MW,
         DESIRED_INCOME_TYPE,
         INITIAL_EQUITY_AUTO,
+        INITIAL_EQUITY_INPUT,
         INITIAL_EQUITY_MANUAL_OVERRIDE,
         MW_VALUE,
         RETIREMENT_AGE,
@@ -566,6 +567,7 @@ def test_market_monitoring_preserves_initial_equity_flags(mock_db, monkeypatch):
         MW_VALUE: 1518.0,
         DESIRED_INCOME_TYPE: "MULTIPLIER",
         DESIRED_INCOME_FIXED: 10000.0,
+        INITIAL_EQUITY_INPUT: 10000.0,
         INITIAL_EQUITY_AUTO: True,
         INITIAL_EQUITY_MANUAL_OVERRIDE: False,
     }
@@ -584,6 +586,7 @@ def test_market_monitoring_preserves_initial_equity_flags(mock_db, monkeypatch):
 
     assert saved["kwargs"]["initial_equity_auto"] is True
     assert saved["kwargs"]["initial_equity_manual_override"] is False
+    assert saved["args"][5] == 10000.0
 
 
 def test_planning_view_start_date_change_callback(mock_db, monkeypatch):

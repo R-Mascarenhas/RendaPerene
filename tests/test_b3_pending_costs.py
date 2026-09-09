@@ -61,6 +61,26 @@ def test_deposit_without_value_is_a_zero_cost_acquisition():
     assert AssetService.get_pending_costs().empty
 
 
+def test_zero_basis_returns_are_unavailable(monkeypatch):
+    AssetService.process_b3_import(pd.DataFrame([movement("Depósito", quantity=6)]))
+    api = AssetService.get_default()._market_data_api
+    monkeypatch.setattr(api, "get_batch_quotes", lambda tickers: {"BBAS3": 30})
+    monkeypatch.setattr(api, "get_ticker_market_analysis", lambda *args, **kwargs: {})
+
+    positions, metrics = AssetService.get_portfolio_summary_metrics(
+        AssetService.calculate_positions()
+    )
+    assert not metrics["ratios_available"]
+    assert pd.isna(metrics["overall_return"])
+
+    display, _ = AssetService.get_detailed_holdings_dataframe(positions, 6)
+    from core.strings import DISPLAY_RETURN_PCT, DISPLAY_YOC, DISPLAY_YOC_12
+
+    assert display.iloc[0][DISPLAY_RETURN_PCT] == "N/D"
+    assert display.iloc[0][DISPLAY_YOC] == "N/D"
+    assert display.iloc[0][DISPLAY_YOC_12] == "N/D"
+
+
 def test_zero_cost_deposit_covers_later_custody_transfer():
     frame = pd.DataFrame(
         [

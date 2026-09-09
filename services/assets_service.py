@@ -1019,15 +1019,15 @@ class AssetService:
         ytd_dividends = df_positions[YTD_DIVIDENDS].sum()
 
         total_profit = total_equity - total_invested_init
+        ratios_available = total_invested_init > 0
         overall_return = (
-            (total_profit / total_invested_init * 100) if total_invested_init > 0 else 0.0
+            (total_profit / total_invested_init * 100) if ratios_available else float("nan")
         )
-
         overall_yoc = (
-            (total_dividends / total_invested_init * 100) if total_invested_init > 0 else 0.0
+            (total_dividends / total_invested_init * 100) if ratios_available else float("nan")
         )
         overall_l12m_yoc = (
-            (l12m_dividends / total_invested_init * 100) if total_invested_init > 0 else 0.0
+            (l12m_dividends / total_invested_init * 100) if ratios_available else float("nan")
         )
         if cost_pending:
             overall_return = overall_yoc = overall_l12m_yoc = float("nan")
@@ -1049,6 +1049,7 @@ class AssetService:
             "overall_return": overall_return,
             "overall_yoc": overall_yoc,
             "overall_l12m_yoc": overall_l12m_yoc,
+            "ratios_available": ratios_available,
         }
 
     @hybridmethod
@@ -1106,15 +1107,10 @@ class AssetService:
         df_positions[ADJUSTED_PRICE] = (
             df_positions[INVESTED_AMOUNT] - df_positions[TOTAL_DIVIDENDS]
         ) / df_positions[QUANTITY]
-        df_positions[RETURN_PCT_CUSTOM] = (
-            df_positions[PROFIT_LOSS] / df_positions[INVESTED_AMOUNT] * 100
-        )
-        df_positions[YOC_CUSTOM] = (
-            df_positions[TOTAL_DIVIDENDS] / df_positions[INVESTED_AMOUNT] * 100
-        )
-        df_positions[YOC_12_CUSTOM] = (
-            df_positions[L12M_DIVIDENDS] / df_positions[INVESTED_AMOUNT] * 100
-        )
+        invested_base = df_positions[INVESTED_AMOUNT].where(df_positions[INVESTED_AMOUNT] > 0)
+        df_positions[RETURN_PCT_CUSTOM] = df_positions[PROFIT_LOSS] / invested_base * 100
+        df_positions[YOC_CUSTOM] = df_positions[TOTAL_DIVIDENDS] / invested_base * 100
+        df_positions[YOC_12_CUSTOM] = df_positions[L12M_DIVIDENDS] / invested_base * 100
         df_positions[WEIGHT_PCT] = (
             (df_positions[CURRENT_VALUE] / total_equity * 100) if total_equity > 0 else 0.0
         )
@@ -1149,6 +1145,9 @@ class AssetService:
         df_display[DISPLAY_YOC_12] = df_positions[YOC_12_CUSTOM].map(lambda x: f"{x:.2f}%")
 
         pending = df_positions.get("cost_pending", pd.Series(False, index=df_positions.index))
+        zero_basis = df_positions[INVESTED_AMOUNT] <= 0
+        for column in (DISPLAY_RETURN_PCT, DISPLAY_YOC, DISPLAY_YOC_12):
+            df_display.loc[zero_basis, column] = "N/D"
         if pending.any():
             df_display["Situação do custo"] = pending.map(
                 {True: "Custo pendente", False: "Informado"}

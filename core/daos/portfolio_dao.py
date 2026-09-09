@@ -77,7 +77,9 @@ class PortfolioDAO:
                       AND id NOT IN (SELECT transaction_id FROM b3_import_records WHERE transaction_id IS NOT NULL)
                 """
                 if record["event_kind"] == "TRADE" and record["cost_status"] == "KNOWN":
-                    exact_query += " AND NOT (transaction_origin IN ('MANUAL', 'LEGACY') AND unit_price=0 AND fees=0)"
+                    exact_query += (
+                        " AND NOT (transaction_origin='MANUAL' AND unit_price=0 AND fees=0)"
+                    )
                 if record["cost_status"] == "PENDING":
                     exact_query += " AND transaction_origin NOT IN ('MANUAL', 'LEGACY')"
                 existing = conn.execute(exact_query, values).fetchone()

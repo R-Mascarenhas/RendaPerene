@@ -79,6 +79,24 @@ def test_missing_institution_values_have_stable_source_identity():
     assert without_column.iloc[0]["source_record"] == with_nan.iloc[0]["source_record"]
 
 
+def test_missing_entry_exit_values_have_stable_source_identity():
+    parser = B3ExcelParserAdapter()
+    base = {
+        "Movimentação": "Aquisição",
+        "Data": "02/01/2024",
+        "Produto": "BBAS3",
+        "Quantidade": 100,
+        "Preço unitário": 20,
+        "Valor da Operação": 2000,
+    }
+
+    without_column, _ = parser.parse_b3_excel(pd.DataFrame([base]))
+    with_nan, _ = parser.parse_b3_excel(pd.DataFrame([{**base, "Entrada/Saída": float("nan")}]))
+
+    assert without_column.iloc[0]["source_key"] == with_nan.iloc[0]["source_key"]
+    assert without_column.iloc[0]["source_record"] == with_nan.iloc[0]["source_record"]
+
+
 def test_deposit_with_reported_cost_remains_zero_cost():
     transactions, _ = B3ExcelParserAdapter().parse_b3_excel(
         pd.DataFrame(

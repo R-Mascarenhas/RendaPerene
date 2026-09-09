@@ -46,7 +46,8 @@ class B3ExcelParserAdapter:
                 progress_callback(idx + 1, total_rows)
             try:
                 movement = str(row.get("Tipo de Movimentação", row.get("Movimentação", ""))).strip()
-                entry_exit = str(row.get("Entrada/Saída", "")).strip().lower()
+                raw_entry_exit = row.get("Entrada/Saída", "")
+                entry_exit = "" if pd.isna(raw_entry_exit) else str(raw_entry_exit).strip().lower()
                 date_str = str(row.get("Data do Negócio", row.get("Data", ""))).strip()
 
                 date = pd.to_datetime(date_str, dayfirst="/" in date_str).strftime("%Y-%m-%d")

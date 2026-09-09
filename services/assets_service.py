@@ -274,6 +274,13 @@ class AssetService:
         return pending
 
     @hybridmethod
+    def get_pending_tickers(self) -> str:
+        pending_costs = self.get_pending_costs()
+        if pending_costs.empty:
+            return ""
+        return ", ".join(sorted(pending_costs["ticker"].unique()))
+
+    @hybridmethod
     def regularize_cost(
         self, transaction_id: int, value: float, *, value_is_total: bool = False, fees: float = 0.0
     ) -> bool:

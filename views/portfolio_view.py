@@ -27,11 +27,10 @@ class PortfolioView:
             st.info(MSG_PORTFOLIO_EMPTY_ASSETS)
             return
 
-        pending_costs = AssetService.get_pending_costs()
-        ticker_pending = not pending_costs.empty
-        if ticker_pending:
+        pending_tickers = AssetService.get_pending_tickers()
+        if pending_tickers:
             st.warning(
-                f"Custo pendente em {pending_costs}. Regularize a entrada na tela de Operações para calcular os indicadores de custo."
+                f"Custo pendente em {pending_tickers}. Regularize a entrada na tela de Operações para calcular os indicadores de custo."
             )
 
         tickers = sorted(df_positions["ticker"].tolist())

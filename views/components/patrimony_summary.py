@@ -26,10 +26,11 @@ class PatrimonySummaryWidget:
             return
 
         st.session_state.calculated_equity_cache = metrics["total_equity"]
-        pending = metrics.get("cost_pending", False) or not AssetService.get_pending_costs().empty
+        pending_tickers = AssetService.get_pending_tickers()
+        pending = metrics.get("cost_pending", False) or bool(pending_tickers)
         if pending:
             st.warning(
-                "Custo pendente: regularize as entradas em Ativos → Operações. A rentabilidade ficará disponível após a correção."
+                f"Custo pendente para {pending_tickers}: regularize as entradas em Ativos → Operações. A rentabilidade ficará disponível após a correção."
             )
 
         m1, m2, m3, m4, m5 = st.columns(5)
@@ -43,9 +44,7 @@ class PatrimonySummaryWidget:
         m2.metric(
             LABEL_CAPITAL_INVESTED,
             Formatter.format_currency(metrics["total_invested"]),
-            "Há custos pendentes para regularização."
-            if pending
-            else HELP_PLANNING_PARAM,
+            "Há custos pendentes para regularização." if pending else HELP_PLANNING_PARAM,
         )
         m3.metric(
             LABEL_DIVIDENDS_TOTAL,

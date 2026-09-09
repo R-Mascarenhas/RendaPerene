@@ -39,6 +39,15 @@ def test_acquisition_without_value_remains_visible_and_pending(missing):
     assert len(AssetService.get_pending_costs()) == 1
 
 
+def test_pending_tickers_lists_pending_assets_and_is_empty_after_regularization():
+    AssetService.process_b3_import(pd.DataFrame([movement()]))
+    assert AssetService.get_pending_tickers() == "BBAS3"
+
+    pending_id = int(AssetService.get_pending_costs().iloc[0]["id"])
+    assert AssetService.regularize_cost(pending_id, 20)
+    assert AssetService.get_pending_tickers() == ""
+
+
 def test_deposit_without_value_is_a_zero_cost_acquisition():
     assert AssetService.process_b3_import(pd.DataFrame([movement("Depósito", quantity=6)])) == (
         1,

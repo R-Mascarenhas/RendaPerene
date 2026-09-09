@@ -64,6 +64,11 @@ class DetailedHoldingsWidget:
             target_spread=st.session_state.get(SESSION_BAZIN_TARGET_SPREAD, 3.0),
         )
 
+        pending_costs = AssetService.get_pending_costs()
+        if not pending_costs.empty and "ticker" in pending_costs:
+            pending_tickers = set(pending_costs["ticker"])
+            df_positions.loc[df_positions[TICKER].isin(pending_tickers), "cost_pending"] = True
+
         with st.spinner("Buscando informações do catálogo e preço teto..."):
             df_display, ceilings = AssetService.get_detailed_holdings_dataframe(
                 df_positions, target_yield
@@ -71,6 +76,14 @@ class DetailedHoldingsWidget:
 
         if df_display.empty:
             return
+
+        if (
+            df_positions.get("cost_pending", pd.Series(False, index=df_positions.index)).any()
+            or not pending_costs.empty
+        ):
+            st.warning(
+                "Há custos pendentes em um ou mais ativos. Regularize as entradas em Ativos → Operações."
+            )
 
         # DRY-compliant Bazin and trend cell coloring
         def style_detailed_dataframe(df):

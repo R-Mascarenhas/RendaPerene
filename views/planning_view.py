@@ -3,6 +3,8 @@ import datetime
 import streamlit as st
 
 from core.constants import (
+    INITIAL_EQUITY_AUTO,
+    INITIAL_EQUITY_MANUAL_OVERRIDE,
     SESSION_ANNUAL_INTEREST_RATE,
     SESSION_BIRTH_DATE,
     SESSION_DESIRED_INCOME_FIXED,
@@ -156,16 +158,21 @@ class PlanningView:
     def _on_planning_start_date_enabled_change(self):
         """Syncs custom start date toggle back to core state and saves it."""
         enabled = st.session_state[WIDGET_PLANNING_START_DATE_ENABLED]
+        was_enabled = st.session_state.get(SESSION_PLANNING_START_DATE_ENABLED, False)
         st.session_state[SESSION_PLANNING_START_DATE_ENABLED] = enabled
-        if enabled:
-            current_initial = float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0))
-            if current_initial == 0.0:
-                from services.assets_service import AssetService
+        if (
+            enabled
+            and not st.session_state.get(INITIAL_EQUITY_MANUAL_OVERRIDE, False)
+            and (st.session_state.get(INITIAL_EQUITY_AUTO, False) or not was_enabled)
+        ):
+            from services.assets_service import AssetService
 
-                start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
-                start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
-                computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
+            start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
+            start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
+            computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
+            if computed_initial is not None:
                 st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
+            st.session_state[INITIAL_EQUITY_AUTO] = True
         self._save_params()
         st.rerun()
 
@@ -174,13 +181,16 @@ class PlanningView:
         start_date_val = st.session_state[WIDGET_PLANNING_START_DATE]
         st.session_state[SESSION_PLANNING_START_DATE] = start_date_val
 
-        current_initial = float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0))
-        if current_initial == 0.0:
+        if not st.session_state.get(INITIAL_EQUITY_MANUAL_OVERRIDE, False) and st.session_state.get(
+            INITIAL_EQUITY_AUTO, False
+        ):
             from services.assets_service import AssetService
 
             new_start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
             computed_initial = AssetService.calculate_prior_invested_amount(new_start_date_str)
-            st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
+            if computed_initial is not None:
+                st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
+            st.session_state[INITIAL_EQUITY_AUTO] = True
         self._save_params()
         st.rerun()
 
@@ -191,7 +201,20 @@ class PlanningView:
         )
         if dynamic_key in st.session_state:
             st.session_state[SESSION_INITIAL_EQUITY] = float(st.session_state[dynamic_key])
+            st.session_state[INITIAL_EQUITY_AUTO] = False
+            st.session_state[INITIAL_EQUITY_MANUAL_OVERRIDE] = True
         self._save_params()
+
+    def _sync_automatic_initial_equity(self, computed_initial: float | None) -> None:
+        """Keeps the saved and displayed automatic baseline aligned with portfolio costs."""
+        if st.session_state.get(INITIAL_EQUITY_MANUAL_OVERRIDE, False) or not st.session_state.get(
+            INITIAL_EQUITY_AUTO, False
+        ):
+            return
+        current_initial = float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0))
+        if computed_initial is not None and current_initial != computed_initial:
+            st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
+            self._save_params()
 
     def _save_params(self):
         """Callback to save the current session state parameters to the database."""
@@ -226,6 +249,10 @@ class PlanningView:
             desired_income_type=db_type,
             desired_income_fixed=desired_fixed,
             planning_start_date=start_date_str,
+            initial_equity_auto=st.session_state.get(INITIAL_EQUITY_AUTO, False),
+            initial_equity_manual_override=st.session_state.get(
+                INITIAL_EQUITY_MANUAL_OVERRIDE, False
+            ),
         )
 
     def _render_life_parameters(self):
@@ -389,6 +416,12 @@ class PlanningView:
                 start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
                 start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
                 computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
+                self._sync_automatic_initial_equity(computed_initial)
+                initial_equity_help = (
+                    Formatter.format_currency(computed_initial)
+                    if computed_initial is not None
+                    else "Indisponível até a regularização dos custos pendentes"
+                )
                 st.number_input(
                     "Patrimônio Inicial (R$)",
                     min_value=0.0,
@@ -397,9 +430,7 @@ class PlanningView:
                     key=f"{WIDGET_INITIAL_EQUITY_DYNAMIC_PREFIX}{st.session_state[SESSION_INITIAL_EQUITY]}",
                     step=1000.0,
                     on_change=self._on_initial_equity_change,
-                    help=HELP_INITIAL_EQUITY_INPUT_DYNAMIC.format(
-                        value=Formatter.format_currency(computed_initial)
-                    ),
+                    help=HELP_INITIAL_EQUITY_INPUT_DYNAMIC.format(value=initial_equity_help),
                 )
 
         return current_age, months_age

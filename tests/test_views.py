@@ -541,12 +541,61 @@ def test_operations_view_only_offers_owned_assets_for_sales(mock_db, monkeypatch
     assert available == ["BBAS3"]
 
 
+def test_market_monitoring_preserves_initial_equity_flags(mock_db, monkeypatch):
+    from core.constants import (
+        ANNUAL_INTEREST_RATE,
+        BIRTH_DATE,
+        DESIRED_INCOME_FIXED,
+        DESIRED_INCOME_MW,
+        DESIRED_INCOME_TYPE,
+        INITIAL_EQUITY_AUTO,
+        INITIAL_EQUITY_INPUT,
+        INITIAL_EQUITY_MANUAL_OVERRIDE,
+        MW_VALUE,
+        RETIREMENT_AGE,
+        SESSION_BAZIN_TARGET_SPREAD,
+        SESSION_BAZIN_TARGET_YIELD,
+        SESSION_CEILING_MODEL_SELECTION,
+    )
+    from views.market_monitoring_view import MarketMonitoringView
+
+    config = {
+        BIRTH_DATE: "1990-01-01",
+        RETIREMENT_AGE: 65,
+        DESIRED_INCOME_MW: 10.0,
+        ANNUAL_INTEREST_RATE: 6.0,
+        MW_VALUE: 1518.0,
+        DESIRED_INCOME_TYPE: "MULTIPLIER",
+        DESIRED_INCOME_FIXED: 10000.0,
+        INITIAL_EQUITY_INPUT: 10000.0,
+        INITIAL_EQUITY_AUTO: True,
+        INITIAL_EQUITY_MANUAL_OVERRIDE: False,
+    }
+    saved = {}
+    monkeypatch.setattr(SimulationService, "get_configuration", lambda: config)
+    monkeypatch.setattr(
+        SimulationService,
+        "save_configuration",
+        lambda *args, **kwargs: saved.update(args=args, kwargs=kwargs),
+    )
+    st.session_state[SESSION_CEILING_MODEL_SELECTION] = "Bazin Clássico"
+    st.session_state[SESSION_BAZIN_TARGET_YIELD] = 6.0
+    st.session_state[SESSION_BAZIN_TARGET_SPREAD] = 3.0
+
+    MarketMonitoringView()._save_market_params()
+
+    assert saved["kwargs"]["initial_equity_auto"] is True
+    assert saved["kwargs"]["initial_equity_manual_override"] is False
+    assert saved["args"][5] == 10000.0
+
+
 def test_planning_view_start_date_change_callback(mock_db, monkeypatch):
     """
     Verifies that PlanningView._on_planning_start_date_change correctly syncs state,
     calculates prior invested amount, and runs without a NameError.
     """
     from core.constants import (
+        INITIAL_EQUITY_AUTO,
         SESSION_BIRTH_DATE,
         SESSION_RETIREMENT_AGE,
         SESSION_DESIRED_INCOME_MW,
@@ -573,6 +622,7 @@ def test_planning_view_start_date_change_callback(mock_db, monkeypatch):
         SESSION_PLANNING_START_DATE: datetime.date(2024, 1, 1),
         SESSION_PLANNING_START_DATE_ENABLED: True,
         WIDGET_PLANNING_START_DATE: datetime.date(2024, 1, 1),
+        INITIAL_EQUITY_AUTO: True,
     }
 
     monkeypatch.setattr(st, "session_state", mock_session)
@@ -590,6 +640,113 @@ def test_planning_view_start_date_change_callback(mock_db, monkeypatch):
     # Assertions
     assert st.session_state[SESSION_PLANNING_START_DATE] == datetime.date(2024, 1, 1)
     assert st.session_state[SESSION_INITIAL_EQUITY] == 3000.0
+
+
+def test_planning_view_first_start_date_enable_initializes_automatic_equity(
+    mock_db, monkeypatch
+):
+    from core.constants import (
+        INITIAL_EQUITY_AUTO,
+        INITIAL_EQUITY_MANUAL_OVERRIDE,
+        SESSION_ANNUAL_INTEREST_RATE,
+        SESSION_BIRTH_DATE,
+        SESSION_DESIRED_INCOME_FIXED,
+        SESSION_DESIRED_INCOME_MW,
+        SESSION_DESIRED_INCOME_TYPE,
+        SESSION_INITIAL_EQUITY,
+        SESSION_MW_VALUE,
+        SESSION_PLANNING_START_DATE,
+        SESSION_PLANNING_START_DATE_ENABLED,
+        SESSION_RETIREMENT_AGE,
+        WIDGET_PLANNING_START_DATE_ENABLED,
+    )
+
+    monkeypatch.setattr(
+        st,
+        "session_state",
+        {
+            SESSION_BIRTH_DATE: datetime.date(1990, 1, 1),
+            SESSION_RETIREMENT_AGE: 65,
+            SESSION_DESIRED_INCOME_MW: 10.0,
+            SESSION_ANNUAL_INTEREST_RATE: 6.0,
+            SESSION_MW_VALUE: 1412.00,
+            SESSION_DESIRED_INCOME_FIXED: 10000.0,
+            SESSION_DESIRED_INCOME_TYPE: "MULTIPLIER",
+            SESSION_INITIAL_EQUITY: 0.0,
+            INITIAL_EQUITY_AUTO: False,
+            INITIAL_EQUITY_MANUAL_OVERRIDE: False,
+            SESSION_PLANNING_START_DATE: datetime.date(2024, 1, 1),
+            SESSION_PLANNING_START_DATE_ENABLED: False,
+            WIDGET_PLANNING_START_DATE_ENABLED: True,
+        },
+    )
+    monkeypatch.setattr(st, "rerun", lambda: None)
+    AssetService.add_transaction("BBAS3", "2021-01-01", "BUY", 100, 30.00)
+
+    PlanningView()._on_planning_start_date_enabled_change()
+
+    assert st.session_state[SESSION_INITIAL_EQUITY] == 3000.0
+    assert st.session_state[INITIAL_EQUITY_AUTO] is True
+
+
+def test_planning_view_start_date_change_preserves_explicit_zero_initial_equity(
+    mock_db, monkeypatch
+):
+    from core.constants import (
+        INITIAL_EQUITY_AUTO,
+        SESSION_BIRTH_DATE,
+        SESSION_DESIRED_INCOME_FIXED,
+        SESSION_DESIRED_INCOME_MW,
+        SESSION_INITIAL_EQUITY,
+        SESSION_MW_VALUE,
+        SESSION_PLANNING_START_DATE,
+        SESSION_PLANNING_START_DATE_ENABLED,
+        SESSION_RETIREMENT_AGE,
+        SESSION_ANNUAL_INTEREST_RATE,
+        SESSION_DESIRED_INCOME_TYPE,
+        WIDGET_PLANNING_START_DATE,
+    )
+
+    mock_session = {
+        SESSION_BIRTH_DATE: datetime.date(1990, 1, 1),
+        SESSION_RETIREMENT_AGE: 65,
+        SESSION_DESIRED_INCOME_MW: 10.0,
+        SESSION_ANNUAL_INTEREST_RATE: 6.0,
+        SESSION_MW_VALUE: 1412.00,
+        SESSION_DESIRED_INCOME_TYPE: "MULTIPLIER",
+        SESSION_DESIRED_INCOME_FIXED: 10000.0,
+        SESSION_INITIAL_EQUITY: 0.0,
+        INITIAL_EQUITY_AUTO: False,
+        SESSION_PLANNING_START_DATE: datetime.date(2024, 1, 1),
+        SESSION_PLANNING_START_DATE_ENABLED: True,
+        WIDGET_PLANNING_START_DATE: datetime.date(2024, 1, 1),
+    }
+    monkeypatch.setattr(st, "session_state", mock_session)
+    monkeypatch.setattr(st, "rerun", lambda: None)
+    AssetService.add_transaction("BBAS3", "2021-01-01", "BUY", 100, 30.00)
+
+    PlanningView()._on_planning_start_date_change()
+
+    assert st.session_state[SESSION_INITIAL_EQUITY] == 0.0
+    assert st.session_state[INITIAL_EQUITY_AUTO] is False
+
+
+def test_planning_view_synchronizes_refreshed_automatic_initial_equity(monkeypatch):
+    from core.constants import INITIAL_EQUITY_AUTO, SESSION_INITIAL_EQUITY
+
+    monkeypatch.setattr(
+        st,
+        "session_state",
+        {SESSION_INITIAL_EQUITY: 0.0, INITIAL_EQUITY_AUTO: True},
+    )
+    saved = []
+    view = PlanningView()
+    monkeypatch.setattr(view, "_save_params", lambda: saved.append(True))
+
+    view._sync_automatic_initial_equity(2000.0)
+
+    assert st.session_state[SESSION_INITIAL_EQUITY] == 2000.0
+    assert saved == [True]
 
 
 def test_chart_theme_adapter_applies_light_defaults(monkeypatch):

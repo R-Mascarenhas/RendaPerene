@@ -48,6 +48,14 @@ def test_pending_tickers_lists_pending_assets_and_is_empty_after_regularization(
     assert AssetService.get_pending_tickers() == ""
 
 
+def test_pending_tickers_ignores_fully_sold_pending_lots():
+    AssetService.process_b3_import(pd.DataFrame([movement()]))
+    AssetService.add_transaction("BBAS3", "2024-01-03", "SELL", 100, 25)
+    AssetService.add_transaction("BBAS3", "2024-01-04", "BUY", 100, 20)
+
+    assert AssetService.get_pending_tickers() == ""
+
+
 def test_deposit_without_value_is_a_zero_cost_acquisition():
     assert AssetService.process_b3_import(pd.DataFrame([movement("Depósito", quantity=6)])) == (
         1,

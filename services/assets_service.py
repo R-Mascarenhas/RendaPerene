@@ -278,7 +278,9 @@ class AssetService:
         pending_costs = self.get_pending_costs()
         if pending_costs.empty:
             return ""
-        return ", ".join(sorted(pending_costs["ticker"].unique()))
+        active_positions = self.calculate_positions()
+        active_pending = set(active_positions.loc[active_positions["cost_pending"], "ticker"])
+        return ", ".join(sorted(set(pending_costs["ticker"]) & active_pending))
 
     @hybridmethod
     def regularize_cost(

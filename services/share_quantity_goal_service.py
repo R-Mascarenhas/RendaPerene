@@ -187,6 +187,12 @@ class ShareQuantityGoalService:
             for ticker in tickers
         }
 
+    @staticmethod
+    def _is_corporate_action(transaction: pd.Series) -> bool:
+        """Treat explicit corporate events and unprovenanced zero-cost buys as actions."""
+        event_kind = transaction.get("event_kind")
+        return pd.isna(event_kind) or event_kind == "CORPORATE"
+
     def _get_corporate_action_adjusted_progress(
         self, goal: dict, year_start_date: str, target_action_cutoff: str | None = None
     ) -> tuple[float, float, float] | None:
@@ -200,7 +206,12 @@ class ShareQuantityGoalService:
             lambda row: (
                 0
                 if row[TRANSACTION_TYPE] == "GROUP"
-                or (row[TRANSACTION_TYPE] == "BUY" and float(row[UNIT_PRICE]) <= 0)
+                or (
+                    row[TRANSACTION_TYPE] == "BUY"
+                    and row.get("cost_status") != "PENDING"
+                    and self._is_corporate_action(row)
+                    and float(row[UNIT_PRICE]) <= 0
+                )
                 else 1
             ),
             axis=1,
@@ -218,9 +229,17 @@ class ShareQuantityGoalService:
                 continue
             quantity = float(transaction[QUANTITY])
             transaction_type = transaction[TRANSACTION_TYPE]
+            if transaction_type == "TRANSFER_IN":
+                quantity_before_action += quantity
+                continue
             if transaction_type == "BUY":
                 unit_price = float(transaction[UNIT_PRICE])
-                if math.isfinite(unit_price) and unit_price > 0:
+                is_corporate_action = self._is_corporate_action(transaction)
+                if (
+                    transaction.get("cost_status") == "PENDING"
+                    or (math.isfinite(unit_price) and unit_price > 0)
+                    or not is_corporate_action
+                ):
                     adjusted_acquisition_delta += quantity
                 elif quantity_before_action > 0:
                     factor = (quantity_before_action + quantity) / quantity_before_action

@@ -37,12 +37,21 @@ class StubPortfolioProvider:
         return self.year_start_quantities.get(ticker, 0)
 
     def get_raw_transactions_for_chart(self, ticker):
+        records = [
+            {**transaction, "event_kind": transaction.get("event_kind", "CORPORATE")}
+            for transaction in self.transactions.get(ticker, [])
+        ]
         return pd.DataFrame(
-            self.transactions.get(
-                ticker,
-                [],
-            ),
-            columns=["date", "transaction_type", "quantity", "unit_price", "fees"],
+            records,
+            columns=[
+                "date",
+                "transaction_type",
+                "quantity",
+                "unit_price",
+                "fees",
+                "cost_status",
+                "event_kind",
+            ],
         )
 
 
@@ -314,6 +323,104 @@ def test_corporate_actions_do_not_count_as_accumulation_progress(mock_db):
 
     assert progress["current_quantity"] == 200
     assert progress["progress_percentage"] == 0
+
+
+def test_zero_cost_deposit_does_not_rebase_accumulation_goal(mock_db):
+    goal = {
+        "ticker": "BBAS3",
+        "start_quantity": 100,
+        "target_quantity": 150,
+    }
+    portfolio = StubPortfolioProvider(
+        [{"ticker": "BBAS3", "quantity": 125}],
+        transactions={
+            "BBAS3": [
+                {
+                    "date": "2026-01-02",
+                    "transaction_type": "BUY",
+                    "quantity": 25,
+                    "unit_price": 0.0,
+                    "fees": 0.0,
+                    "cost_status": "KNOWN",
+                    "event_kind": "TRADE",
+                }
+            ]
+        },
+    )
+    service = ShareQuantityGoalService(portfolio_provider=portfolio)
+
+    result = service._get_corporate_action_adjusted_progress(goal, "2026-01-01")
+
+    assert result == (100.0, 150.0, 50.0)
+
+
+def test_manual_zero_cost_buy_is_rebased_as_corporate_action(mock_db):
+    goal = {
+        "ticker": "BBAS3",
+        "start_quantity": 100,
+        "target_quantity": 150,
+    }
+    portfolio = StubPortfolioProvider(
+        [{"ticker": "BBAS3", "quantity": 200}],
+        transactions={
+            "BBAS3": [
+                {
+                    "date": "2026-01-02",
+                    "transaction_type": "BUY",
+                    "quantity": 100,
+                    "unit_price": 0.0,
+                    "fees": 0.0,
+                    "cost_status": "KNOWN",
+                    "event_kind": None,
+                }
+            ]
+        },
+    )
+    service = ShareQuantityGoalService(portfolio_provider=portfolio)
+
+    result = service._get_corporate_action_adjusted_progress(goal, "2026-01-01")
+
+    assert result == (200.0, 300.0, 0.0)
+
+
+def test_pending_cost_acquisitions_count_as_accumulation_progress(mock_db):
+    repository = PlanningDAO()
+    repository.upsert_accumulation_goal(
+        ticker="BBAS3",
+        start_quantity=100,
+        target_quantity=150,
+        target_mode=ShareQuantityGoalService.MODE_QUANTITY,
+        target_percentage=None,
+        allocation_weight=100,
+        average_dividend_5y=2.0,
+    )
+    set_goal_created_at(repository, "2025-12-31")
+    portfolio = StubPortfolioProvider(
+        [{"ticker": "BBAS3", "quantity": 125}],
+        year_start_quantities={"BBAS3": 100},
+        transactions={
+            "BBAS3": [
+                {
+                    "date": "2026-01-02",
+                    "transaction_type": "BUY",
+                    "quantity": 25,
+                    "unit_price": 0.0,
+                    "fees": 0.0,
+                    "cost_status": "PENDING",
+                },
+            ]
+        },
+    )
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=portfolio,
+        market_data_api=StubMarketData,
+        planning_provider=GrowthExamplePlanningProvider(),
+    )
+
+    progress = service.list_goals_with_progress(datetime.date(2026, 8, 28))[0]
+
+    assert progress["progress_percentage"] == 50
 
 
 def test_paid_acquisitions_are_rebased_after_corporate_actions(mock_db):
@@ -707,6 +814,44 @@ def test_annual_investment_and_reinvestment_goal_is_owned_by_goal_service(mock_d
     assert contribution_only_goal["reinvestment_enabled"] is False
     assert contribution_only_goal["reinvestment_goal"] == 0
     assert contribution_only_goal["total_goal"] == 12_000
+
+
+def test_annual_goal_is_unavailable_when_planning_simulation_is_pending(mock_db):
+    class UnavailablePlanningProvider:
+        @staticmethod
+        def get_current_simulation():
+            return None
+
+        @staticmethod
+        def get_updated_required_contribution():
+            return 0.0
+
+    service = GoalService(
+        settings_repo=PlanningDAO(),
+        portfolio_provider=StubPortfolioProvider([], ytd_contributions=15_000),
+        planning_provider=UnavailablePlanningProvider(),
+    )
+
+    goal = service.get_annual_investment_goal(2026, ytd_dividends=1_000)
+
+    assert goal["planning_pending"] is True
+    assert goal["contributions_pending"] is True
+    assert goal["progress_percentage"] is None
+    assert goal["remaining_to_invest"] is None
+
+
+def test_annual_goal_is_available_without_planning_configuration(mock_db):
+    service = GoalService(
+        settings_repo=PlanningDAO(),
+        portfolio_provider=StubPortfolioProvider([], ytd_contributions=15_000),
+        planning_provider=StubPlanningProvider(),
+    )
+
+    goal = service.get_annual_investment_goal(2026, ytd_dividends=1_000)
+
+    assert goal["planning_pending"] is False
+    assert goal["contributions_pending"] is False
+    assert goal["annual_salary_goal"] == 12_000
 
 
 def test_dividend_income_goal_freezes_baseline_and_uses_equal_initial_allocation(mock_db):

@@ -58,27 +58,49 @@ class GoalService:
     @hybridmethod
     def get_annual_investment_goal(
         self, current_year: int, ytd_dividends: float
-    ) -> dict[str, float | bool]:
+    ) -> dict[str, float | bool | None]:
         """Returns annual contribution and optional dividend-reinvestment progress."""
         if self._portfolio_provider is None or self._planning_provider is None:
             raise RuntimeError("Os provedores das metas anuais não estão configurados.")
 
         reinvestment_enabled = self.get_reinvestment_goal_enabled()
-        annual_salary_goal = max(
-            0.0, float(self._planning_provider.get_updated_required_contribution()) * 12
+        current_simulation = self._planning_provider.get_current_simulation()
+        if hasattr(self._planning_provider, "get_configuration"):
+            planning_config = self._planning_provider.get_configuration()
+            planning_pending = planning_config is not None and current_simulation is None
+        else:
+            planning_pending = current_simulation is None
+        annual_salary_goal = (
+            0.0
+            if planning_pending
+            else max(0.0, float(self._planning_provider.get_updated_required_contribution()) * 12)
         )
         reinvestment_goal = max(0.0, float(ytd_dividends)) if reinvestment_enabled else 0.0
         total_goal = annual_salary_goal + reinvestment_goal
-        ytd_contributions = max(
-            0.0, float(self._portfolio_provider.get_ytd_contributions(current_year))
+        raw_ytd_contributions = self._portfolio_provider.get_ytd_contributions(current_year)
+        contributions_pending = planning_pending or raw_ytd_contributions is None
+        ytd_contributions = (
+            max(0.0, float(raw_ytd_contributions)) if raw_ytd_contributions is not None else None
         )
-        progress_percentage = ytd_contributions / total_goal * 100 if total_goal > 0 else 0.0
+        progress_percentage = (
+            ytd_contributions / total_goal * 100
+            if ytd_contributions is not None and total_goal > 0
+            else 0.0
+        )
+        if contributions_pending:
+            progress_percentage = None
         return {
             "reinvestment_enabled": reinvestment_enabled,
             "annual_salary_goal": annual_salary_goal,
             "reinvestment_goal": reinvestment_goal,
             "total_goal": total_goal,
             "ytd_contributions": ytd_contributions,
-            "remaining_to_invest": max(0.0, total_goal - ytd_contributions),
+            "remaining_to_invest": (
+                max(0.0, total_goal - ytd_contributions)
+                if ytd_contributions is not None and not planning_pending
+                else None
+            ),
             "progress_percentage": progress_percentage,
+            "contributions_pending": contributions_pending,
+            "planning_pending": planning_pending,
         }

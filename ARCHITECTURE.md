@@ -43,7 +43,7 @@ A direção das dependências é `views` → `services` → contratos e adaptado
 - `AssetService` é a fonte única da verdade para transações, dividendos, posições dos ativos, evolução histórica, lista de ativos monitorados, registros normalizados do catálogo e definição do dividend yield alvo do modelo de Bazin com base em dados de mercado.
 - `SimulationService` controla as configurações de aposentadoria e os cálculos de anuidade antecipada. Os consumidores devem usar `get_current_simulation()` em vez de reimplementar o cálculo dos aportes.
 - `GoalService`, em `services/goals_service.py`, controla as metas gerais da carteira, incluindo o reinvestimento opcional de dividendos e o progresso dos aportes anuais. Ele consome os valores planejados de `SimulationService` por meio de `PlanningProviderPort`, sem duplicar os cálculos de aposentadoria.
-- `ShareQuantityGoalService`, em `services/share_quantity_goal_service.py`, controla a meta anual de quantidade de cotas por ticker. A base é a quantidade mantida em 1º de janeiro do ano corrente; o progresso mede as aquisições pagas desde essa data, excluindo ações corporativas. O serviço distribui os proventos planejados entre pesos iguais ou personalizados, considera peso zero como inatividade, calcula a meta de cotas a partir do histórico de proventos e informa o crescimento planejado da posição, permitindo progresso acima de 100%.
+- `ShareQuantityGoalService`, em `services/share_quantity_goal_service.py`, controla a meta anual de quantidade de cotas por ticker. A base é a quantidade mantida em 1º de janeiro do ano corrente; o progresso mede as aquisições desde essa data, inclusive as que ainda têm custo pendente, excluindo entradas de custódia e ações corporativas. O serviço distribui os proventos planejados entre pesos iguais ou personalizados, considera peso zero como inatividade, calcula a meta de cotas a partir do histórico de proventos e informa o crescimento planejado da posição, permitindo progresso acima de 100%.
 - `ValuationService` contém as regras puras do dividend yield alvo e do preço-teto de Bazin; não possui dependências do Streamlit, do banco de dados ou dos dados de mercado.
 
 ### Portas e adaptadores
@@ -121,7 +121,8 @@ preservados pela mesclagem baseada em `CÓDIGO`.
 
 | Armazenamento | Finalidade |
 | --- | --- |
-| `transactions` | Registro das movimentações da carteira: `id`, `date`, `ticker`, `transaction_type`, `quantity`, `unit_price` e `fees`. Os tipos persistidos pela aplicação são `BUY`, `SELL` e `GROUP`. |
+| `transactions` | Registro das movimentações da carteira: `id`, `date`, `ticker`, `transaction_type`, `quantity`, `unit_price`, `fees` e `cost_status` (`KNOWN`, `PENDING`, `CORRECTED`). Os tipos persistidos são `BUY`, `SELL` e `GROUP`; entradas de custódia usam o efeito de quantidade de `BUY`, mas sua origem as exclui de aportes e metas de compras. |
+| `b3_import_records` | Identidade SHA-256 dos campos normalizados da movimentação, registro original normalizado em JSON, natureza do evento, vínculo único à transação e decisão de importação. Transferências ignoradas permanecem registradas sem transação. |
 | `dividends` | Proventos recebidos: `id`, `date`, `ticker`, `dividend_type` e `total_value`; os tipos são `DIVIDEND`, `JCP` e `YIELD`. |
 | `tracked_market_assets` | Tickers acompanhados manualmente. Os ativos em carteira são combinados com essa lista no monitor de mercado. |
 | `dividend_corrections` | Ajustes de dividendos por ticker e por ano, identificados por `(ticker, year)`. |
@@ -141,8 +142,12 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
 - Desdobramentos e bonificações da B3 são armazenados como transações `BUY` com custo zero.
 - Grupamentos são armazenados como transações `GROUP`, que substituem a quantidade atual pela quantidade informada.
 - Resgates são armazenados como transações `SELL`.
-- Transferências de custódia sem custo são ignoradas; transferências com valor diferente de zero são interpretadas de acordo com sua direção de crédito ou débito.
-- Os cálculos dos aportes para aposentadoria usam pagamentos de anuidade antecipada (`type = 1`) por meio de `SimulationService.pmt_annuity_due()`.
+- O parser distingue custódia, negociação e evento corporativo. Pares de `Transferência` com o mesmo ticker, data e quantidade, nas direções débito e crédito, representam troca de corretora e são marcados para serem ignorados. `Depósito` é uma aquisição recebida e é registrado como compra conhecida a custo zero. `Transferência - Liquidação` segue a direção de crédito ou débito como negociação; uma liquidação de crédito sem valor financeiro gera aquisição com custo pendente.
+- Para entradas de custódia sem par, `AssetService` avalia cronologicamente a quantidade com custo conhecido de dias anteriores; vendas reduzem essa cobertura proporcionalmente e grupamentos a ajustam. Custódia de saída é ignorada. Entradas com cobertura suficiente são ignoradas; as demais geram posição com custo pendente. A análise ocorre sob o mesmo bloqueio de escrita SQLite que registra a decisão.
+- `PortfolioDAO` grava origem e efeito na posição atomicamente (`BEGIN IMMEDIATE`). A identidade de origem é independente do custo corrigido. A regularização valida valores finitos, positivos e taxas não negativas, atualiza apenas operações pendentes e preserva a origem; os cálculos são refeitos no próximo carregamento.
+- A migração adiciona o status sem alterar custos antigos. Uma reimportação associa automaticamente apenas registros que já possuem origem B3 ou correções específicas reconhecidas pela assinatura completa do parser anterior; operações legadas sem proveniência permanecem separadas para não reclassificar silenciosamente uma compra manual. Quando a planilha não informa o custo de uma correção reconhecida, a operação existente é preservada e marcada como pendente. A regra atual de importação não atribui preços por ticker ou data. Decisões persistidas não são reclassificadas por importações posteriores de históricos mais antigos.
+- Posições com custo pendente mantêm quantidade, valor de mercado e o capital investido de custo conhecido até então; preço médio e indicadores de rentabilidade dependentes do custo ficam indisponíveis. As telas exibem o capital conhecido junto de um aviso explícito de custos pendentes. A regularização fica em Ativos → Operações e invalida o cache da interface.
+- Os cálculos dos aportes para aposentadoria usam pagamentos de anuidade antecipada (`type = 1`) por meio de `SimulationService.pmt_annuity_due()`. Posições com custo pendente são desconsideradas na soma do capital investido até a regularização, sem bloquear o planejamento das demais posições.
 
 ## Integrações externas
 

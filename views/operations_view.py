@@ -49,6 +49,54 @@ class OperationsView:
         with col2:
             self._render_b3_import_zone()
 
+        self._render_pending_costs()
+
+    def _render_pending_costs(self):
+        pending = AssetService.get_pending_costs()
+        if pending.empty:
+            return
+        st.subheader("Custos pendentes da B3")
+        st.warning(
+            "Há entradas sem custo informado. Regularize-as para calcular preço médio e rentabilidade."
+        )
+        st.info(
+            "Consulte o comprovante da oferta, extrato financeiro, nota/comprovante de liquidação "
+            "ou declaração de IR para recuperar o custo. Não usamos cotações históricas como custo."
+        )
+        options = {
+            int(row["id"]): f"{row['ticker']} · {row['date']} · {row['quantity']} unidades"
+            for row in pending.to_dict("records")
+        }
+        selected = st.selectbox(
+            "Operação pendente",
+            list(options),
+            format_func=options.get,
+            key="pending_cost_operation",
+        )
+        source = pending.loc[pending["id"] == selected].iloc[0]
+        st.caption(f"Origem B3: {source['movement']} · {source['institution']}")
+        with st.form(f"regularize_cost_{selected}"):
+            mode = st.selectbox(
+                "Informar custo por", ["Preço unitário", "Valor total da aquisição"]
+            )
+            value = st.number_input(
+                "Custo da aquisição (R$)", min_value=0.01, value=10.00, format="%.2f"
+            )
+            fees = st.number_input("Taxas adicionais (R$)", min_value=0.0, value=0.0)
+            st.caption("O valor total deve excluir as taxas adicionais informadas acima.")
+            submitted = st.form_submit_button("Regularizar custo")
+        if submitted:
+            try:
+                if AssetService.regularize_cost(
+                    selected, value, value_is_total=mode == "Valor total da aquisição", fees=fees
+                ):
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.warning("Esta operação já foi regularizada. Atualize a página.")
+            except ValueError as exc:
+                st.error(str(exc))
+
     def _render_unified_manual_form(self):
         st.subheader(MSG_MANUAL_ENTRY_TITLE)
 

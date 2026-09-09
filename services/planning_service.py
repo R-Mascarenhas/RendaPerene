@@ -10,6 +10,7 @@ from core.constants import (
     DESIRED_INCOME_MW,
     DESIRED_INCOME_TYPE,
     INCOME_TYPE_MULTIPLIER,
+    INITIAL_EQUITY_AUTO,
     INITIAL_EQUITY_INPUT,
     MW_VALUE,
     PLANNING_START_DATE,
@@ -76,6 +77,8 @@ class SimulationService:
         bazin_target_yield=6.0,
         bazin_target_spread=3.0,
         planning_start_date=None,
+        initial_equity_auto=False,
+        initial_equity_manual_override=False,
     ):
         """Saves or updates the planning configuration in the database."""
         self._planning_repo.save_configuration(
@@ -91,6 +94,8 @@ class SimulationService:
             bazin_target_yield,
             bazin_target_spread,
             planning_start_date,
+            initial_equity_auto,
+            initial_equity_manual_override,
         )
 
     @hybridmethod
@@ -120,6 +125,19 @@ class SimulationService:
         denominator = ((interest_factor - 1) / rate) * (1 + rate)
         val = (fv - pv * interest_factor) / denominator if denominator > 0 else 0.0
         return max(0.0, val)
+
+    def _get_initial_equity_input(self, config) -> float | None:
+        """Returns the configured baseline, refreshing automatically derived values."""
+        if config.get(PLANNING_START_DATE) is None:
+            return 0.0
+        if config.get(INITIAL_EQUITY_AUTO, False) and hasattr(
+            self._portfolio_provider, "calculate_prior_invested_amount"
+        ):
+            prior_amount = self._portfolio_provider.calculate_prior_invested_amount(
+                config[PLANNING_START_DATE]
+            )
+            return None if prior_amount is None else float(prior_amount)
+        return float(config[INITIAL_EQUITY_INPUT])
 
     @hybridmethod
     def get_current_simulation(self):
@@ -172,14 +190,16 @@ class SimulationService:
         df_pos = self._portfolio_provider.calculate_positions(
             start_date=config.get(PLANNING_START_DATE)
         )
-        total_invested = float(df_pos["invested_amount"].sum()) if not df_pos.empty else 0.0
+        # Positions with a pending acquisition cost remain part of the portfolio, but
+        # cannot contribute a reliable amount to the retirement calculation yet.
+        total_invested = (
+            float(df_pos["invested_amount"].sum(skipna=True)) if not df_pos.empty else 0.0
+        )
 
         # Get initial equity input from database configuration (only used if planning start date is specified)
-        initial_equity_input = (
-            float(config[INITIAL_EQUITY_INPUT])
-            if config.get(PLANNING_START_DATE) is not None
-            else 0.0
-        )
+        initial_equity_input = self._get_initial_equity_input(config)
+        if initial_equity_input is None:
+            return None
 
         required_monthly_contribution = self.pmt_annuity_due(
             monthly_interest_rate, total_time_months, initial_equity_input, target_equity
@@ -384,7 +404,7 @@ class SimulationService:
         config = self.get_configuration()
         start_date_val = config.get(PLANNING_START_DATE) if config else None
         df_evolution = self._portfolio_provider.calculate_historical_evolution(
-            start_date=start_date_val
+            start_date=start_date_val, include_pending_costs=True
         )
         if df_evolution.empty:
             return pd.DataFrame()
@@ -414,14 +434,12 @@ class SimulationService:
         if config:
             annual_interest_rate_val = float(config[ANNUAL_INTEREST_RATE])
             monthly_interest_rate = (1 + annual_interest_rate_val / 100) ** (1 / 12) - 1
-            initial_equity = (
-                float(config[INITIAL_EQUITY_INPUT])
-                if config.get(PLANNING_START_DATE) is not None
-                else 0.0
-            )
+            initial_equity = self._get_initial_equity_input(config)
         else:
             monthly_interest_rate = (1 + 6.0 / 100) ** (1 / 12) - 1
             initial_equity = 0.0
+        if initial_equity is None:
+            return pd.DataFrame()
 
         monthly_contribution = self.get_required_contribution()
 

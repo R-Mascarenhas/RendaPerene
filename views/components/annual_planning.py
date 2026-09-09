@@ -39,13 +39,21 @@ class AnnualPlanningWidget:
             "Meta de Compras na B3",
         )
 
+        if goal["contributions_pending"]:
+            st.warning("Custo pendente: regularize as entradas da B3 para calcular os aportes.")
         st.markdown(
             MSG_YTD_CONTRIBUTIONS.format(
-                value=Formatter.format_currency(goal["ytd_contributions"]),
-                pct=goal["progress_percentage"],
+                value=(
+                    "Custo pendente"
+                    if goal["contributions_pending"]
+                    else Formatter.format_currency(goal["ytd_contributions"])
+                ),
+                pct=goal["progress_percentage"] or 0.0,
             )
         )
-        if goal["remaining_to_invest"] > 0:
+        if goal["contributions_pending"]:
+            st.markdown("O valor restante ficará disponível após a regularização.")
+        elif goal["remaining_to_invest"] > 0:
             st.markdown(
                 MSG_REMAINING_TO_BUY.format(
                     value=Formatter.format_currency(goal["remaining_to_invest"])
@@ -54,4 +62,4 @@ class AnnualPlanningWidget:
         else:
             st.markdown(MSG_ALL_GOALS_MET)
 
-        GoalProgressBar.render(goal["progress_percentage"])
+        GoalProgressBar.render(goal["progress_percentage"] or 0.0)

@@ -79,6 +79,27 @@ def test_missing_institution_values_have_stable_source_identity():
     assert without_column.iloc[0]["source_record"] == with_nan.iloc[0]["source_record"]
 
 
+def test_deposit_with_reported_cost_remains_zero_cost():
+    transactions, _ = B3ExcelParserAdapter().parse_b3_excel(
+        pd.DataFrame(
+            [
+                {
+                    "Movimentação": "Depósito",
+                    "Data": "02/01/2024",
+                    "Produto": "BBAS3",
+                    "Quantidade": 100,
+                    "Preço unitário": 20,
+                    "Valor da Operação": 2000,
+                    "Entrada/Saída": "Crédito",
+                }
+            ]
+        )
+    )
+
+    assert transactions.iloc[0]["unit_price"] == 0.0
+    assert transactions.iloc[0]["cost_status"] == "KNOWN"
+
+
 def test_b3_importer_progress_callback():
     """Ensures progress callback is called during import process."""
     df_excel = pd.read_excel("tests/b3-mock-transactions.xlsx")

@@ -118,7 +118,7 @@ class B3ExcelParserAdapter:
                     )
                     t_price = (
                         0.0
-                        if corporate or pending
+                        if corporate or pending or is_zero_cost_deposit
                         else (price if price > 0 else total_value / quantity)
                     )
                     raw_institution = row.get("Instituição", "")

@@ -586,6 +586,10 @@ def test_known_import_reconciles_derived_price_with_official_price():
             19.99
         )
 
+    assert AssetService.process_b3_import(derived_price) == (0, 0)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+
 
 def test_partial_known_import_with_changed_cost_preserves_both_trades():
     assert AssetService.process_b3_import(pd.DataFrame([movement(value=2000, price=20)])) == (

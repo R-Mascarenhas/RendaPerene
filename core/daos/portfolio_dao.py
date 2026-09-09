@@ -122,7 +122,7 @@ class PortfolioDAO:
                                 transaction_id,
                             ),
                         )
-                        if record["cost_status"] == "KNOWN":
+                        if not (reconciled_b3[1] == "KNOWN" and reconciled_b3[2]):
                             conn.execute(
                                 "UPDATE b3_import_records SET source_key=?, source_record=?, event_kind=?, status=? WHERE transaction_id=?",
                                 (
@@ -133,6 +133,7 @@ class PortfolioDAO:
                                     transaction_id,
                                 ),
                             )
+                        # Keep the original known identity so older exports remain idempotent.
                     elif legacy_custody is None and reconciled_b3 is None:
                         conn.execute(
                             "UPDATE transactions SET cost_status=? WHERE id=?",

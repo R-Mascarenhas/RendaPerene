@@ -56,6 +56,10 @@ preservados nessa pasta de volta para **database/**; remova também o marcador o
 **.nome-da-carteira.db.deleted** correspondente. Bancos inválidos e carteiras de demonstração ou
 sessão não podem ser removidos por esse fluxo.
 
+Se uma nova carteira reutilizar o nome de uma carteira excluída, as demais sessões abertas com esse
+nome são reiniciadas antes de acessar o novo banco, evitando que dados mantidos em memória sejam
+gravados na carteira substituta.
+
 Na primeira execução com o novo layout, a barra lateral oferece a importação de bancos
 arquivos `.db` encontrados na antiga pasta `database/`, tanto ao lado da aplicação quanto em
 pastas irmãs de releases anteriores chamadas `RendaPerene-v*`. Quando o mesmo nome existe em mais

@@ -349,7 +349,22 @@ class ApplicationPaths:
 
     @staticmethod
     def _write_database_generation(database: Path) -> None:
-        Path(f"{database}.generation").write_text(uuid.uuid4().hex, encoding="ascii")
+        generation = Path(f"{database}.generation")
+        temporary = generation.with_name(f".{generation.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_text(uuid.uuid4().hex, encoding="ascii")
+            os.replace(temporary, generation)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    @staticmethod
+    def database_generation(database: Path) -> str | None:
+        """Read the identity of the portfolio currently published at this path."""
+        generation = Path(f"{database}.generation")
+        try:
+            return generation.read_text(encoding="ascii").strip() or None
+        except FileNotFoundError:
+            return None
 
     @staticmethod
     def choose_portfolio(preferred: str, available: list[str]) -> str:
@@ -394,10 +409,11 @@ class ApplicationPaths:
                 return (recovery_name,)
             recovery_index += 1
 
-    def clear_portfolio_deletion_marker(self, filename: str) -> None:
-        """Allow an explicit portfolio creation to reuse a previously deleted filename."""
+    def prepare_portfolio_creation(self, filename: str) -> None:
+        """Publish a new identity before allowing explicit creation at this filename."""
         database = self.portfolio_database(filename)
         with portfolio_database_lock(database):
+            self._write_database_generation(database)
             portfolio_deletion_marker(database).unlink(missing_ok=True)
 
     @staticmethod

@@ -114,8 +114,10 @@ exclusões concorrentes e o lock exclusivo existente da carteira aguarda conexõ
 movimentação. O banco, WAL, SHM e marcador de geração existentes são
 movidos para uma pasta exclusiva em `backups/deleted-portfolios/`, com rollback em caso de falha.
 Um tombstone oculto permanece em `database/` para que sessões obsoletas recusem a conexão em vez
-de recriar silenciosamente um SQLite vazio; somente a criação explícita de uma carteira com o mesmo
-nome remove esse marcador sob o lock da carteira.
+de recriar silenciosamente um SQLite vazio. A criação explícita de uma carteira publica uma nova
+geração sob o lock da carteira antes de remover esse marcador. Toda conexão compara essa geração
+com a identidade guardada na sessão Streamlit; se o mesmo nome agora apontar para outra carteira,
+o estado derivado é invalidado e a execução reinicia antes de qualquer acesso ao SQLite.
 Esses backups são permanentes até a remoção manual. Quando a carteira ativa é excluída, a raiz de
 composição escolhe outra carteira válida, invalida o estado derivado da sessão e reinicia a execução
 antes de inicializar os adaptadores do novo banco.

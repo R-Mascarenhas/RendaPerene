@@ -135,6 +135,7 @@ SESSION_CALCULATED_EQUITY_CACHE = "calculated_equity_cache"
 SESSION_PLANNING_START_DATE = "planning_start_date"
 SESSION_PLANNING_START_DATE_ENABLED = "planning_start_date_enabled"
 SESSION_PORTFOLIO_DELETION_SUCCESS = "portfolio_deletion_success"
+SESSION_ACTIVE_DATABASE_GENERATION = "active_database_generation"
 
 # Streamlit Interactive Widget key constants (Safe Value-Binding Pattern keys)
 WIDGET_BIRTH_DATE = "birth_date_input"

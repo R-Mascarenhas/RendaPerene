@@ -144,7 +144,7 @@ if not is_cloud:
             new_filename = f"portfolio_{clean_name.lower()}.db"
             new_filepath = app_paths.portfolio_database(new_filename)
             # Initialize tables
-            app_paths.clear_portfolio_deletion_marker(new_filename)
+            app_paths.prepare_portfolio_creation(new_filename)
             temp_db = DatabaseManager(personal_db=new_filepath)
             temp_db.init_personal_db()
             SessionManager.switch_portfolio(new_filename)
@@ -226,6 +226,15 @@ else:
     catalog_path = app_paths.catalog_file
 MarketData.configure_catalog(catalog_path)
 
+
+def guard_portfolio_generation(database_path):
+    """Restart stale sessions before they can access a replacement portfolio."""
+    generation = ApplicationPaths.database_generation(database_path)
+    if SessionManager.refresh_portfolio_generation(generation):
+        st.rerun()
+
+
+db.connection_guard = guard_portfolio_generation
 db.init_personal_db()
 
 st.set_page_config(page_title=f"Renda Perene v{get_app_version()}", page_icon="💼", layout="wide")
@@ -254,14 +263,6 @@ ShareQuantityGoalService.set_adapters(
     market_data_api=StreamlitCachedMarketData,
     planning_provider=SimulationService.get_default(),
 )
-
-# Reload if another Streamlit session replaced the active portfolio on disk.
-resolved_database = app_paths.portfolio_database(current_active_db)
-generation_file = resolved_database.with_name(f"{resolved_database.name}.generation")
-database_signature = generation_file.stat().st_mtime_ns if generation_file.exists() else None
-if st.session_state.get("active_database_signature", database_signature) != database_signature:
-    SessionManager.reset_portfolio_state()
-st.session_state["active_database_signature"] = database_signature
 
 # Session state must be initialized before rendering any view
 SessionManager.initialize()

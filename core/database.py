@@ -74,8 +74,9 @@ class DatabaseManager:
 
     _registry = []
 
-    def __init__(self, personal_db="database/portfolio.db"):
+    def __init__(self, personal_db="database/portfolio.db", connection_guard=None):
         self.personal_db = personal_db
+        self.connection_guard = connection_guard
 
     @classmethod
     def register_schema(cls, schema_provider):
@@ -120,6 +121,8 @@ class DatabaseManager:
         try:
             if portfolio_deletion_marker(db_file).exists():
                 raise FileNotFoundError("The selected portfolio database was deleted.")
+            if self.connection_guard is not None:
+                self.connection_guard(db_file)
             connection = sqlite3.connect(db_file, factory=_LockedConnection, timeout=60)
             connection.attach_database(db_file, lock_context)
             return connection

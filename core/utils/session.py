@@ -18,6 +18,7 @@ from core.constants import (
     MW_VALUE,
     PLANNING_START_DATE,
     RETIREMENT_AGE,
+    SESSION_ACTIVE_DATABASE_GENERATION,
     SESSION_ANNUAL_INTEREST_RATE,
     SESSION_BAZIN_TARGET_SPREAD,
     SESSION_BAZIN_TARGET_YIELD,
@@ -91,6 +92,18 @@ class SessionManager:
         return True
 
     @staticmethod
+    def refresh_portfolio_generation(generation: str | None) -> bool:
+        """Invalidate state when the database path now refers to another portfolio instance."""
+        if SESSION_ACTIVE_DATABASE_GENERATION not in st.session_state:
+            st.session_state[SESSION_ACTIVE_DATABASE_GENERATION] = generation
+            return False
+        if st.session_state[SESSION_ACTIVE_DATABASE_GENERATION] == generation:
+            return False
+        SessionManager.reset_portfolio_state()
+        st.session_state[SESSION_ACTIVE_DATABASE_GENERATION] = generation
+        return True
+
+    @staticmethod
     def reset_portfolio_state():
         """Discard session values derived from the active portfolio database."""
         MarketData._get_raw_ticker_market_analysis.clear()
@@ -129,6 +142,7 @@ class SessionManager:
             WIDGET_INITIAL_EQUITY,
             WIDGET_PORTFOLIO_DELETION_TARGET,
             WIDGET_PORTFOLIO_DELETE_CONFIRMATION,
+            SESSION_ACTIVE_DATABASE_GENERATION,
         )
         portfolio_prefixes = (
             WIDGET_REINVESTMENT_GOAL_PREFIX,

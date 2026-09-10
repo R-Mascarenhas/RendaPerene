@@ -945,11 +945,13 @@ def test_delete_inactive_portfolio_moves_it_to_a_unique_recoverable_backup(tmp_p
     assert (repeated.backup_dir / family.name).exists()
 
 
-def test_deleted_portfolio_tombstone_prevents_a_stale_session_from_recreating_it(tmp_path):
+def test_same_name_recreation_publishes_a_new_generation_for_stale_sessions(tmp_path):
     paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
     principal = paths.portfolio_database("portfolio.db")
     family = paths.portfolio_database("portfolio_family.db")
     create_database(principal)
+    paths.prepare_portfolio_creation(family.name)
+    original_generation = Path(f"{family}.generation").read_text(encoding="ascii")
     create_database(family)
     stale_manager = DatabaseManager(family)
 
@@ -961,11 +963,29 @@ def test_deleted_portfolio_tombstone_prevents_a_stale_session_from_recreating_it
         stale_manager.get_personal_connection()
     assert not family.exists()
 
-    paths.clear_portfolio_deletion_marker(family.name)
+    paths.prepare_portfolio_creation(family.name)
+    replacement_generation = Path(f"{family}.generation").read_text(encoding="ascii")
     stale_manager.init_personal_db()
 
     assert family.exists()
     assert not portfolio_deletion_marker(family).exists()
+    assert replacement_generation
+    assert replacement_generation != original_generation
+
+
+def test_database_connection_guard_runs_before_sqlite_can_recreate_a_file(tmp_path):
+    database = tmp_path / "portfolio_family.db"
+
+    def reject_stale_connection(path):
+        assert path == database
+        raise RuntimeError("stale portfolio generation")
+
+    manager = DatabaseManager(database, connection_guard=reject_stale_connection)
+
+    with pytest.raises(RuntimeError, match="stale portfolio generation"):
+        manager.get_personal_connection()
+
+    assert not database.exists()
 
 
 def test_explicit_legacy_import_clears_a_deleted_portfolio_tombstone(tmp_path):

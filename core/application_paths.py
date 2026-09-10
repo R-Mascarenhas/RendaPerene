@@ -200,12 +200,23 @@ class MigrationResult:
 
 
 @dataclass(frozen=True)
+class PortfolioDeletionResult:
+    """Describes a recoverable local portfolio deletion."""
+
+    source: Path | None
+    backup_dir: Path | None
+    deleted: bool
+    message: str
+
+
+@dataclass(frozen=True)
 class ApplicationPaths:
     """Resolves application resources and owns writable-data preparation and migration."""
 
     resource_root: Path
     data_root: Path
     legacy_root: Path
+    is_demo_session: bool = False
 
     @classmethod
     def discover(cls, system: str | None = None) -> "ApplicationPaths":
@@ -253,7 +264,7 @@ class ApplicationPaths:
         if not safe_session_id:
             raise ValueError("A demo session identifier is required.")
         demo_root = Path(tempfile.gettempdir()) / APP_NAME / "demo" / safe_session_id
-        return ApplicationPaths(self.resource_root, demo_root, self.legacy_root)
+        return ApplicationPaths(self.resource_root, demo_root, self.legacy_root, True)
 
     def cleanup_demo_sessions(
         self,
@@ -368,6 +379,139 @@ class ApplicationPaths:
             if not self.portfolio_database(recovery_name).exists():
                 return (recovery_name,)
             recovery_index += 1
+
+    def delete_portfolio(self, filename: str, confirmation: str) -> PortfolioDeletionResult:
+        """Move one valid local portfolio and its sidecars to a permanent backup."""
+        try:
+            database = self.portfolio_database(filename)
+            resolved_database_dir = self.database_dir.resolve()
+            resolved_database = database.resolve()
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return PortfolioDeletionResult(
+                None,
+                None,
+                False,
+                "Informe um nome de carteira válido, sem caminhos ou diretórios.",
+            )
+
+        if resolved_database.parent != resolved_database_dir:
+            return PortfolioDeletionResult(
+                None,
+                None,
+                False,
+                "Informe um nome de carteira válido dentro do diretório de dados.",
+            )
+        if confirmation != filename:
+            return PortfolioDeletionResult(
+                database,
+                None,
+                False,
+                "Digite o nome completo do arquivo da carteira para confirmar a exclusão.",
+            )
+        if self.is_demo_session or "demo" in filename.casefold():
+            return PortfolioDeletionResult(
+                database,
+                None,
+                False,
+                "Carteiras de demonstração ou de sessão não podem ser excluídas por este fluxo.",
+            )
+
+        management_lock = self.database_dir / ".portfolio-management.lock"
+        try:
+            with (
+                _exclusive_file_lock(management_lock),
+                portfolio_database_lock(database),
+            ):
+                inventory = self.inspect_portfolios()
+                resolved_database = database.resolve()
+                valid_databases = {path.resolve() for path in inventory.valid}
+                if resolved_database not in valid_databases:
+                    return PortfolioDeletionResult(
+                        database,
+                        None,
+                        False,
+                        "A carteira selecionada não existe ou não é um banco SQLite válido.",
+                    )
+                deletable_databases = {
+                    path.resolve()
+                    for path in inventory.valid
+                    if path.resolve().parent == resolved_database_dir
+                    and "demo" not in path.name.casefold()
+                }
+                if len(deletable_databases) <= 1:
+                    return PortfolioDeletionResult(
+                        database,
+                        None,
+                        False,
+                        "A última carteira válida não pode ser excluída.",
+                    )
+
+                deletion_root = self.backups_dir / "deleted-portfolios"
+                deletion_root.mkdir(parents=True, exist_ok=True)
+                timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+                backup_dir = deletion_root / (f"{timestamp}_{database.stem}_{uuid.uuid4().hex}")
+                backup_dir.mkdir(parents=False, exist_ok=False)
+                related_files = (
+                    database,
+                    Path(f"{database}-wal"),
+                    Path(f"{database}-shm"),
+                    Path(f"{database}.generation"),
+                )
+                moved_files: list[tuple[Path, Path]] = []
+                try:
+                    for source in related_files:
+                        if source != database and not source.exists():
+                            continue
+                        destination = backup_dir / source.name
+                        os.replace(source, destination)
+                        moved_files.append((source, destination))
+                except OSError:
+                    rollback_failed = False
+                    for source, destination in reversed(moved_files):
+                        try:
+                            os.replace(destination, source)
+                        except OSError:
+                            rollback_failed = True
+                    with suppress(OSError):
+                        backup_dir.rmdir()
+                    if rollback_failed:
+                        return PortfolioDeletionResult(
+                            database,
+                            backup_dir,
+                            False,
+                            "A exclusão não foi concluída e alguns arquivos exigem "
+                            "recuperação manual a partir do backup.",
+                        )
+                    return PortfolioDeletionResult(
+                        database,
+                        None,
+                        False,
+                        "Não foi possível concluir a exclusão; nenhum arquivo foi excluído.",
+                    )
+
+                self._is_valid_sqlite_snapshot.cache_clear()
+                self._sqlite_content_digest_snapshot.cache_clear()
+                return PortfolioDeletionResult(
+                    database,
+                    backup_dir,
+                    True,
+                    "Carteira movida para backup com sucesso.",
+                )
+        except TimeoutError:
+            return PortfolioDeletionResult(
+                database,
+                None,
+                False,
+                "A carteira está em uso por outra sessão. Feche as operações ativas e tente novamente.",
+            )
+        except OSError:
+            return PortfolioDeletionResult(
+                database,
+                None,
+                False,
+                "Não foi possível preparar o backup da carteira. Verifique as permissões "
+                "de armazenamento e tente novamente.",
+            )
 
     def legacy_databases(self) -> tuple[Path, ...]:
         """Discover legacy databases beside this executable or in an earlier release."""

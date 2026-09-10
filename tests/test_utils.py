@@ -1,5 +1,6 @@
 import pytest
 import datetime
+import sqlite3
 import streamlit as st
 import time
 import sys
@@ -305,3 +306,67 @@ def test_session_manager_switches_to_valid_fallback_and_resets_loaded_state(monk
     assert "db_loaded" not in mock_session
     assert SESSION_BIRTH_DATE not in mock_session
     assert mock_session["session_id"] == "keep-me"
+
+
+def test_active_portfolio_deletion_selects_fallback_and_clears_derived_state(
+    monkeypatch, tmp_path
+):
+    from core.constants import (
+        SESSION_BIRTH_DATE,
+        WIDGET_PORTFOLIO_DELETION_TARGET,
+        WIDGET_PORTFOLIO_DELETE_CONFIRMATION,
+    )
+
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    alternative = paths.portfolio_database("portfolio_family.db")
+    for database in (principal, alternative):
+        database.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(database)
+        connection.execute("CREATE TABLE marker (value TEXT)")
+        connection.commit()
+        connection.close()
+    mock_session = {
+        "active_db": principal.name,
+        "db_loaded": True,
+        SESSION_BIRTH_DATE: "stale",
+        WIDGET_PORTFOLIO_DELETION_TARGET: principal.name,
+        WIDGET_PORTFOLIO_DELETE_CONFIRMATION: principal.name,
+    }
+    monkeypatch.setattr(st, "session_state", mock_session)
+
+    result = paths.delete_portfolio(principal.name, principal.name)
+    available = list(paths.portfolio_options(paths.inspect_portfolios()))
+    fallback = paths.choose_portfolio(mock_session["active_db"], available)
+    changed = SessionManager.switch_portfolio(fallback)
+
+    assert result.deleted is True
+    assert changed is True
+    assert mock_session["active_db"] == alternative.name
+    assert "db_loaded" not in mock_session
+    assert SESSION_BIRTH_DATE not in mock_session
+    assert WIDGET_PORTFOLIO_DELETION_TARGET not in mock_session
+    assert WIDGET_PORTFOLIO_DELETE_CONFIRMATION not in mock_session
+
+
+def test_inactive_portfolio_deletion_preserves_active_session_state(monkeypatch, tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    alternative = paths.portfolio_database("portfolio_family.db")
+    for database in (principal, alternative):
+        database.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(database)
+        connection.execute("CREATE TABLE marker (value TEXT)")
+        connection.commit()
+        connection.close()
+    mock_session = {"active_db": principal.name, "db_loaded": True}
+    monkeypatch.setattr(st, "session_state", mock_session)
+
+    result = paths.delete_portfolio(alternative.name, alternative.name)
+    available = list(paths.portfolio_options(paths.inspect_portfolios()))
+    still_active = paths.choose_portfolio(mock_session["active_db"], available)
+    changed = SessionManager.switch_portfolio(still_active)
+
+    assert result.deleted is True
+    assert changed is False
+    assert mock_session == {"active_db": principal.name, "db_loaded": True}

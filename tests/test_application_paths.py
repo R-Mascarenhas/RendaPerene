@@ -1005,6 +1005,17 @@ def test_delete_portfolio_rejects_last_invalid_demo_and_demo_session_databases(
     assert "demonstração" in demo_result.message
     assert demo.exists()
 
+    user_portfolio_with_demo_in_its_name = paths.portfolio_database(
+        "portfolio_demonstracao.db"
+    )
+    create_database(user_portfolio_with_demo_in_its_name)
+    user_portfolio_result = paths.delete_portfolio(
+        user_portfolio_with_demo_in_its_name.name,
+        user_portfolio_with_demo_in_its_name.name,
+    )
+    assert user_portfolio_result.deleted is True
+    assert not user_portfolio_with_demo_in_its_name.exists()
+
     alternative.unlink()
     normal_with_only_demo_alternative = paths.delete_portfolio("portfolio.db", "portfolio.db")
     assert normal_with_only_demo_alternative.deleted is False

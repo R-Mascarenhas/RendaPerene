@@ -22,6 +22,7 @@ from platformdirs.windows import Windows
 
 APP_NAME = "RendaPerene"
 DEFAULT_PORTFOLIO = "portfolio.db"
+DEMO_PORTFOLIO = "portfolio_demo.db"
 DEMO_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
 FILE_LOCK_TIMEOUT_SECONDS = 5
 
@@ -408,7 +409,7 @@ class ApplicationPaths:
                 False,
                 "Digite o nome completo do arquivo da carteira para confirmar a exclusão.",
             )
-        if self.is_demo_session or "demo" in filename.casefold():
+        if self.is_demo_session or filename.casefold() == DEMO_PORTFOLIO:
             return PortfolioDeletionResult(
                 database,
                 None,
@@ -436,7 +437,7 @@ class ApplicationPaths:
                     path.resolve()
                     for path in inventory.valid
                     if path.resolve().parent == resolved_database_dir
-                    and "demo" not in path.name.casefold()
+                    and path.name.casefold() != DEMO_PORTFOLIO
                 }
                 if len(deletable_databases) <= 1:
                     return PortfolioDeletionResult(

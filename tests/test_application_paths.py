@@ -7,10 +7,13 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
+import pytest
+
 from core.application_paths import (
     ApplicationPaths,
     portfolio_database_lock,
     portfolio_database_reader_lock,
+    portfolio_deletion_marker,
 )
 from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.database import DatabaseManager
@@ -903,6 +906,20 @@ def test_portfolio_options_offer_recovery_when_only_principal_is_invalid(tmp_pat
     assert invalid_principal.read_text(encoding="utf-8") == "invalid"
 
 
+def test_portfolio_options_do_not_automatically_reuse_deleted_filenames(tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    first_recovery = paths.portfolio_database("portfolio_recovery.db")
+    for database in (principal, first_recovery):
+        marker = portfolio_deletion_marker(database)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("deleted", encoding="ascii")
+
+    options = paths.portfolio_options(paths.inspect_portfolios())
+
+    assert options == ("portfolio_recovery_2.db",)
+
+
 def test_delete_inactive_portfolio_moves_it_to_a_unique_recoverable_backup(tmp_path):
     paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
     principal = paths.portfolio_database("portfolio.db")
@@ -926,6 +943,46 @@ def test_delete_inactive_portfolio_moves_it_to_a_unique_recoverable_backup(tmp_p
     assert repeated.backup_dir != result.backup_dir
     assert (result.backup_dir / family.name).exists()
     assert (repeated.backup_dir / family.name).exists()
+
+
+def test_deleted_portfolio_tombstone_prevents_a_stale_session_from_recreating_it(tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    family = paths.portfolio_database("portfolio_family.db")
+    create_database(principal)
+    create_database(family)
+    stale_manager = DatabaseManager(family)
+
+    result = paths.delete_portfolio(family.name, family.name)
+
+    assert result.deleted is True
+    assert portfolio_deletion_marker(family).exists()
+    with pytest.raises(FileNotFoundError, match="was deleted"):
+        stale_manager.get_personal_connection()
+    assert not family.exists()
+
+    paths.clear_portfolio_deletion_marker(family.name)
+    stale_manager.init_personal_db()
+
+    assert family.exists()
+    assert not portfolio_deletion_marker(family).exists()
+
+
+def test_explicit_legacy_import_clears_a_deleted_portfolio_tombstone(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_family.db"
+    create_database(source, "legacy")
+    destination = paths.portfolio_database(source.name)
+    deletion_marker = portfolio_deletion_marker(destination)
+    deletion_marker.parent.mkdir(parents=True, exist_ok=True)
+    deletion_marker.write_text("deleted", encoding="ascii")
+
+    result = paths.migrate_legacy_database(source)
+
+    assert result.migrated is True
+    assert destination.exists()
+    assert not deletion_marker.exists()
 
 
 def test_delete_portfolio_moves_sqlite_sidecars_and_generation_marker(tmp_path, monkeypatch):
@@ -1077,7 +1134,41 @@ def test_delete_portfolio_rolls_back_every_moved_file_on_failure(tmp_path, monke
     assert "nenhum arquivo foi excluído" in result.message
     assert family.exists()
     assert generation.exists()
+    assert not portfolio_deletion_marker(family).exists()
     assert tuple((paths.backups_dir / "deleted-portfolios").glob("*")) == ()
+
+
+def test_failed_deletion_rollback_keeps_tombstone_blocking_partial_portfolio(
+    tmp_path, monkeypatch
+):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    family = paths.portfolio_database("portfolio_family.db")
+    create_database(principal)
+    create_database(family)
+    generation = Path(f"{family}.generation")
+    generation.write_text("generation", encoding="ascii")
+    real_replace = os.replace
+
+    def fail_move_and_rollback(source, destination):
+        source = Path(source)
+        destination = Path(destination)
+        if source == generation or (
+            source.parent != paths.database_dir and destination == family
+        ):
+            raise OSError("simulated filesystem failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr("core.application_paths.os.replace", fail_move_and_rollback)
+
+    result = paths.delete_portfolio(family.name, family.name)
+
+    assert result.deleted is False
+    assert "recuperação manual" in result.message
+    assert portfolio_deletion_marker(family).exists()
+    assert not family.exists()
+    assert result.backup_dir is not None
+    assert (result.backup_dir / family.name).exists()
 
 
 def test_concurrent_deletions_cannot_remove_both_remaining_portfolios(tmp_path):

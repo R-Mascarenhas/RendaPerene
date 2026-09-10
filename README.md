@@ -52,7 +52,8 @@ remover a última carteira válida. A carteira a excluir é escolhida em um sele
 precisa ser a carteira ativa. O banco e seus arquivos auxiliares SQLite são movidos para uma
 pasta exclusiva em **backups/deleted-portfolios/**; esses backups não expiram nem são removidos
 automaticamente. Para restaurar uma carteira, feche a aplicação e copie o banco e os auxiliares
-preservados nessa pasta de volta para **database/**. Bancos inválidos e carteiras de demonstração ou
+preservados nessa pasta de volta para **database/**; remova também o marcador oculto
+**.nome-da-carteira.db.deleted** correspondente. Bancos inválidos e carteiras de demonstração ou
 sessão não podem ser removidos por esse fluxo.
 
 Na primeira execução com o novo layout, a barra lateral oferece a importação de bancos

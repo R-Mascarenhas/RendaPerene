@@ -113,6 +113,9 @@ demonstração e impede a remoção da última carteira válida. Um lock de gere
 exclusões concorrentes e o lock exclusivo existente da carteira aguarda conexões leitoras antes da
 movimentação. O banco, WAL, SHM e marcador de geração existentes são
 movidos para uma pasta exclusiva em `backups/deleted-portfolios/`, com rollback em caso de falha.
+Um tombstone oculto permanece em `database/` para que sessões obsoletas recusem a conexão em vez
+de recriar silenciosamente um SQLite vazio; somente a criação explícita de uma carteira com o mesmo
+nome remove esse marcador sob o lock da carteira.
 Esses backups são permanentes até a remoção manual. Quando a carteira ativa é excluída, a raiz de
 composição escolhe outra carteira válida, invalida o estado derivado da sessão e reinicia a execução
 antes de inicializar os adaptadores do novo banco.

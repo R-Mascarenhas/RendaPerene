@@ -2,7 +2,10 @@ import sqlite3
 import sys
 from contextlib import suppress
 
-from core.application_paths import portfolio_database_reader_lock
+from core.application_paths import (
+    portfolio_database_reader_lock,
+    portfolio_deletion_marker,
+)
 
 
 class _LockedCursor(sqlite3.Cursor):
@@ -115,6 +118,8 @@ class DatabaseManager:
         lock_context = portfolio_database_reader_lock(db_file)
         lock_context.__enter__()
         try:
+            if portfolio_deletion_marker(db_file).exists():
+                raise FileNotFoundError("The selected portfolio database was deleted.")
             connection = sqlite3.connect(db_file, factory=_LockedConnection, timeout=60)
             connection.attach_database(db_file, lock_context)
             return connection

@@ -147,6 +147,12 @@ def portfolio_database_lock(database: Path):
         yield
 
 
+def portfolio_deletion_marker(database: Path) -> Path:
+    """Return the persistent marker that prevents reopening a deleted portfolio."""
+    database = Path(database)
+    return database.with_name(f".{database.name}.deleted")
+
+
 @contextmanager
 def portfolio_database_reader_lock(database: Path):
     """Register a reader so migration publication waits for open SQLite handles."""
@@ -370,16 +376,39 @@ class ApplicationPaths:
             return tuple(sorted(set(available)))
 
         default_database = self.portfolio_database(DEFAULT_PORTFOLIO)
-        if not default_database.exists():
+        if (
+            not default_database.exists()
+            and not portfolio_deletion_marker(default_database).exists()
+        ):
             return (DEFAULT_PORTFOLIO,)
 
         recovery_index = 1
         while True:
             suffix = "" if recovery_index == 1 else f"_{recovery_index}"
             recovery_name = f"portfolio_recovery{suffix}.db"
-            if not self.portfolio_database(recovery_name).exists():
+            recovery_database = self.portfolio_database(recovery_name)
+            if (
+                not recovery_database.exists()
+                and not portfolio_deletion_marker(recovery_database).exists()
+            ):
                 return (recovery_name,)
             recovery_index += 1
+
+    def clear_portfolio_deletion_marker(self, filename: str) -> None:
+        """Allow an explicit portfolio creation to reuse a previously deleted filename."""
+        database = self.portfolio_database(filename)
+        with portfolio_database_lock(database):
+            portfolio_deletion_marker(database).unlink(missing_ok=True)
+
+    @staticmethod
+    def _write_portfolio_deletion_marker(database: Path) -> None:
+        marker = portfolio_deletion_marker(database)
+        temporary = marker.with_name(f".{marker.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_text(uuid.uuid4().hex, encoding="ascii")
+            os.replace(temporary, marker)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def delete_portfolio(self, filename: str, confirmation: str) -> PortfolioDeletionResult:
         """Move one valid local portfolio and its sidecars to a permanent backup."""
@@ -458,8 +487,11 @@ class ApplicationPaths:
                     Path(f"{database}-shm"),
                     Path(f"{database}.generation"),
                 )
+                deletion_marker = portfolio_deletion_marker(database)
+                marker_existed = deletion_marker.exists()
                 moved_files: list[tuple[Path, Path]] = []
                 try:
+                    self._write_portfolio_deletion_marker(database)
                     for source in related_files:
                         if source != database and not source.exists():
                             continue
@@ -473,6 +505,8 @@ class ApplicationPaths:
                             os.replace(destination, source)
                         except OSError:
                             rollback_failed = True
+                    if not rollback_failed and not marker_existed:
+                        deletion_marker.unlink(missing_ok=True)
                     with suppress(OSError):
                         backup_dir.rmdir()
                     if rollback_failed:
@@ -727,6 +761,7 @@ class ApplicationPaths:
                     completion_marker.write_text(
                         f"{self._sqlite_content_digest(backup)}\n", encoding="ascii"
                     )
+                    portfolio_deletion_marker(destination).unlink(missing_ok=True)
                 except (OSError, sqlite3.DatabaseError, ValueError):
                     self._remove_sqlite_sidecars(destination)
                     if destination_existed:

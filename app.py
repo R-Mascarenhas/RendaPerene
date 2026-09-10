@@ -144,6 +144,7 @@ if not is_cloud:
             new_filename = f"portfolio_{clean_name.lower()}.db"
             new_filepath = app_paths.portfolio_database(new_filename)
             # Initialize tables
+            app_paths.clear_portfolio_deletion_marker(new_filename)
             temp_db = DatabaseManager(personal_db=new_filepath)
             temp_db.init_personal_db()
             SessionManager.switch_portfolio(new_filename)

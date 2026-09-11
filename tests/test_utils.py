@@ -345,8 +345,8 @@ def test_active_portfolio_deletion_selects_fallback_and_clears_derived_state(
 ):
     from core.constants import (
         SESSION_BIRTH_DATE,
+        WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX,
         WIDGET_PORTFOLIO_DELETION_TARGET,
-        WIDGET_PORTFOLIO_DELETE_CONFIRMATION,
     )
 
     paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
@@ -363,7 +363,9 @@ def test_active_portfolio_deletion_selects_fallback_and_clears_derived_state(
         "db_loaded": True,
         SESSION_BIRTH_DATE: "stale",
         WIDGET_PORTFOLIO_DELETION_TARGET: principal.name,
-        WIDGET_PORTFOLIO_DELETE_CONFIRMATION: principal.name,
+        f"{WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX}{principal.name}:generation": (
+            principal.name
+        ),
     }
     monkeypatch.setattr(st, "session_state", mock_session)
 
@@ -378,7 +380,9 @@ def test_active_portfolio_deletion_selects_fallback_and_clears_derived_state(
     assert "db_loaded" not in mock_session
     assert SESSION_BIRTH_DATE not in mock_session
     assert WIDGET_PORTFOLIO_DELETION_TARGET not in mock_session
-    assert WIDGET_PORTFOLIO_DELETE_CONFIRMATION not in mock_session
+    assert not any(
+        key.startswith(WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX) for key in mock_session
+    )
 
 
 def test_inactive_portfolio_deletion_preserves_active_session_state(monkeypatch, tmp_path):

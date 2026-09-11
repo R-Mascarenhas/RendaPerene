@@ -25,6 +25,7 @@ DEFAULT_PORTFOLIO = "portfolio.db"
 DEMO_PORTFOLIO = "portfolio_demo.db"
 DEMO_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
 FILE_LOCK_TIMEOUT_SECONDS = 5
+_GENERATION_NOT_PROVIDED = object()
 
 
 def _try_lock_descriptor(descriptor: int) -> bool:
@@ -426,7 +427,12 @@ class ApplicationPaths:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def delete_portfolio(self, filename: str, confirmation: str) -> PortfolioDeletionResult:
+    def delete_portfolio(
+        self,
+        filename: str,
+        confirmation: str,
+        expected_generation=_GENERATION_NOT_PROVIDED,
+    ) -> PortfolioDeletionResult:
         """Move one valid local portfolio and its sidecars to a permanent backup."""
         try:
             database = self.portfolio_database(filename)
@@ -477,6 +483,17 @@ class ApplicationPaths:
                         None,
                         False,
                         "A carteira selecionada não existe ou não é um banco SQLite válido.",
+                    )
+                if (
+                    expected_generation is not _GENERATION_NOT_PROVIDED
+                    and self.database_generation(database) != expected_generation
+                ):
+                    return PortfolioDeletionResult(
+                        database,
+                        None,
+                        False,
+                        "A carteira selecionada foi substituída desde a confirmação. "
+                        "Confira os dados e confirme novamente.",
                     )
                 deletable_databases = {
                     path.resolve()

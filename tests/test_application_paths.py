@@ -973,6 +973,30 @@ def test_same_name_recreation_publishes_a_new_generation_for_stale_sessions(tmp_
     assert replacement_generation != original_generation
 
 
+def test_delete_portfolio_rejects_confirmation_bound_to_an_old_generation(tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    family = paths.portfolio_database("portfolio_family.db")
+    create_database(principal)
+    paths.prepare_portfolio_creation(family.name)
+    create_database(family, "original")
+    confirmed_generation = paths.database_generation(family)
+
+    paths.prepare_portfolio_creation(family.name)
+    replacement_generation = paths.database_generation(family)
+    result = paths.delete_portfolio(
+        family.name,
+        family.name,
+        expected_generation=confirmed_generation,
+    )
+
+    assert replacement_generation != confirmed_generation
+    assert result.deleted is False
+    assert "substituída" in result.message
+    assert family.exists()
+    assert tuple((paths.backups_dir / "deleted-portfolios").glob("*")) == ()
+
+
 def test_database_connection_guard_runs_before_sqlite_can_recreate_a_file(tmp_path):
     database = tmp_path / "portfolio_family.db"
 

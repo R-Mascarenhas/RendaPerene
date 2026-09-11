@@ -7,7 +7,7 @@ import streamlit as st
 from core.application_paths import ApplicationPaths
 from core.constants import (
     SESSION_PORTFOLIO_DELETION_SUCCESS,
-    WIDGET_PORTFOLIO_DELETE_CONFIRMATION,
+    WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX,
     WIDGET_PORTFOLIO_DELETION_TARGET,
 )
 from core.daos.assets_catalog_dao import AssetsCatalogDAO
@@ -159,10 +159,12 @@ if not is_cloud:
             format_func=lambda filename: labels.get(filename, filename),
             index=db_files.index(active_db),
             key=WIDGET_PORTFOLIO_DELETION_TARGET,
-            on_change=lambda: st.session_state.pop(
-                WIDGET_PORTFOLIO_DELETE_CONFIRMATION,
-                None,
-            ),
+        )
+        deletion_database = app_paths.portfolio_database(deletion_target)
+        deletion_generation = app_paths.database_generation(deletion_database)
+        confirmation_key = (
+            f"{WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX}"
+            f"{deletion_target}:{deletion_generation or 'legacy'}"
         )
         st.write(f"**Arquivo:** {deletion_target}")
         st.warning(
@@ -172,7 +174,7 @@ if not is_cloud:
         st.markdown(f"Digite **{deletion_target}** para confirmar")
         deletion_confirmation = st.text_input(
             "Confirmação da exclusão",
-            key=WIDGET_PORTFOLIO_DELETE_CONFIRMATION,
+            key=confirmation_key,
             label_visibility="collapsed",
         )
         is_last_portfolio = len(db_files) <= 1
@@ -180,7 +182,7 @@ if not is_cloud:
             st.info("A última carteira válida não pode ser excluída.")
         if st.button(
             "Mover carteira para backup",
-            key=f"delete_portfolio_{deletion_target}",
+            key=f"delete_portfolio_{deletion_target}_{deletion_generation}",
             type="primary",
             disabled=is_last_portfolio,
             use_container_width=True,
@@ -188,13 +190,14 @@ if not is_cloud:
             deletion_result = app_paths.delete_portfolio(
                 deletion_target,
                 deletion_confirmation,
+                expected_generation=deletion_generation,
             )
             if deletion_result.deleted:
                 remaining_files = list(app_paths.portfolio_options(app_paths.inspect_portfolios()))
                 next_active_db = app_paths.choose_portfolio(active_db, remaining_files)
                 SessionManager.switch_portfolio(next_active_db)
                 st.session_state.pop(WIDGET_PORTFOLIO_DELETION_TARGET, None)
-                st.session_state.pop(WIDGET_PORTFOLIO_DELETE_CONFIRMATION, None)
+                st.session_state.pop(confirmation_key, None)
                 st.session_state[SESSION_PORTFOLIO_DELETION_SUCCESS] = (
                     f"{deletion_result.message} Local: {deletion_result.backup_dir}"
                 )

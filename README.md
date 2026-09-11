@@ -58,7 +58,8 @@ sessão não podem ser removidos por esse fluxo.
 
 Se uma nova carteira reutilizar o nome de uma carteira excluída, as demais sessões abertas com esse
 nome são reiniciadas antes de acessar o novo banco, evitando que dados mantidos em memória sejam
-gravados na carteira substituta.
+gravados na carteira substituta. Uma confirmação de exclusão já preenchida também perde a validade
+quando a carteira selecionada é substituída e precisa ser digitada novamente.
 
 Na primeira execução com o novo layout, a barra lateral oferece a importação de bancos
 arquivos `.db` encontrados na antiga pasta `database/`, tanto ao lado da aplicação quanto em

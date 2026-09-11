@@ -118,6 +118,9 @@ de recriar silenciosamente um SQLite vazio. A criação explícita de uma cartei
 geração sob o lock da carteira antes de remover esse marcador. Toda conexão compara essa geração
 com a identidade guardada na sessão Streamlit; se o mesmo nome agora apontar para outra carteira,
 o estado derivado é invalidado e a execução reinicia antes de qualquer acesso ao SQLite.
+A confirmação de exclusão também é vinculada à geração da carteira selecionada e conferida
+novamente sob o lock; se outra sessão substituir o mesmo nome, o texto anterior deixa de autorizar
+a operação e o usuário precisa revisar e confirmar a nova carteira.
 Esses backups são permanentes até a remoção manual. Quando a carteira ativa é excluída, a raiz de
 composição escolhe outra carteira válida, invalida o estado derivado da sessão e reinicia a execução
 antes de inicializar os adaptadores do novo banco.

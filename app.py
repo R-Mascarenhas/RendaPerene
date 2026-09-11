@@ -5,6 +5,11 @@ import uuid
 import streamlit as st
 
 from core.application_paths import ApplicationPaths
+from core.constants import (
+    SESSION_PORTFOLIO_DELETION_SUCCESS,
+    WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX,
+    WIDGET_PORTFOLIO_DELETION_TARGET,
+)
 from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.database import DatabaseManager, db
 from core.utils import SessionManager, get_app_version
@@ -89,6 +94,9 @@ if recovery_database:
 if not is_cloud:
     # 2. Sidebar Selector
     st.sidebar.markdown("### 🗃️ Gerenciar Carteiras")
+    deletion_success = st.session_state.pop(SESSION_PORTFOLIO_DELETION_SUCCESS, None)
+    if deletion_success:
+        st.sidebar.success(deletion_success)
 
     requested_db = st.session_state.get("active_db", "portfolio.db")
     active_db = app_paths.choose_portfolio(requested_db, db_files)
@@ -119,6 +127,11 @@ if not is_cloud:
         index=db_files.index(active_db),
     )
 
+    # Switch before rendering destructive controls so their target is unambiguous.
+    if selected_db != active_db:
+        SessionManager.switch_portfolio(selected_db)
+        st.rerun()
+
     # Option to create a new database
     st.sidebar.markdown("---")
     st.sidebar.markdown("#### ➕ Nova Carteira")
@@ -131,16 +144,66 @@ if not is_cloud:
             new_filename = f"portfolio_{clean_name.lower()}.db"
             new_filepath = app_paths.portfolio_database(new_filename)
             # Initialize tables
+            app_paths.prepare_portfolio_creation(new_filename)
             temp_db = DatabaseManager(personal_db=new_filepath)
             temp_db.init_personal_db()
             SessionManager.switch_portfolio(new_filename)
             st.toast(f"✅ Carteira '{clean_name}' criada com sucesso!")
             st.rerun()
 
-    # 3. Handle database switch
-    if selected_db != active_db:
-        SessionManager.switch_portfolio(selected_db)
-        st.rerun()
+    st.sidebar.markdown("---")
+    with st.sidebar.expander("🗑️ Excluir carteira"):
+        deletion_target = st.selectbox(
+            "Selecione a carteira para excluir",
+            options=db_files,
+            format_func=lambda filename: labels.get(filename, filename),
+            index=db_files.index(active_db),
+            key=WIDGET_PORTFOLIO_DELETION_TARGET,
+        )
+        deletion_database = app_paths.portfolio_database(deletion_target)
+        deletion_generation = app_paths.database_generation(deletion_database)
+        confirmation_key = (
+            f"{WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX}"
+            f"{deletion_target}:{deletion_generation or 'legacy'}"
+        )
+        st.write(f"**Arquivo:** {deletion_target}")
+        st.warning(
+            "A carteira e seus arquivos auxiliares serão movidos para um backup local. "
+            "Esse backup será mantido até que você o remova manualmente."
+        )
+        st.markdown(f"Digite **{deletion_target}** para confirmar")
+        deletion_confirmation = st.text_input(
+            "Confirmação da exclusão",
+            key=confirmation_key,
+            label_visibility="collapsed",
+        )
+        is_last_portfolio = len(db_files) <= 1
+        if is_last_portfolio:
+            st.info("A última carteira válida não pode ser excluída.")
+        if st.button(
+            "Mover carteira para backup",
+            key=f"delete_portfolio_{deletion_target}_{deletion_generation}",
+            type="primary",
+            disabled=is_last_portfolio,
+            use_container_width=True,
+        ):
+            deletion_result = app_paths.delete_portfolio(
+                deletion_target,
+                deletion_confirmation,
+                expected_generation=deletion_generation,
+            )
+            if deletion_result.deleted:
+                remaining_files = list(app_paths.portfolio_options(app_paths.inspect_portfolios()))
+                next_active_db = app_paths.choose_portfolio(active_db, remaining_files)
+                SessionManager.switch_portfolio(next_active_db)
+                st.session_state.pop(WIDGET_PORTFOLIO_DELETION_TARGET, None)
+                st.session_state.pop(confirmation_key, None)
+                st.session_state[SESSION_PORTFOLIO_DELETION_SUCCESS] = (
+                    f"{deletion_result.message} Local: {deletion_result.backup_dir}"
+                )
+                st.rerun()
+            else:
+                st.error(deletion_result.message)
 
     current_active_db = active_db
 else:
@@ -166,6 +229,15 @@ else:
     catalog_path = app_paths.catalog_file
 MarketData.configure_catalog(catalog_path)
 
+
+def guard_portfolio_generation(database_path):
+    """Restart stale sessions before they can access a replacement portfolio."""
+    generation = ApplicationPaths.database_generation(database_path)
+    if SessionManager.refresh_portfolio_generation(generation):
+        st.rerun()
+
+
+db.connection_guard = guard_portfolio_generation
 db.init_personal_db()
 
 st.set_page_config(page_title=f"Renda Perene v{get_app_version()}", page_icon="💼", layout="wide")
@@ -194,14 +266,6 @@ ShareQuantityGoalService.set_adapters(
     market_data_api=StreamlitCachedMarketData,
     planning_provider=SimulationService.get_default(),
 )
-
-# Reload if another Streamlit session replaced the active portfolio on disk.
-resolved_database = app_paths.portfolio_database(current_active_db)
-generation_file = resolved_database.with_name(f"{resolved_database.name}.generation")
-database_signature = generation_file.stat().st_mtime_ns if generation_file.exists() else None
-if st.session_state.get("active_database_signature", database_signature) != database_signature:
-    SessionManager.reset_portfolio_state()
-st.session_state["active_database_signature"] = database_signature
 
 # Session state must be initialized before rendering any view
 SessionManager.initialize()

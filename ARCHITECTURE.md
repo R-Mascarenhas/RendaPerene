@@ -106,6 +106,25 @@ novo nome `portfolio_recovery*.db`, preservando o arquivo inválido. O reset da 
 remove chaves de widgets de metas vinculadas ao banco anterior. Nomes de arquivos de carteiras e
 dados financeiros não são escritos em logs.
 
+A exclusão iniciada pela barra lateral também permanece encapsulada em `ApplicationPaths`. A
+operação exige o nome completo do arquivo, aceita somente um banco SQLite válido dentro de
+`database/`, permite selecionar uma carteira diferente da ativa, recusa carteiras de
+demonstração e impede a remoção da última carteira válida. Um lock de gerenciamento serializa
+exclusões concorrentes e o lock exclusivo existente da carteira aguarda conexões leitoras antes da
+movimentação. O banco, WAL, SHM e marcador de geração existentes são
+movidos para uma pasta exclusiva em `backups/deleted-portfolios/`, com rollback em caso de falha.
+Um tombstone oculto permanece em `database/` para que sessões obsoletas recusem a conexão em vez
+de recriar silenciosamente um SQLite vazio. A criação explícita de uma carteira publica uma nova
+geração sob o lock da carteira antes de remover esse marcador. Toda conexão compara essa geração
+com a identidade guardada na sessão Streamlit; se o mesmo nome agora apontar para outra carteira,
+o estado derivado é invalidado e a execução reinicia antes de qualquer acesso ao SQLite.
+A confirmação de exclusão também é vinculada à geração da carteira selecionada e conferida
+novamente sob o lock; se outra sessão substituir o mesmo nome, o texto anterior deixa de autorizar
+a operação e o usuário precisa revisar e confirmar a nova carteira.
+Esses backups são permanentes até a remoção manual. Quando a carteira ativa é excluída, a raiz de
+composição escolhe outra carteira válida, invalida o estado derivado da sessão e reinicia a execução
+antes de inicializar os adaptadores do novo banco.
+
 A validação SQLite usa `PRAGMA quick_check` e mantém em memória o resultado por caminho, tamanho,
 data de modificação e metadados dos arquivos auxiliares WAL/SHM. Reruns do Streamlit reutilizam a
 validação enquanto esses metadados não mudam; a comparação de conteúdo lógico usada pelos marcadores

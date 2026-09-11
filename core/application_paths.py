@@ -22,8 +22,10 @@ from platformdirs.windows import Windows
 
 APP_NAME = "RendaPerene"
 DEFAULT_PORTFOLIO = "portfolio.db"
+DEMO_PORTFOLIO = "portfolio_demo.db"
 DEMO_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
 FILE_LOCK_TIMEOUT_SECONDS = 5
+_GENERATION_NOT_PROVIDED = object()
 
 
 def _try_lock_descriptor(descriptor: int) -> bool:
@@ -146,6 +148,12 @@ def portfolio_database_lock(database: Path):
         yield
 
 
+def portfolio_deletion_marker(database: Path) -> Path:
+    """Return the persistent marker that prevents reopening a deleted portfolio."""
+    database = Path(database)
+    return database.with_name(f".{database.name}.deleted")
+
+
 @contextmanager
 def portfolio_database_reader_lock(database: Path):
     """Register a reader so migration publication waits for open SQLite handles."""
@@ -200,12 +208,23 @@ class MigrationResult:
 
 
 @dataclass(frozen=True)
+class PortfolioDeletionResult:
+    """Describes a recoverable local portfolio deletion."""
+
+    source: Path | None
+    backup_dir: Path | None
+    deleted: bool
+    message: str
+
+
+@dataclass(frozen=True)
 class ApplicationPaths:
     """Resolves application resources and owns writable-data preparation and migration."""
 
     resource_root: Path
     data_root: Path
     legacy_root: Path
+    is_demo_session: bool = False
 
     @classmethod
     def discover(cls, system: str | None = None) -> "ApplicationPaths":
@@ -253,7 +272,7 @@ class ApplicationPaths:
         if not safe_session_id:
             raise ValueError("A demo session identifier is required.")
         demo_root = Path(tempfile.gettempdir()) / APP_NAME / "demo" / safe_session_id
-        return ApplicationPaths(self.resource_root, demo_root, self.legacy_root)
+        return ApplicationPaths(self.resource_root, demo_root, self.legacy_root, True)
 
     def cleanup_demo_sessions(
         self,
@@ -331,7 +350,22 @@ class ApplicationPaths:
 
     @staticmethod
     def _write_database_generation(database: Path) -> None:
-        Path(f"{database}.generation").write_text(uuid.uuid4().hex, encoding="ascii")
+        generation = Path(f"{database}.generation")
+        temporary = generation.with_name(f".{generation.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_text(uuid.uuid4().hex, encoding="ascii")
+            os.replace(temporary, generation)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    @staticmethod
+    def database_generation(database: Path) -> str | None:
+        """Read the identity of the portfolio currently published at this path."""
+        generation = Path(f"{database}.generation")
+        try:
+            return generation.read_text(encoding="ascii").strip() or None
+        except FileNotFoundError:
+            return None
 
     @staticmethod
     def choose_portfolio(preferred: str, available: list[str]) -> str:
@@ -358,16 +392,194 @@ class ApplicationPaths:
             return tuple(sorted(set(available)))
 
         default_database = self.portfolio_database(DEFAULT_PORTFOLIO)
-        if not default_database.exists():
+        if (
+            not default_database.exists()
+            and not portfolio_deletion_marker(default_database).exists()
+        ):
             return (DEFAULT_PORTFOLIO,)
 
         recovery_index = 1
         while True:
             suffix = "" if recovery_index == 1 else f"_{recovery_index}"
             recovery_name = f"portfolio_recovery{suffix}.db"
-            if not self.portfolio_database(recovery_name).exists():
+            recovery_database = self.portfolio_database(recovery_name)
+            if (
+                not recovery_database.exists()
+                and not portfolio_deletion_marker(recovery_database).exists()
+            ):
                 return (recovery_name,)
             recovery_index += 1
+
+    def prepare_portfolio_creation(self, filename: str) -> None:
+        """Publish a new identity before allowing explicit creation at this filename."""
+        database = self.portfolio_database(filename)
+        with portfolio_database_lock(database):
+            self._write_database_generation(database)
+            portfolio_deletion_marker(database).unlink(missing_ok=True)
+
+    @staticmethod
+    def _write_portfolio_deletion_marker(database: Path) -> None:
+        marker = portfolio_deletion_marker(database)
+        temporary = marker.with_name(f".{marker.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_text(uuid.uuid4().hex, encoding="ascii")
+            os.replace(temporary, marker)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def delete_portfolio(
+        self,
+        filename: str,
+        confirmation: str,
+        expected_generation=_GENERATION_NOT_PROVIDED,
+    ) -> PortfolioDeletionResult:
+        """Move one valid local portfolio and its sidecars to a permanent backup."""
+        try:
+            database = self.portfolio_database(filename)
+            resolved_database_dir = self.database_dir.resolve()
+            resolved_database = database.resolve()
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return PortfolioDeletionResult(
+                None,
+                None,
+                False,
+                "Informe um nome de carteira válido, sem caminhos ou diretórios.",
+            )
+
+        if resolved_database.parent != resolved_database_dir:
+            return PortfolioDeletionResult(
+                None,
+                None,
+                False,
+                "Informe um nome de carteira válido dentro do diretório de dados.",
+            )
+        if confirmation != filename:
+            return PortfolioDeletionResult(
+                database,
+                None,
+                False,
+                "Digite o nome completo do arquivo da carteira para confirmar a exclusão.",
+            )
+        if self.is_demo_session or filename.casefold() == DEMO_PORTFOLIO:
+            return PortfolioDeletionResult(
+                database,
+                None,
+                False,
+                "Carteiras de demonstração ou de sessão não podem ser excluídas por este fluxo.",
+            )
+
+        management_lock = self.database_dir / ".portfolio-management.lock"
+        try:
+            with (
+                _exclusive_file_lock(management_lock),
+                portfolio_database_lock(database),
+            ):
+                inventory = self.inspect_portfolios()
+                resolved_database = database.resolve()
+                valid_databases = {path.resolve() for path in inventory.valid}
+                if resolved_database not in valid_databases:
+                    return PortfolioDeletionResult(
+                        database,
+                        None,
+                        False,
+                        "A carteira selecionada não existe ou não é um banco SQLite válido.",
+                    )
+                if (
+                    expected_generation is not _GENERATION_NOT_PROVIDED
+                    and self.database_generation(database) != expected_generation
+                ):
+                    return PortfolioDeletionResult(
+                        database,
+                        None,
+                        False,
+                        "A carteira selecionada foi substituída desde a confirmação. "
+                        "Confira os dados e confirme novamente.",
+                    )
+                deletable_databases = {
+                    path.resolve()
+                    for path in inventory.valid
+                    if path.resolve().parent == resolved_database_dir
+                    and path.name.casefold() != DEMO_PORTFOLIO
+                }
+                if len(deletable_databases) <= 1:
+                    return PortfolioDeletionResult(
+                        database,
+                        None,
+                        False,
+                        "A última carteira válida não pode ser excluída.",
+                    )
+
+                deletion_root = self.backups_dir / "deleted-portfolios"
+                deletion_root.mkdir(parents=True, exist_ok=True)
+                timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+                backup_dir = deletion_root / (f"{timestamp}_{database.stem}_{uuid.uuid4().hex}")
+                backup_dir.mkdir(parents=False, exist_ok=False)
+                related_files = (
+                    database,
+                    Path(f"{database}-wal"),
+                    Path(f"{database}-shm"),
+                    Path(f"{database}.generation"),
+                )
+                deletion_marker = portfolio_deletion_marker(database)
+                marker_existed = deletion_marker.exists()
+                moved_files: list[tuple[Path, Path]] = []
+                try:
+                    self._write_portfolio_deletion_marker(database)
+                    for source in related_files:
+                        if source != database and not source.exists():
+                            continue
+                        destination = backup_dir / source.name
+                        os.replace(source, destination)
+                        moved_files.append((source, destination))
+                except OSError:
+                    rollback_failed = False
+                    for source, destination in reversed(moved_files):
+                        try:
+                            os.replace(destination, source)
+                        except OSError:
+                            rollback_failed = True
+                    if not rollback_failed and not marker_existed:
+                        deletion_marker.unlink(missing_ok=True)
+                    with suppress(OSError):
+                        backup_dir.rmdir()
+                    if rollback_failed:
+                        return PortfolioDeletionResult(
+                            database,
+                            backup_dir,
+                            False,
+                            "A exclusão não foi concluída e alguns arquivos exigem "
+                            "recuperação manual a partir do backup.",
+                        )
+                    return PortfolioDeletionResult(
+                        database,
+                        None,
+                        False,
+                        "Não foi possível concluir a exclusão; nenhum arquivo foi excluído.",
+                    )
+
+                self._is_valid_sqlite_snapshot.cache_clear()
+                self._sqlite_content_digest_snapshot.cache_clear()
+                return PortfolioDeletionResult(
+                    database,
+                    backup_dir,
+                    True,
+                    "Carteira movida para backup com sucesso.",
+                )
+        except TimeoutError:
+            return PortfolioDeletionResult(
+                database,
+                None,
+                False,
+                "A carteira está em uso por outra sessão. Feche as operações ativas e tente novamente.",
+            )
+        except OSError:
+            return PortfolioDeletionResult(
+                database,
+                None,
+                False,
+                "Não foi possível preparar o backup da carteira. Verifique as permissões "
+                "de armazenamento e tente novamente.",
+            )
 
     def legacy_databases(self) -> tuple[Path, ...]:
         """Discover legacy databases beside this executable or in an earlier release."""
@@ -582,6 +794,7 @@ class ApplicationPaths:
                     completion_marker.write_text(
                         f"{self._sqlite_content_digest(backup)}\n", encoding="ascii"
                     )
+                    portfolio_deletion_marker(destination).unlink(missing_ok=True)
                 except (OSError, sqlite3.DatabaseError, ValueError):
                     self._remove_sqlite_sidecars(destination)
                     if destination_existed:

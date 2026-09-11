@@ -18,6 +18,7 @@ from core.constants import (
     MW_VALUE,
     PLANNING_START_DATE,
     RETIREMENT_AGE,
+    SESSION_ACTIVE_DATABASE_GENERATION,
     SESSION_ANNUAL_INTEREST_RATE,
     SESSION_BAZIN_TARGET_SPREAD,
     SESSION_BAZIN_TARGET_YIELD,
@@ -49,6 +50,8 @@ from core.constants import (
     WIDGET_MW_VALUE_PREFIX,
     WIDGET_PLANNING_START_DATE,
     WIDGET_PLANNING_START_DATE_ENABLED,
+    WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX,
+    WIDGET_PORTFOLIO_DELETION_TARGET,
     WIDGET_REINVESTMENT_GOAL_PREFIX,
     WIDGET_RETIREMENT_AGE,
     WIDGET_SHARE_QUANTITY_GOAL_PREFIX,
@@ -89,6 +92,18 @@ class SessionManager:
         return True
 
     @staticmethod
+    def refresh_portfolio_generation(generation: str | None) -> bool:
+        """Invalidate state when the database path now refers to another portfolio instance."""
+        if SESSION_ACTIVE_DATABASE_GENERATION not in st.session_state:
+            st.session_state[SESSION_ACTIVE_DATABASE_GENERATION] = generation
+            return False
+        if st.session_state[SESSION_ACTIVE_DATABASE_GENERATION] == generation:
+            return False
+        SessionManager.reset_portfolio_state()
+        st.session_state[SESSION_ACTIVE_DATABASE_GENERATION] = generation
+        return True
+
+    @staticmethod
     def reset_portfolio_state():
         """Discard session values derived from the active portfolio database."""
         MarketData._get_raw_ticker_market_analysis.clear()
@@ -125,6 +140,8 @@ class SessionManager:
             WIDGET_PLANNING_START_DATE,
             WIDGET_PLANNING_START_DATE_ENABLED,
             WIDGET_INITIAL_EQUITY,
+            WIDGET_PORTFOLIO_DELETION_TARGET,
+            SESSION_ACTIVE_DATABASE_GENERATION,
         )
         portfolio_prefixes = (
             WIDGET_REINVESTMENT_GOAL_PREFIX,
@@ -134,6 +151,7 @@ class SessionManager:
             WIDGET_B3_FILE_UPLOADER_PREFIX,
             WIDGET_MW_VALUE_PREFIX,
             WIDGET_INITIAL_EQUITY_DYNAMIC_PREFIX,
+            WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX,
         )
         for key in list(st.session_state):
             if key in portfolio_keys or (

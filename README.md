@@ -25,7 +25,7 @@ A interface e a documentação do projeto estão em português brasileiro (PT-BR
 - **Detalhes dos ativos e monitor de mercado:** acompanhamento dos ativos em carteira e dos selecionados manualmente, histórico de preços e dividendos, modelos de preço-teto de Bazin e consulta Raio-X de todo o catálogo, com indicadores de valuation e dividend yields anuais calculados a partir do preço de fechamento de cada ano.
 - **Planejamento de aposentadoria:** cálculo do aporte mensal vitalício e do aporte corrigido ao longo do tempo por meio da fórmula de anuidade antecipada, com projeções baseadas no plano salvo e no histórico da carteira.
 - **Metas de investimento:** a tela de Planejamento possui uma aba `Metas` para ativar independentemente o reinvestimento de dividendos e as metas de quantidade por ação. A base anual das metas por ação é a quantidade mantida em 1º de janeiro; o Dashboard exibe uma barra ponderada pelos pesos, com detalhes por ticker ao passar o cursor e em uma seção expansível. Peso 0% desativa o ativo, o progresso pode superar 100% e históricos parciais ou indisponíveis exibem uma observação sem inventar uma meta.
-- **Múltiplas carteiras locais:** seleção de uma base de dados existente ou criação de uma nova carteira local pela barra lateral.
+- **Múltiplas carteiras locais:** seleção, criação e exclusão recuperável de carteiras pela barra lateral.
 
 ## Dados e privacidade
 
@@ -46,6 +46,20 @@ Bancos inválidos são ignorados na seleção. Se a carteira ativa for removida 
 SQLite válido, a aplicação seleciona outra carteira disponível e recarrega suas configurações sem
 reutilizar os dados de planejamento da anterior. Se nenhuma carteira válida existir, uma nova
 carteira de recuperação é criada com outro nome e o arquivo inválido permanece intacto.
+
+A exclusão de uma carteira local exige que o nome completo do arquivo seja digitado e nunca permite
+remover a última carteira válida. A carteira a excluir é escolhida em um seletor próprio e não
+precisa ser a carteira ativa. O banco e seus arquivos auxiliares SQLite são movidos para uma
+pasta exclusiva em **backups/deleted-portfolios/**; esses backups não expiram nem são removidos
+automaticamente. Para restaurar uma carteira, feche a aplicação e copie o banco e os auxiliares
+preservados nessa pasta de volta para **database/**; remova também o marcador oculto
+**.nome-da-carteira.db.deleted** correspondente. Bancos inválidos e carteiras de demonstração ou
+sessão não podem ser removidos por esse fluxo.
+
+Se uma nova carteira reutilizar o nome de uma carteira excluída, as demais sessões abertas com esse
+nome são reiniciadas antes de acessar o novo banco, evitando que dados mantidos em memória sejam
+gravados na carteira substituta. Uma confirmação de exclusão já preenchida também perde a validade
+quando a carteira selecionada é substituída e precisa ser digitada novamente.
 
 Na primeira execução com o novo layout, a barra lateral oferece a importação de bancos
 arquivos `.db` encontrados na antiga pasta `database/`, tanto ao lado da aplicação quanto em

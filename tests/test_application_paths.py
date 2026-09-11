@@ -7,10 +7,13 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
+import pytest
+
 from core.application_paths import (
     ApplicationPaths,
     portfolio_database_lock,
     portfolio_database_reader_lock,
+    portfolio_deletion_marker,
 )
 from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.database import DatabaseManager
@@ -901,3 +904,338 @@ def test_portfolio_options_offer_recovery_when_only_principal_is_invalid(tmp_pat
 
     assert options == ("portfolio_recovery.db",)
     assert invalid_principal.read_text(encoding="utf-8") == "invalid"
+
+
+def test_portfolio_options_do_not_automatically_reuse_deleted_filenames(tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    first_recovery = paths.portfolio_database("portfolio_recovery.db")
+    for database in (principal, first_recovery):
+        marker = portfolio_deletion_marker(database)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("deleted", encoding="ascii")
+
+    options = paths.portfolio_options(paths.inspect_portfolios())
+
+    assert options == ("portfolio_recovery_2.db",)
+
+
+def test_delete_inactive_portfolio_moves_it_to_a_unique_recoverable_backup(tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    family = paths.portfolio_database("portfolio_family.db")
+    create_database(principal, "principal")
+    create_database(family, "family")
+
+    result = paths.delete_portfolio("portfolio_family.db", "portfolio_family.db")
+
+    assert result.deleted is True
+    assert result.backup_dir is not None
+    assert not family.exists()
+    assert principal.exists()
+    assert (result.backup_dir / family.name).exists()
+    assert ApplicationPaths.is_valid_sqlite(result.backup_dir / family.name)
+
+    create_database(family, "replacement")
+    repeated = paths.delete_portfolio("portfolio_family.db", "portfolio_family.db")
+
+    assert repeated.deleted is True
+    assert repeated.backup_dir != result.backup_dir
+    assert (result.backup_dir / family.name).exists()
+    assert (repeated.backup_dir / family.name).exists()
+
+
+def test_same_name_recreation_publishes_a_new_generation_for_stale_sessions(tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    family = paths.portfolio_database("portfolio_family.db")
+    create_database(principal)
+    paths.prepare_portfolio_creation(family.name)
+    original_generation = Path(f"{family}.generation").read_text(encoding="ascii")
+    create_database(family)
+    stale_manager = DatabaseManager(family)
+
+    result = paths.delete_portfolio(family.name, family.name)
+
+    assert result.deleted is True
+    assert portfolio_deletion_marker(family).exists()
+    with pytest.raises(FileNotFoundError, match="was deleted"):
+        stale_manager.get_personal_connection()
+    assert not family.exists()
+
+    paths.prepare_portfolio_creation(family.name)
+    replacement_generation = Path(f"{family}.generation").read_text(encoding="ascii")
+    stale_manager.init_personal_db()
+
+    assert family.exists()
+    assert not portfolio_deletion_marker(family).exists()
+    assert replacement_generation
+    assert replacement_generation != original_generation
+
+
+def test_delete_portfolio_rejects_confirmation_bound_to_an_old_generation(tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    family = paths.portfolio_database("portfolio_family.db")
+    create_database(principal)
+    paths.prepare_portfolio_creation(family.name)
+    create_database(family, "original")
+    confirmed_generation = paths.database_generation(family)
+
+    paths.prepare_portfolio_creation(family.name)
+    replacement_generation = paths.database_generation(family)
+    result = paths.delete_portfolio(
+        family.name,
+        family.name,
+        expected_generation=confirmed_generation,
+    )
+
+    assert replacement_generation != confirmed_generation
+    assert result.deleted is False
+    assert "substituída" in result.message
+    assert family.exists()
+    assert tuple((paths.backups_dir / "deleted-portfolios").glob("*")) == ()
+
+
+def test_database_connection_guard_runs_before_sqlite_can_recreate_a_file(tmp_path):
+    database = tmp_path / "portfolio_family.db"
+
+    def reject_stale_connection(path):
+        assert path == database
+        raise RuntimeError("stale portfolio generation")
+
+    manager = DatabaseManager(database, connection_guard=reject_stale_connection)
+
+    with pytest.raises(RuntimeError, match="stale portfolio generation"):
+        manager.get_personal_connection()
+
+    assert not database.exists()
+
+
+def test_explicit_legacy_import_clears_a_deleted_portfolio_tombstone(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_family.db"
+    create_database(source, "legacy")
+    destination = paths.portfolio_database(source.name)
+    deletion_marker = portfolio_deletion_marker(destination)
+    deletion_marker.parent.mkdir(parents=True, exist_ok=True)
+    deletion_marker.write_text("deleted", encoding="ascii")
+
+    result = paths.migrate_legacy_database(source)
+
+    assert result.migrated is True
+    assert destination.exists()
+    assert not deletion_marker.exists()
+
+
+def test_delete_portfolio_moves_sqlite_sidecars_and_generation_marker(tmp_path, monkeypatch):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    family = paths.portfolio_database("portfolio_family.db")
+    create_database(principal)
+    create_database(family)
+    related = (
+        Path(f"{family}-wal"),
+        Path(f"{family}-shm"),
+        Path(f"{family}.generation"),
+    )
+    for path in related:
+        path.write_text(path.name, encoding="utf-8")
+    monkeypatch.setattr(
+        ApplicationPaths,
+        "is_valid_sqlite",
+        staticmethod(lambda path: Path(path).suffix == ".db" and Path(path).exists()),
+    )
+
+    result = paths.delete_portfolio("portfolio_family.db", "portfolio_family.db")
+
+    assert result.deleted is True
+    assert result.backup_dir is not None
+    for path in related:
+        assert not path.exists()
+        assert (result.backup_dir / path.name).read_text(encoding="utf-8") == path.name
+
+
+def test_delete_portfolio_rejects_invalid_confirmation_and_unsafe_names(tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    family = paths.portfolio_database("portfolio_family.db")
+    create_database(principal)
+    create_database(family)
+
+    wrong_confirmation = paths.delete_portfolio("portfolio_family.db", "family")
+    traversal = paths.delete_portfolio("../portfolio_family.db", "../portfolio_family.db")
+    absolute = paths.delete_portfolio(str(family.resolve()), str(family.resolve()))
+
+    assert wrong_confirmation.deleted is False
+    assert "nome completo do arquivo" in wrong_confirmation.message
+    assert traversal.deleted is False
+    assert absolute.deleted is False
+    assert "nome de carteira válido" in traversal.message
+    assert "nome de carteira válido" in absolute.message
+    assert family.exists()
+
+
+def test_delete_portfolio_rejects_last_invalid_demo_and_demo_session_databases(
+    tmp_path, monkeypatch
+):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    create_database(principal)
+
+    last = paths.delete_portfolio("portfolio.db", "portfolio.db")
+
+    assert last.deleted is False
+    assert "última carteira válida" in last.message
+    assert principal.exists()
+
+    alternative = paths.portfolio_database("portfolio_family.db")
+    create_database(alternative)
+    invalid = paths.portfolio_database("portfolio_invalid.db")
+    invalid.write_text("invalid", encoding="utf-8")
+    invalid_result = paths.delete_portfolio("portfolio_invalid.db", "portfolio_invalid.db")
+    assert invalid_result.deleted is False
+    assert "SQLite válido" in invalid_result.message
+    assert invalid.exists()
+
+    demo = paths.portfolio_database("portfolio_demo.db")
+    create_database(demo)
+    demo_result = paths.delete_portfolio("portfolio_demo.db", "portfolio_demo.db")
+    assert demo_result.deleted is False
+    assert "demonstração" in demo_result.message
+    assert demo.exists()
+
+    user_portfolio_with_demo_in_its_name = paths.portfolio_database(
+        "portfolio_demonstracao.db"
+    )
+    create_database(user_portfolio_with_demo_in_its_name)
+    user_portfolio_result = paths.delete_portfolio(
+        user_portfolio_with_demo_in_its_name.name,
+        user_portfolio_with_demo_in_its_name.name,
+    )
+    assert user_portfolio_result.deleted is True
+    assert not user_portfolio_with_demo_in_its_name.exists()
+
+    alternative.unlink()
+    normal_with_only_demo_alternative = paths.delete_portfolio("portfolio.db", "portfolio.db")
+    assert normal_with_only_demo_alternative.deleted is False
+    assert "última carteira válida" in normal_with_only_demo_alternative.message
+    assert principal.exists()
+
+    monkeypatch.setattr("core.application_paths.tempfile.gettempdir", lambda: str(tmp_path))
+    demo_paths = paths.for_demo_session("session-123")
+    demo_principal = demo_paths.portfolio_database("portfolio.db")
+    demo_alternative = demo_paths.portfolio_database("portfolio_family.db")
+    create_database(demo_principal)
+    create_database(demo_alternative)
+    session_result = demo_paths.delete_portfolio("portfolio.db", "portfolio.db")
+    assert session_result.deleted is False
+    assert "demonstração" in session_result.message
+    assert demo_principal.exists()
+
+
+def test_delete_portfolio_times_out_without_moving_an_active_reader(tmp_path, monkeypatch):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    family = paths.portfolio_database("portfolio_family.db")
+    create_database(principal)
+    create_database(family)
+    connection = DatabaseManager(family).get_personal_connection()
+    monkeypatch.setattr("core.application_paths.FILE_LOCK_TIMEOUT_SECONDS", 0.05)
+
+    try:
+        result = paths.delete_portfolio("portfolio_family.db", "portfolio_family.db")
+    finally:
+        connection.close()
+
+    assert result.deleted is False
+    assert "em uso" in result.message
+    assert family.exists()
+    assert not (paths.backups_dir / "deleted-portfolios").exists()
+
+
+def test_delete_portfolio_rolls_back_every_moved_file_on_failure(tmp_path, monkeypatch):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    family = paths.portfolio_database("portfolio_family.db")
+    create_database(principal)
+    create_database(family)
+    generation = Path(f"{family}.generation")
+    generation.write_text("generation", encoding="ascii")
+    real_replace = os.replace
+
+    def fail_generation_move(source, destination):
+        if Path(source) == generation:
+            raise OSError("simulated move failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr("core.application_paths.os.replace", fail_generation_move)
+
+    result = paths.delete_portfolio("portfolio_family.db", "portfolio_family.db")
+
+    assert result.deleted is False
+    assert "nenhum arquivo foi excluído" in result.message
+    assert family.exists()
+    assert generation.exists()
+    assert not portfolio_deletion_marker(family).exists()
+    assert tuple((paths.backups_dir / "deleted-portfolios").glob("*")) == ()
+
+
+def test_failed_deletion_rollback_keeps_tombstone_blocking_partial_portfolio(
+    tmp_path, monkeypatch
+):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    family = paths.portfolio_database("portfolio_family.db")
+    create_database(principal)
+    create_database(family)
+    generation = Path(f"{family}.generation")
+    generation.write_text("generation", encoding="ascii")
+    real_replace = os.replace
+
+    def fail_move_and_rollback(source, destination):
+        source = Path(source)
+        destination = Path(destination)
+        if source == generation or (
+            source.parent != paths.database_dir and destination == family
+        ):
+            raise OSError("simulated filesystem failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr("core.application_paths.os.replace", fail_move_and_rollback)
+
+    result = paths.delete_portfolio(family.name, family.name)
+
+    assert result.deleted is False
+    assert "recuperação manual" in result.message
+    assert portfolio_deletion_marker(family).exists()
+    assert not family.exists()
+    assert result.backup_dir is not None
+    assert (result.backup_dir / family.name).exists()
+
+
+def test_concurrent_deletions_cannot_remove_both_remaining_portfolios(tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    first = paths.portfolio_database("portfolio_first.db")
+    second = paths.portfolio_database("portfolio_second.db")
+    create_database(first, "first")
+    create_database(second, "second")
+    start = threading.Barrier(2)
+    results = []
+
+    def delete(filename):
+        start.wait(timeout=2)
+        results.append(paths.delete_portfolio(filename, filename))
+
+    first_thread = threading.Thread(target=delete, args=(first.name,))
+    second_thread = threading.Thread(target=delete, args=(second.name,))
+    first_thread.start()
+    second_thread.start()
+    first_thread.join(timeout=5)
+    second_thread.join(timeout=5)
+
+    assert not first_thread.is_alive()
+    assert not second_thread.is_alive()
+    assert sum(result.deleted for result in results) == 1
+    assert len(paths.inspect_portfolios().valid) == 1

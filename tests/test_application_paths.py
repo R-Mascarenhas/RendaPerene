@@ -319,6 +319,67 @@ def test_successful_legacy_migration_is_copy_only_backed_up_and_idempotent(tmp_p
     assert "já foi importada" in repeated.message
 
 
+def test_concurrent_legacy_migrations_with_different_destinations_publish_once(
+    tmp_path, monkeypatch
+):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_family.db"
+    create_database(source, "legacy")
+    paths.prepare()
+    create_database(paths.portfolio_database(source.name), "current")
+    start = threading.Barrier(2)
+    write_calls = 0
+    write_calls_lock = threading.Lock()
+    second_write_reached = threading.Event()
+    real_write_marker = ApplicationPaths._write_completion_marker
+
+    def observed_write_marker(cls, marker, imported_source, destination_name):
+        nonlocal write_calls
+        with write_calls_lock:
+            write_calls += 1
+            call_number = write_calls
+        if call_number == 1:
+            second_write_reached.wait(timeout=0.2)
+        else:
+            second_write_reached.set()
+        real_write_marker(marker, imported_source, destination_name)
+
+    monkeypatch.setattr(
+        ApplicationPaths,
+        "_write_completion_marker",
+        classmethod(observed_write_marker),
+    )
+    results = []
+
+    def migrate(destination_name):
+        start.wait(timeout=2)
+        results.append(paths.migrate_legacy_database(source, destination_name))
+
+    first = threading.Thread(target=migrate, args=("portfolio_importada.db",))
+    second = threading.Thread(target=migrate, args=("portfolio_importada_2.db",))
+    first.start()
+    second.start()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert write_calls == 1
+    assert sum(result.migrated for result in results) == 1
+    successful = next(result for result in results if result.migrated)
+    repeated = next(result for result in results if not result.migrated)
+    assert repeated.destination == successful.destination
+    assert "já foi importada" in repeated.message
+    published = tuple(
+        path
+        for path in paths.database_dir.glob("portfolio_importada*.db")
+        if ApplicationPaths.is_valid_sqlite(path)
+    )
+    assert published == (successful.destination,)
+    assert source not in paths.migration_candidates()
+
+
 def test_legacy_migration_reuses_logically_equal_backup_after_failed_publication(tmp_path):
     resource_root = tmp_path / "application"
     paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)

@@ -149,6 +149,16 @@ def portfolio_database_lock(database: Path):
         yield
 
 
+@contextmanager
+def _legacy_source_lock(backup: Path):
+    """Serialize all marker and publication changes for one legacy source."""
+    backup = Path(backup)
+    backup.parent.mkdir(parents=True, exist_ok=True)
+    lock = backup.with_name(f".{backup.name}.migration.lock")
+    with _exclusive_file_lock(lock, wait_for_readers=False):
+        yield
+
+
 def portfolio_deletion_marker(database: Path) -> Path:
     """Return the persistent marker that prevents reopening a deleted portfolio."""
     database = Path(database)
@@ -689,6 +699,18 @@ class ApplicationPaths:
                 "A carteira antiga não é um banco SQLite válido e não pôde ser ignorada.",
             )
 
+        backup = self.backups_dir / "legacy-import" / source.name
+        try:
+            with _legacy_source_lock(backup):
+                return self._ignore_legacy_database_locked(source)
+        except (OSError, TimeoutError):
+            return LegacySourcePreferenceResult(
+                source,
+                False,
+                "Não foi possível salvar a preferência; a carteira continuará sendo oferecida.",
+            )
+
+    def _ignore_legacy_database_locked(self, source: Path) -> LegacySourcePreferenceResult:
         marker = self._ignored_legacy_marker(source)
         if self._ignored_legacy_marker_matches(source):
             return LegacySourcePreferenceResult(
@@ -721,6 +743,18 @@ class ApplicationPaths:
         if source.resolve() not in allowed_sources:
             raise ValueError("The restored source is not a discovered legacy portfolio database.")
 
+        backup = self.backups_dir / "legacy-import" / source.name
+        try:
+            with _legacy_source_lock(backup):
+                return self._restore_legacy_database_offer_locked(source)
+        except (OSError, TimeoutError):
+            return LegacySourcePreferenceResult(
+                source,
+                False,
+                "Não foi possível remover a preferência; a carteira continuará ignorada.",
+            )
+
+    def _restore_legacy_database_offer_locked(self, source: Path) -> LegacySourcePreferenceResult:
         marker = self._ignored_legacy_marker(source)
         if not marker.exists():
             return LegacySourcePreferenceResult(
@@ -816,6 +850,27 @@ class ApplicationPaths:
                 "O arquivo de origem não é um banco SQLite válido.",
             )
 
+        try:
+            with _legacy_source_lock(backup):
+                return self._migrate_legacy_database_locked(
+                    source, destination, backup, completion_marker
+                )
+        except (OSError, TimeoutError):
+            return MigrationResult(
+                source,
+                destination,
+                backup if backup.exists() else None,
+                False,
+                "Não foi possível iniciar a importação. Outra sessão pode estar processando esta carteira.",
+            )
+
+    def _migrate_legacy_database_locked(
+        self,
+        source: Path,
+        destination: Path,
+        backup: Path,
+        completion_marker: Path,
+    ) -> MigrationResult:
         if backup.exists() and completion_marker.exists():
             completed_destination_name = self._completion_marker_destination(
                 completion_marker, source, backup
@@ -1053,7 +1108,7 @@ class ApplicationPaths:
             "source_digest": cls._sqlite_content_digest(source),
             "version": 2,
         }
-        marker.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+        cls._write_json_atomically(marker, payload)
 
     @staticmethod
     def is_valid_sqlite(path: Path) -> bool:

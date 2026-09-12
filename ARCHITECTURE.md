@@ -98,7 +98,10 @@ destino: a cópia imutável em `backups/legacy-import/` identifica a origem já 
 Origens antigas que o usuário decide não importar recebem um marcador local separado, gravado
 atomicamente em `backups/legacy-import/` com o digest lógico do SQLite. O marcador não altera nem
 remove a origem, deixa de valer se seu conteúdo mudar e pode ser removido pela interface para voltar
-a oferecer a carteira. Uma importação posterior elimina a preferência obsoleta.
+a oferecer a carteira. Uma importação posterior elimina a preferência obsoleta. Importações e
+alterações de preferência são serializadas por origem antiga antes de qualquer lock da carteira de
+destino; assim, sessões concorrentes convergem para uma única publicação e um único marcador de
+conclusão.
 Bancos principais inicializados automaticamente apenas com os valores padrão podem ser substituídos
 durante a importação; qualquer dado ou configuração do usuário torna o destino não substituível. A
 cópia recuperável relevante permanece em `backups/legacy-import/`. Ao publicar uma carteira

@@ -121,7 +121,7 @@ class MarketDataPort(Protocol):
         self, ticker: str, period: str = "1y", interval: str = "1d"
     ) -> pd.DataFrame: ...
 
-    def get_ticker_market_analysis(self, ticker: str, target_yield_pct: float = 6.0) -> dict: ...
+    def get_ticker_market_snapshot(self, ticker: str, reference_year: int) -> dict: ...
 
     def load_assets_catalog(self) -> pd.DataFrame: ...
 
@@ -130,6 +130,18 @@ class MarketDataPort(Protocol):
     def get_current_selic(self) -> float: ...
 
     def get_current_minimum_wage(self) -> float: ...
+
+
+class DividendCorrectionPort(Protocol):
+    """Persistence seam for portfolio-specific annual dividend corrections."""
+
+    def get_dividend_corrections(self, ticker: str) -> dict[int, float]: ...
+
+
+class MarketAnalysisPort(Protocol):
+    """Public seam for final portfolio-aware market analysis."""
+
+    def get_ticker_market_analysis(self, ticker: str, target_yield_pct: float = 6.0) -> dict: ...
 
 
 class PlanningConfigPort(Protocol):

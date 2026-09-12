@@ -150,7 +150,7 @@ def build_service(positions):
     return ShareQuantityGoalService(
         goal_repo=PlanningDAO(),
         portfolio_provider=StubPortfolioProvider(positions),
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=StubPlanningProvider(),
     )
 
@@ -206,7 +206,7 @@ def test_share_goal_uses_january_first_baseline_for_progress_and_growth_marker(m
         goal_repo=repository,
         settings_repo=repository,
         portfolio_provider=portfolio,
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=GrowthExamplePlanningProvider(),
     )
 
@@ -245,7 +245,7 @@ def test_dashboard_refreshes_a_previously_stored_baseline_for_the_current_year(m
             [{"ticker": "BBAS3", "quantity": 125}],
             year_start_quantities={"BBAS3": 100},
         ),
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=GrowthExamplePlanningProvider(),
     )
 
@@ -315,7 +315,7 @@ def test_corporate_actions_do_not_count_as_accumulation_progress(mock_db):
     service = ShareQuantityGoalService(
         goal_repo=repository,
         portfolio_provider=portfolio,
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=GrowthExamplePlanningProvider(),
     )
 
@@ -414,7 +414,7 @@ def test_pending_cost_acquisitions_count_as_accumulation_progress(mock_db):
     service = ShareQuantityGoalService(
         goal_repo=repository,
         portfolio_provider=portfolio,
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=GrowthExamplePlanningProvider(),
     )
 
@@ -460,7 +460,7 @@ def test_paid_acquisitions_are_rebased_after_corporate_actions(mock_db):
     service = ShareQuantityGoalService(
         goal_repo=repository,
         portfolio_provider=portfolio,
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=GrowthExamplePlanningProvider(),
     )
 
@@ -477,7 +477,7 @@ def test_unavailable_dividend_plan_is_not_activated_on_save(mock_db):
     service = ShareQuantityGoalService(
         goal_repo=repository,
         portfolio_provider=StubPortfolioProvider([{"ticker": "BBAS3", "quantity": 100}]),
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=EmptyPlanningProvider(),
     )
 
@@ -502,7 +502,7 @@ def test_market_data_failure_preserves_an_existing_goal(mock_db):
     service = ShareQuantityGoalService(
         goal_repo=repository,
         portfolio_provider=StubPortfolioProvider([{"ticker": "BBAS3", "quantity": 100}]),
-        market_data_api=FailedMarketData,
+        market_analysis_api=FailedMarketData,
         planning_provider=GrowthExamplePlanningProvider(),
     )
 
@@ -532,7 +532,7 @@ def test_dashboard_hides_dividend_goal_when_current_projection_is_unavailable(mo
     service = ShareQuantityGoalService(
         goal_repo=repository,
         portfolio_provider=StubPortfolioProvider([{"ticker": "BBAS3", "quantity": 100}]),
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=EmptyPlanningProvider(),
     )
 
@@ -556,7 +556,7 @@ def test_percentage_goal_recomputes_target_from_new_year_baseline(mock_db):
             [{"ticker": "BBAS3", "quantity": 110}],
             year_start_quantities={"BBAS3": 105},
         ),
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=GrowthExamplePlanningProvider(),
     )
 
@@ -604,7 +604,7 @@ def test_same_day_corporate_action_is_processed_before_paid_purchase(mock_db):
     service = ShareQuantityGoalService(
         goal_repo=repository,
         portfolio_provider=portfolio,
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=GrowthExamplePlanningProvider(),
     )
 
@@ -629,7 +629,7 @@ def test_dashboard_excludes_goals_for_assets_no_longer_held(mock_db):
     service = ShareQuantityGoalService(
         goal_repo=repository,
         portfolio_provider=StubPortfolioProvider([]),
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=GrowthExamplePlanningProvider(),
     )
 
@@ -650,7 +650,7 @@ def test_goal_below_year_start_shows_position_excess_over_target(mock_db):
     service = ShareQuantityGoalService(
         goal_repo=repository,
         portfolio_provider=StubPortfolioProvider([{"ticker": "CSMG3", "quantity": 4541}]),
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=GrowthExamplePlanningProvider(),
     )
 
@@ -724,7 +724,7 @@ def test_zero_weight_market_failure_does_not_block_plan_save(mock_db):
         portfolio_provider=StubPortfolioProvider(
             [{"ticker": "BBAS3", "quantity": 100}, {"ticker": "TAEE11", "quantity": 100}]
         ),
-        market_data_api=PartialFailedMarketData,
+        market_analysis_api=PartialFailedMarketData,
         planning_provider=StubPlanningProvider(),
     )
 
@@ -864,7 +864,7 @@ def test_dividend_income_goal_freezes_baseline_and_uses_equal_initial_allocation
     service = ShareQuantityGoalService(
         goal_repo=PlanningDAO(),
         portfolio_provider=portfolio,
-        market_data_api=StubMarketData,
+        market_analysis_api=StubMarketData,
         planning_provider=StubPlanningProvider(),
     )
 
@@ -897,7 +897,7 @@ def test_suggested_goal_uses_planned_dividends_for_the_year_instead_of_retiremen
     service = ShareQuantityGoalService(
         goal_repo=PlanningDAO(),
         portfolio_provider=StubPortfolioProvider(positions),
-        market_data_api=BbasMarketData,
+        market_analysis_api=BbasMarketData,
         planning_provider=AnnualExamplePlanningProvider(),
     )
 
@@ -913,7 +913,7 @@ def test_user_weight_recalculates_and_is_persisted_with_the_goal(mock_db):
     service = ShareQuantityGoalService(
         goal_repo=PlanningDAO(),
         portfolio_provider=StubPortfolioProvider([{"ticker": "BBAS3", "quantity": 100}]),
-        market_data_api=BbasMarketData,
+        market_analysis_api=BbasMarketData,
         planning_provider=AnnualExamplePlanningProvider(),
     )
 
@@ -948,7 +948,7 @@ def test_existing_dividend_goal_is_recalculated_with_the_current_annual_plan(moc
     service = ShareQuantityGoalService(
         goal_repo=repository,
         portfolio_provider=StubPortfolioProvider(positions),
-        market_data_api=BbasMarketData,
+        market_analysis_api=BbasMarketData,
         planning_provider=AnnualExamplePlanningProvider(),
     )
 
@@ -977,7 +977,7 @@ def test_portfolio_plan_lists_every_asset_in_one_equal_weight_table(mock_db):
         portfolio_provider=StubPortfolioProvider(
             [{"ticker": ticker, "quantity": 100} for ticker in tickers]
         ),
-        market_data_api=PortfolioMarketData,
+        market_analysis_api=PortfolioMarketData,
         planning_provider=AnnualExamplePlanningProvider(),
     )
 
@@ -996,7 +996,7 @@ def test_partial_dividend_history_is_used_and_explained_in_the_plan(mock_db):
     service = ShareQuantityGoalService(
         goal_repo=PlanningDAO(),
         portfolio_provider=StubPortfolioProvider([{"ticker": "NEW3", "quantity": 100}]),
-        market_data_api=PartialHistoryMarketData,
+        market_analysis_api=PartialHistoryMarketData,
         planning_provider=AnnualExamplePlanningProvider(),
     )
 
@@ -1012,7 +1012,7 @@ def test_missing_dividend_history_does_not_block_saving_other_goals(mock_db):
     service = ShareQuantityGoalService(
         goal_repo=PlanningDAO(),
         portfolio_provider=StubPortfolioProvider([{"ticker": "NEW3", "quantity": 100}]),
-        market_data_api=EmptyMarketData,
+        market_analysis_api=EmptyMarketData,
         planning_provider=AnnualExamplePlanningProvider(),
     )
 
@@ -1034,7 +1034,7 @@ def test_custom_portfolio_weights_recalculate_rows_and_must_total_one_hundred(mo
     service = ShareQuantityGoalService(
         goal_repo=PlanningDAO(),
         portfolio_provider=StubPortfolioProvider(positions),
-        market_data_api=PortfolioMarketData,
+        market_analysis_api=PortfolioMarketData,
         planning_provider=AnnualExamplePlanningProvider(),
     )
     weights = {ticker: 80 / 6 for ticker in tickers}
@@ -1061,7 +1061,7 @@ def test_zero_weight_deactivates_asset_and_removes_it_from_dashboard_progress(mo
     service = ShareQuantityGoalService(
         goal_repo=PlanningDAO(),
         portfolio_provider=StubPortfolioProvider(positions),
-        market_data_api=PortfolioMarketData,
+        market_analysis_api=PortfolioMarketData,
         planning_provider=AnnualExamplePlanningProvider(),
     )
     weights = {ticker: 100 / 6 for ticker in tickers if ticker != "BBAS3"}
@@ -1086,7 +1086,7 @@ def test_all_accumulation_goals_can_be_inactive(mock_db):
     service = ShareQuantityGoalService(
         goal_repo=PlanningDAO(),
         portfolio_provider=StubPortfolioProvider([{"ticker": "BBAS3", "quantity": 100}]),
-        market_data_api=BbasMarketData,
+        market_analysis_api=BbasMarketData,
         planning_provider=AnnualExamplePlanningProvider(),
     )
 
@@ -1197,7 +1197,7 @@ def test_custom_goal_does_not_require_dividend_history_or_retirement_configurati
     service = ShareQuantityGoalService(
         goal_repo=PlanningDAO(),
         portfolio_provider=StubPortfolioProvider([{"ticker": "BBAS3", "quantity": 100}]),
-        market_data_api=EmptyMarketData,
+        market_analysis_api=EmptyMarketData,
         planning_provider=EmptyPlanningProvider(),
     )
 
@@ -1213,7 +1213,7 @@ def test_dividend_income_goal_without_history_is_saved_as_unavailable_instead_of
     service = ShareQuantityGoalService(
         goal_repo=PlanningDAO(),
         portfolio_provider=StubPortfolioProvider([{"ticker": "NEW3", "quantity": 100}]),
-        market_data_api=EmptyMarketData,
+        market_analysis_api=EmptyMarketData,
         planning_provider=AnnualExamplePlanningProvider(),
     )
 

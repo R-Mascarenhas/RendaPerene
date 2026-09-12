@@ -1115,25 +1115,36 @@ class ApplicationPaths:
         """Check SQLite integrity without creating or modifying the supplied file."""
         path = Path(path)
         try:
-            metadata = path.stat()
+            database_signature = ApplicationPaths._sqlite_file_signature(path)
         except OSError:
             return False
-        if not path.is_file() or metadata.st_size == 0:
+        if not path.is_file() or database_signature[2] == 0:
             return False
         return ApplicationPaths._is_valid_sqlite_snapshot(
             str(path.resolve()),
-            metadata.st_size,
-            metadata.st_mtime_ns,
+            database_signature,
             ApplicationPaths._sqlite_sidecar_signature(path),
         )
 
     @staticmethod
-    def _sqlite_sidecar_signature(path: Path) -> tuple[tuple[int, int] | None, ...]:
+    def _sqlite_file_signature(path: Path) -> tuple[int, int, int, int, int]:
+        metadata = Path(path).stat()
+        return (
+            metadata.st_dev,
+            metadata.st_ino,
+            metadata.st_size,
+            metadata.st_mtime_ns,
+            metadata.st_ctime_ns,
+        )
+
+    @staticmethod
+    def _sqlite_sidecar_signature(
+        path: Path,
+    ) -> tuple[tuple[int, int, int, int, int] | None, ...]:
         signature = []
         for suffix in ("-wal", "-shm"):
             try:
-                metadata = Path(f"{path}{suffix}").stat()
-                signature.append((metadata.st_size, metadata.st_mtime_ns))
+                signature.append(ApplicationPaths._sqlite_file_signature(Path(f"{path}{suffix}")))
             except OSError:
                 signature.append(None)
         return tuple(signature)
@@ -1142,9 +1153,8 @@ class ApplicationPaths:
     @lru_cache(maxsize=256)
     def _is_valid_sqlite_snapshot(
         path: str,
-        _size: int,
-        _mtime_ns: int,
-        _sidecar_signature: tuple[tuple[int, int] | None, ...],
+        _database_signature: tuple[int, int, int, int, int],
+        _sidecar_signature: tuple[tuple[int, int, int, int, int] | None, ...],
     ) -> bool:
         """Cache SQLite integrity for one immutable file metadata snapshot."""
         try:
@@ -1167,11 +1177,9 @@ class ApplicationPaths:
     @staticmethod
     def _sqlite_content_digest(path: Path) -> str:
         path = Path(path)
-        metadata = path.stat()
         return ApplicationPaths._sqlite_content_digest_snapshot(
             str(path.resolve()),
-            metadata.st_size,
-            metadata.st_mtime_ns,
+            ApplicationPaths._sqlite_file_signature(path),
             ApplicationPaths._sqlite_sidecar_signature(path),
         )
 
@@ -1179,9 +1187,8 @@ class ApplicationPaths:
     @lru_cache(maxsize=256)
     def _sqlite_content_digest_snapshot(
         path: str,
-        _size: int,
-        _mtime_ns: int,
-        _sidecar_signature: tuple[tuple[int, int] | None, ...],
+        _database_signature: tuple[int, int, int, int, int],
+        _sidecar_signature: tuple[tuple[int, int, int, int, int] | None, ...],
     ) -> str:
         database_path = Path(path)
         connection = sqlite3.connect(f"{database_path.as_uri()}?mode=ro", uri=True)

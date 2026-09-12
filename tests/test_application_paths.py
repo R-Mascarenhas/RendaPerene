@@ -442,6 +442,76 @@ def test_sqlite_content_digest_reuses_unchanged_file_metadata(tmp_path, monkeypa
     assert connect_calls == 1
 
 
+def test_replaced_ignored_legacy_database_is_reoffered_when_size_and_mtime_match(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_old.db"
+    create_database(source, "legacy-a")
+    paths.prepare()
+    original_metadata = source.stat()
+    original_identity = (
+        original_metadata.st_dev,
+        original_metadata.st_ino,
+        original_metadata.st_ctime_ns,
+    )
+
+    assert paths.ignore_legacy_database(source).changed is True
+
+    replacement = source.with_name("replacement.db")
+    create_database(replacement, "legacy-b")
+    assert replacement.stat().st_size == original_metadata.st_size
+    os.utime(
+        replacement,
+        ns=(original_metadata.st_atime_ns, original_metadata.st_mtime_ns),
+    )
+    os.replace(replacement, source)
+    os.utime(source, ns=(original_metadata.st_atime_ns, original_metadata.st_mtime_ns))
+
+    assert source.stat().st_size == original_metadata.st_size
+    assert source.stat().st_mtime_ns == original_metadata.st_mtime_ns
+    replacement_metadata = source.stat()
+    assert (
+        replacement_metadata.st_dev,
+        replacement_metadata.st_ino,
+        replacement_metadata.st_ctime_ns,
+    ) != original_identity
+    assert read_database_marker(source) == "legacy-b"
+    assert source in paths.migration_candidates()
+    assert paths.ignored_legacy_databases() == ()
+
+
+def test_sqlite_validation_rechecks_a_replaced_file_with_matching_size_and_mtime(tmp_path):
+    database = tmp_path / "portfolio.db"
+    create_database(database, "valid-db")
+    original_metadata = database.stat()
+    original_identity = (
+        original_metadata.st_dev,
+        original_metadata.st_ino,
+        original_metadata.st_ctime_ns,
+    )
+
+    assert ApplicationPaths.is_valid_sqlite(database) is True
+
+    replacement = database.with_name("replacement.db")
+    replacement.write_bytes(b"x" * original_metadata.st_size)
+    os.utime(
+        replacement,
+        ns=(original_metadata.st_atime_ns, original_metadata.st_mtime_ns),
+    )
+    os.replace(replacement, database)
+    os.utime(database, ns=(original_metadata.st_atime_ns, original_metadata.st_mtime_ns))
+
+    assert database.stat().st_size == original_metadata.st_size
+    assert database.stat().st_mtime_ns == original_metadata.st_mtime_ns
+    replacement_metadata = database.stat()
+    assert (
+        replacement_metadata.st_dev,
+        replacement_metadata.st_ino,
+        replacement_metadata.st_ctime_ns,
+    ) != original_identity
+    assert ApplicationPaths.is_valid_sqlite(database) is False
+
+
 def test_migration_publication_waits_for_database_connections_and_revalidates(
     tmp_path, monkeypatch
 ):

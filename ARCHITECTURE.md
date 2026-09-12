@@ -139,11 +139,12 @@ Esses backups são permanentes até a remoção manual. Quando a carteira ativa 
 composição escolhe outra carteira válida, invalida o estado derivado da sessão e reinicia a execução
 antes de inicializar os adaptadores do novo banco.
 
-A validação SQLite usa `PRAGMA quick_check` e mantém em memória o resultado por caminho, tamanho,
-data de modificação e metadados dos arquivos auxiliares WAL/SHM. Reruns do Streamlit reutilizam a
-validação enquanto esses metadados não mudam; a comparação de conteúdo lógico usada pelos marcadores
-de migração também é reutilizada para arquivos imutáveis. Qualquer alteração no banco ou em seus
-auxiliares produz uma nova verificação.
+A validação SQLite usa `PRAGMA quick_check` e mantém em memória o resultado pela identidade física,
+caminho, tamanho e datas de modificação e alteração do banco e dos arquivos auxiliares WAL/SHM.
+Reruns do Streamlit reutilizam a validação enquanto essa assinatura não muda; a comparação de
+conteúdo lógico usada pelos marcadores de migração também é reutilizada para arquivos imutáveis.
+Substituir o banco ou um auxiliar, mesmo preservando tamanho e data de modificação, produz uma nova
+verificação.
 
 O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO
 registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa; o

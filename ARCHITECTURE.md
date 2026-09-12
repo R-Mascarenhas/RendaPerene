@@ -86,8 +86,22 @@ cópia inválida mais nova não oculta uma cópia válida anterior. A migração
 (sem mover) um backup para `backups/legacy-import/`, valida novamente a cópia temporária e somente
 então publica o banco em
 `database/`. A operação é idempotente e recusa qualquer sobrescrita quando há conteúdo diferente.
+Bancos conflitantes podem ser publicados com outro nome seguro dentro de `database/`; a interface
+sugere um nome livre, permite editá-lo e preserva tanto o banco existente quanto a origem antiga.
+O marcador de conclusão registra o nome efetivamente publicado, continua aceitando o formato
+legado sem destino explícito e faz a origem voltar a ser oferecida se essa publicação desaparecer
+ou for recriada apenas com valores padrão. A detecção de uma carteira sem dados aceita tanto o
+esquema atual quanto o esquema legado anterior às tabelas de preferências, metas e registros B3,
+evitando tratar uma simples atualização de esquema como perda de conteúdo.
 Bancos importados não são oferecidos novamente quando uma migração de esquema altera os bytes do
 destino: a cópia imutável em `backups/legacy-import/` identifica a origem já processada.
+Origens antigas que o usuário decide não importar recebem um marcador local separado, gravado
+atomicamente em `backups/legacy-import/` com o digest lógico do SQLite. O marcador não altera nem
+remove a origem, deixa de valer se seu conteúdo mudar e pode ser removido pela interface para voltar
+a oferecer a carteira. Uma importação posterior elimina a preferência obsoleta. Importações e
+alterações de preferência são serializadas por origem antiga antes de qualquer lock da carteira de
+destino; assim, sessões concorrentes convergem para uma única publicação e um único marcador de
+conclusão.
 Bancos principais inicializados automaticamente apenas com os valores padrão podem ser substituídos
 durante a importação; qualquer dado ou configuração do usuário torna o destino não substituível. A
 cópia recuperável relevante permanece em `backups/legacy-import/`. Ao publicar uma carteira
@@ -125,11 +139,12 @@ Esses backups são permanentes até a remoção manual. Quando a carteira ativa 
 composição escolhe outra carteira válida, invalida o estado derivado da sessão e reinicia a execução
 antes de inicializar os adaptadores do novo banco.
 
-A validação SQLite usa `PRAGMA quick_check` e mantém em memória o resultado por caminho, tamanho,
-data de modificação e metadados dos arquivos auxiliares WAL/SHM. Reruns do Streamlit reutilizam a
-validação enquanto esses metadados não mudam; a comparação de conteúdo lógico usada pelos marcadores
-de migração também é reutilizada para arquivos imutáveis. Qualquer alteração no banco ou em seus
-auxiliares produz uma nova verificação.
+A validação SQLite usa `PRAGMA quick_check` e mantém em memória o resultado pela identidade física,
+caminho, tamanho e datas de modificação e alteração do banco e dos arquivos auxiliares WAL/SHM.
+Reruns do Streamlit reutilizam a validação enquanto essa assinatura não muda; a comparação de
+conteúdo lógico usada pelos marcadores de migração também é reutilizada para arquivos imutáveis.
+Substituir o banco ou um auxiliar, mesmo preservando tamanho e data de modificação, produz uma nova
+verificação.
 
 O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO
 registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa; o

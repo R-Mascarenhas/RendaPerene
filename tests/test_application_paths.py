@@ -31,6 +31,14 @@ def create_database(path: Path, value: str = "original") -> None:
         connection.close()
 
 
+def read_database_marker(path: Path) -> str:
+    connection = sqlite3.connect(path)
+    try:
+        return connection.execute("SELECT value FROM marker").fetchone()[0]
+    finally:
+        connection.close()
+
+
 def write_catalog(path: Path, rows: list[tuple[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     header = (
@@ -142,6 +150,150 @@ def test_legacy_discovery_uses_older_valid_duplicate_when_newest_is_invalid(tmp_
     assert paths.legacy_databases() == (older_database,)
 
 
+def test_legacy_portfolio_can_be_ignored_without_changing_any_database(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_old.db"
+    create_database(source, "legacy")
+    destination = paths.portfolio_database(source.name)
+    create_database(destination, "current")
+    source_contents = source.read_bytes()
+    destination_contents = destination.read_bytes()
+
+    result = paths.ignore_legacy_database(source)
+
+    assert result.changed is True
+    assert "não será mais oferecida" in result.message
+    assert source not in paths.migration_candidates()
+    assert paths.ignored_legacy_databases() == (source,)
+    assert source.read_bytes() == source_contents
+    assert destination.read_bytes() == destination_contents
+    assert not (paths.backups_dir / "legacy-import" / source.name).exists()
+
+
+def test_changed_ignored_legacy_portfolio_is_reoffered_and_can_be_ignored_again(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_old.db"
+    create_database(source, "legacy")
+
+    assert paths.ignore_legacy_database(source).changed is True
+    connection = sqlite3.connect(source)
+    try:
+        connection.execute("INSERT INTO marker VALUES ('new-data')")
+        connection.commit()
+    finally:
+        connection.close()
+
+    assert source in paths.migration_candidates()
+    assert paths.ignored_legacy_databases() == ()
+    assert paths.ignore_legacy_database(source).changed is True
+    assert paths.ignored_legacy_databases() == (source,)
+
+    restored = paths.restore_legacy_database_offer(source)
+
+    assert restored.changed is True
+    assert "voltará a ser oferecida" in restored.message
+    assert source in paths.migration_candidates()
+    assert paths.ignored_legacy_databases() == ()
+
+
+def test_successful_legacy_import_removes_an_outdated_ignore_preference(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_old.db"
+    create_database(source, "legacy")
+    paths.prepare()
+    assert paths.ignore_legacy_database(source).changed is True
+    connection = sqlite3.connect(source)
+    try:
+        connection.execute("INSERT INTO marker VALUES ('new-data')")
+        connection.commit()
+    finally:
+        connection.close()
+
+    result = paths.migrate_legacy_database(source)
+    restored = paths.restore_legacy_database_offer(source)
+
+    assert result.migrated is True
+    assert restored.changed is False
+    assert source not in paths.migration_candidates()
+
+
+def test_successful_legacy_import_reports_ignore_preference_cleanup_failure(
+    tmp_path, monkeypatch
+):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_old.db"
+    create_database(source, "legacy")
+    paths.prepare()
+    assert paths.ignore_legacy_database(source).changed is True
+    connection = sqlite3.connect(source)
+    try:
+        connection.execute("INSERT INTO marker VALUES ('new-data')")
+        connection.commit()
+    finally:
+        connection.close()
+    monkeypatch.setattr(
+        ApplicationPaths,
+        "_clear_ignored_legacy_marker",
+        lambda _self, _source: False,
+    )
+
+    result = paths.migrate_legacy_database(source)
+
+    assert result.migrated is True
+    assert result.warning is not None
+    assert "não foi possível remover a preferência antiga" in result.warning
+
+
+def test_legacy_ignore_write_failure_keeps_the_source_available(tmp_path, monkeypatch):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_old.db"
+    create_database(source, "legacy")
+    real_replace = os.replace
+
+    def fail_ignore_marker(source_path, destination_path):
+        if Path(destination_path).suffix == ".ignored":
+            raise OSError("simulated preference write failure")
+        real_replace(source_path, destination_path)
+
+    monkeypatch.setattr("core.application_paths.os.replace", fail_ignore_marker)
+
+    result = paths.ignore_legacy_database(source)
+
+    assert result.changed is False
+    assert "continuará sendo oferecida" in result.message
+    assert source in paths.migration_candidates()
+    assert paths.ignored_legacy_databases() == ()
+
+
+def test_invalid_legacy_ignore_marker_keeps_the_source_available(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_old.db"
+    create_database(source, "legacy")
+    marker = paths.backups_dir / "legacy-import" / "portfolio_old.db.ignored"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("[]\n", encoding="utf-8")
+
+    assert source in paths.migration_candidates()
+    assert paths.ignored_legacy_databases() == ()
+
+
+def test_legacy_preference_rejects_a_source_outside_discovery(tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    outside_source = tmp_path / "outside" / "portfolio.db"
+    create_database(outside_source, "outside")
+
+    with pytest.raises(ValueError):
+        paths.ignore_legacy_database(outside_source)
+    with pytest.raises(ValueError):
+        paths.restore_legacy_database_offer(outside_source)
+
+
 def test_successful_legacy_migration_is_copy_only_backed_up_and_idempotent(tmp_path):
     resource_root = tmp_path / "application"
     data_root = tmp_path / "user-data"
@@ -165,6 +317,67 @@ def test_successful_legacy_migration_is_copy_only_backed_up_and_idempotent(tmp_p
 
     assert repeated.migrated is False
     assert "já foi importada" in repeated.message
+
+
+def test_concurrent_legacy_migrations_with_different_destinations_publish_once(
+    tmp_path, monkeypatch
+):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_family.db"
+    create_database(source, "legacy")
+    paths.prepare()
+    create_database(paths.portfolio_database(source.name), "current")
+    start = threading.Barrier(2)
+    write_calls = 0
+    write_calls_lock = threading.Lock()
+    second_write_reached = threading.Event()
+    real_write_marker = ApplicationPaths._write_completion_marker
+
+    def observed_write_marker(cls, marker, imported_source, destination_name):
+        nonlocal write_calls
+        with write_calls_lock:
+            write_calls += 1
+            call_number = write_calls
+        if call_number == 1:
+            second_write_reached.wait(timeout=0.2)
+        else:
+            second_write_reached.set()
+        real_write_marker(marker, imported_source, destination_name)
+
+    monkeypatch.setattr(
+        ApplicationPaths,
+        "_write_completion_marker",
+        classmethod(observed_write_marker),
+    )
+    results = []
+
+    def migrate(destination_name):
+        start.wait(timeout=2)
+        results.append(paths.migrate_legacy_database(source, destination_name))
+
+    first = threading.Thread(target=migrate, args=("portfolio_importada.db",))
+    second = threading.Thread(target=migrate, args=("portfolio_importada_2.db",))
+    first.start()
+    second.start()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert write_calls == 1
+    assert sum(result.migrated for result in results) == 1
+    successful = next(result for result in results if result.migrated)
+    repeated = next(result for result in results if not result.migrated)
+    assert repeated.destination == successful.destination
+    assert "já foi importada" in repeated.message
+    published = tuple(
+        path
+        for path in paths.database_dir.glob("portfolio_importada*.db")
+        if ApplicationPaths.is_valid_sqlite(path)
+    )
+    assert published == (successful.destination,)
+    assert source not in paths.migration_candidates()
 
 
 def test_legacy_migration_reuses_logically_equal_backup_after_failed_publication(tmp_path):
@@ -227,6 +440,76 @@ def test_sqlite_content_digest_reuses_unchanged_file_metadata(tmp_path, monkeypa
     ApplicationPaths._sqlite_content_digest(database)
 
     assert connect_calls == 1
+
+
+def test_replaced_ignored_legacy_database_is_reoffered_when_size_and_mtime_match(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_old.db"
+    create_database(source, "legacy-a")
+    paths.prepare()
+    original_metadata = source.stat()
+    original_identity = (
+        original_metadata.st_dev,
+        original_metadata.st_ino,
+        original_metadata.st_ctime_ns,
+    )
+
+    assert paths.ignore_legacy_database(source).changed is True
+
+    replacement = source.with_name("replacement.db")
+    create_database(replacement, "legacy-b")
+    assert replacement.stat().st_size == original_metadata.st_size
+    os.utime(
+        replacement,
+        ns=(original_metadata.st_atime_ns, original_metadata.st_mtime_ns),
+    )
+    os.replace(replacement, source)
+    os.utime(source, ns=(original_metadata.st_atime_ns, original_metadata.st_mtime_ns))
+
+    assert source.stat().st_size == original_metadata.st_size
+    assert source.stat().st_mtime_ns == original_metadata.st_mtime_ns
+    replacement_metadata = source.stat()
+    assert (
+        replacement_metadata.st_dev,
+        replacement_metadata.st_ino,
+        replacement_metadata.st_ctime_ns,
+    ) != original_identity
+    assert read_database_marker(source) == "legacy-b"
+    assert source in paths.migration_candidates()
+    assert paths.ignored_legacy_databases() == ()
+
+
+def test_sqlite_validation_rechecks_a_replaced_file_with_matching_size_and_mtime(tmp_path):
+    database = tmp_path / "portfolio.db"
+    create_database(database, "valid-db")
+    original_metadata = database.stat()
+    original_identity = (
+        original_metadata.st_dev,
+        original_metadata.st_ino,
+        original_metadata.st_ctime_ns,
+    )
+
+    assert ApplicationPaths.is_valid_sqlite(database) is True
+
+    replacement = database.with_name("replacement.db")
+    replacement.write_bytes(b"x" * original_metadata.st_size)
+    os.utime(
+        replacement,
+        ns=(original_metadata.st_atime_ns, original_metadata.st_mtime_ns),
+    )
+    os.replace(replacement, database)
+    os.utime(database, ns=(original_metadata.st_atime_ns, original_metadata.st_mtime_ns))
+
+    assert database.stat().st_size == original_metadata.st_size
+    assert database.stat().st_mtime_ns == original_metadata.st_mtime_ns
+    replacement_metadata = database.stat()
+    assert (
+        replacement_metadata.st_dev,
+        replacement_metadata.st_ino,
+        replacement_metadata.st_ctime_ns,
+    ) != original_identity
+    assert ApplicationPaths.is_valid_sqlite(database) is False
 
 
 def test_migration_publication_waits_for_database_connections_and_revalidates(
@@ -409,6 +692,105 @@ def test_migration_refuses_to_overwrite_a_different_portfolio(tmp_path):
     assert result.backup is None
 
 
+def test_conflicting_legacy_portfolio_can_be_imported_with_a_safe_alternative_name(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio.db"
+    create_database(source, "legacy")
+    paths.prepare()
+    original_destination = paths.portfolio_database("portfolio.db")
+    create_database(original_destination, "current")
+    current_contents = original_destination.read_bytes()
+
+    suggested_name = paths.suggest_legacy_migration_filename(source)
+    result = paths.migrate_legacy_database(source, suggested_name)
+
+    assert suggested_name == "portfolio_importada.db"
+    assert result.migrated is True
+    assert result.destination.name == suggested_name
+    assert original_destination.read_bytes() == current_contents
+    assert read_database_marker(result.destination) == "legacy"
+    assert source not in paths.migration_candidates()
+
+
+def test_alternative_legacy_import_is_idempotent_and_reoffered_after_data_loss(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio.db"
+    create_database(source, "legacy")
+    paths.prepare()
+    create_database(paths.portfolio_database("portfolio.db"), "current")
+
+    first = paths.migrate_legacy_database(source, "portfolio_importada.db")
+    repeated = paths.migrate_legacy_database(source, "unused_name.db")
+
+    assert first.migrated is True
+    assert repeated.migrated is False
+    assert repeated.destination == first.destination
+    assert "já foi importada" in repeated.message
+
+    first.destination.unlink()
+    DatabaseManager(first.destination).init_personal_db()
+
+    assert source in paths.migration_candidates()
+    recovered = paths.migrate_legacy_database(source, "portfolio_importada.db")
+    assert recovered.migrated is True
+    assert read_database_marker(recovered.destination) == "legacy"
+
+
+def test_legacy_import_suggests_a_free_name_and_never_overwrites_that_choice(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio.db"
+    create_database(source, "legacy")
+    paths.prepare()
+    create_database(paths.portfolio_database("portfolio.db"), "current")
+    occupied = paths.portfolio_database("portfolio_importada.db")
+    create_database(occupied, "occupied")
+    occupied_contents = occupied.read_bytes()
+
+    assert paths.suggest_legacy_migration_filename(source) == "portfolio_importada_2.db"
+
+    result = paths.migrate_legacy_database(source, occupied.name)
+
+    assert result.migrated is False
+    assert "nenhum arquivo foi sobrescrito" in result.message
+    assert occupied.read_bytes() == occupied_contents
+
+
+@pytest.mark.parametrize("unsafe_name", ["", "../portfolio.db", "folder/portfolio.db", "notes.txt"])
+def test_legacy_import_rejects_unsafe_destination_names(tmp_path, unsafe_name):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio.db"
+    create_database(source, "legacy")
+    paths.prepare()
+
+    with pytest.raises(ValueError):
+        paths.migrate_legacy_database(source, unsafe_name)
+
+
+def test_legacy_completion_marker_without_destination_remains_compatible(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio.db"
+    create_database(source, "legacy")
+    paths.prepare()
+    destination = paths.portfolio_database(source.name)
+    backup = paths.backups_dir / "legacy-import" / source.name
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    backup.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(source.read_bytes())
+    backup.write_bytes(source.read_bytes())
+    backup.with_suffix(backup.suffix + ".done").write_text("completed\n", encoding="ascii")
+
+    assert source not in paths.migration_candidates()
+    repeated = paths.migrate_legacy_database(source)
+    assert repeated.migrated is False
+    assert repeated.destination == destination
+    assert "já foi importada" in repeated.message
+
+
 def test_legacy_main_remains_importable_after_empty_default_database_is_initialized(tmp_path):
     resource_root = tmp_path / "application"
     data_root = tmp_path / "user-data"
@@ -478,6 +860,28 @@ def test_migrated_pristine_portfolio_is_not_reoffered_after_schema_metadata_chan
     repeated = paths.migrate_legacy_database(source)
     assert repeated.migrated is False
     assert "já foi importada" in repeated.message
+    assert source not in paths.migration_candidates()
+
+
+def test_migrated_pristine_legacy_schema_is_not_reoffered_after_schema_upgrade(tmp_path):
+    resource_root = tmp_path / "application"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
+    source = resource_root / "database" / "portfolio_ana.db"
+    DatabaseManager(source).init_personal_db()
+    connection = sqlite3.connect(source)
+    try:
+        connection.execute("DROP TABLE b3_import_records")
+        connection.execute("DROP TABLE asset_accumulation_goals")
+        connection.execute("DROP TABLE goal_settings")
+        connection.commit()
+    finally:
+        connection.close()
+    paths.prepare()
+
+    result = paths.migrate_legacy_database(source)
+    DatabaseManager(result.destination).init_personal_db()
+
+    assert result.migrated is True
     assert source not in paths.migration_candidates()
 
 

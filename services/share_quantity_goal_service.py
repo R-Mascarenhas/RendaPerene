@@ -19,12 +19,11 @@ from core.daos.planning_dao import PlanningDAO
 from core.ports import (
     AccumulationGoalPort,
     GoalSettingsPort,
-    MarketDataPort,
+    MarketAnalysisPort,
     PlanningProviderPort,
     PortfolioProviderPort,
     hybridmethod,
 )
-from core.utils.market_data import MarketData
 
 
 class ShareQuantityGoalService:
@@ -50,13 +49,13 @@ class ShareQuantityGoalService:
         goal_repo: AccumulationGoalPort = None,
         settings_repo: GoalSettingsPort = None,
         portfolio_provider: PortfolioProviderPort = None,
-        market_data_api: MarketDataPort = None,
+        market_analysis_api: MarketAnalysisPort = None,
         planning_provider: PlanningProviderPort = None,
     ):
         self._goal_repo = goal_repo or PlanningDAO()
         self._settings_repo = settings_repo or PlanningDAO()
         self._portfolio_provider = portfolio_provider
-        self._market_data_api = market_data_api or MarketData
+        self._market_analysis_api = market_analysis_api
         self._planning_provider = planning_provider
 
     _default_instance = None
@@ -73,7 +72,7 @@ class ShareQuantityGoalService:
         goal_repo: AccumulationGoalPort = None,
         settings_repo: GoalSettingsPort = None,
         portfolio_provider: PortfolioProviderPort = None,
-        market_data_api: MarketDataPort = None,
+        market_analysis_api: MarketAnalysisPort = None,
         planning_provider: PlanningProviderPort = None,
     ):
         """Wires persistence, portfolio, market-data, and planning adapters."""
@@ -84,8 +83,8 @@ class ShareQuantityGoalService:
             instance._settings_repo = settings_repo
         if portfolio_provider is not None:
             instance._portfolio_provider = portfolio_provider
-        if market_data_api is not None:
-            instance._market_data_api = market_data_api
+        if market_analysis_api is not None:
+            instance._market_analysis_api = market_analysis_api
         if planning_provider is not None:
             instance._planning_provider = planning_provider
 
@@ -283,7 +282,7 @@ class ShareQuantityGoalService:
         if self._planning_provider is None:
             raise RuntimeError("O provedor de planejamento não está configurado para as metas.")
 
-        market_analysis = self._market_data_api.get_ticker_market_analysis(normalized_ticker)
+        market_analysis = self._market_analysis_api.get_ticker_market_analysis(normalized_ticker)
         average_dividend_5y = float(market_analysis.get(MARKET_AVG_DIV_5Y, 0.0) or 0.0)
         average_years = int(
             market_analysis.get(MARKET_DIVIDEND_AVERAGE_YEARS, 5 if average_dividend_5y > 0 else 0)
@@ -456,7 +455,7 @@ class ShareQuantityGoalService:
             weight = weights[ticker]
             is_active = ticker in selected_active_tickers and weight > 0
             weight_is_valid = math.isfinite(weight) and 0 <= weight <= 100
-            market_analysis = self._market_data_api.get_ticker_market_analysis(ticker)
+            market_analysis = self._market_analysis_api.get_ticker_market_analysis(ticker)
             average_dividend_5y = float(market_analysis.get(MARKET_AVG_DIV_5Y, 0.0) or 0.0)
             average_years = int(
                 market_analysis.get(

@@ -277,7 +277,6 @@ class MarketMonitoringView:
                                     value=Formatter.format_currency(corr_value),
                                 )
                             )
-                            st.cache_data.clear()
                             st.rerun()
                         else:
                             st.error(MSG_DIVIDEND_CORRECTION_ERROR)

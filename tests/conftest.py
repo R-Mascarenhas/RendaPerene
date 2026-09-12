@@ -2,6 +2,7 @@ import pytest
 
 from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.daos.planning_dao import PlanningDAO
+from core.daos.portfolio_dao import PortfolioDAO
 from core.database import DatabaseManager, db
 from core.utils.market_data import MarketData
 
@@ -32,15 +33,19 @@ def mock_db(monkeypatch, tmp_path):
     # Wire default test adapters at the test environment composition edge
     from services.assets_service import AssetService
     from services.goals_service import GoalService
+    from services.market_analysis_service import MarketAnalysisService
     from services.planning_service import SimulationService
     from services.share_quantity_goal_service import ShareQuantityGoalService
     from core.utils.b3_parser import B3ExcelParserAdapter
 
     monkeypatch.setattr("services.assets_service.AssetsCatalogDAO", lambda: catalog_repo)
+    portfolio_repo = PortfolioDAO()
+    market_analysis = MarketAnalysisService(MarketData, portfolio_repo)
     AssetService.set_adapters(
-        portfolio_repo=None,
+        portfolio_repo=portfolio_repo,
         catalog_repo=catalog_repo,
         market_data_api=MarketData,
+        market_analysis_api=market_analysis,
         excel_parser=B3ExcelParserAdapter(),
         planning_provider=SimulationService.get_default(),
     )
@@ -54,7 +59,7 @@ def mock_db(monkeypatch, tmp_path):
         goal_repo=PlanningDAO(),
         settings_repo=PlanningDAO(),
         portfolio_provider=AssetService.get_default(),
-        market_data_api=MarketData,
+        market_analysis_api=market_analysis,
         planning_provider=SimulationService.get_default(),
     )
 

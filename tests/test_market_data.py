@@ -378,31 +378,32 @@ def test_market_analysis_uses_annual_close_for_manual_dividend_correction(monkey
     assert analysis["dividend_yields_history"][2024] == 10.0
 
 
-def test_load_assets_catalog_instantiation():
+def test_load_assets_catalog_instantiation(monkeypatch, tmp_path):
     """
     Verifies that load_assets_catalog correctly compiles and executes, avoiding
     missing 'self' positional argument TypeError by properly instantiating the DAO.
     """
     import importlib
     import sys
-    import os
     import core.utils.market_data
 
     # Reload to get the original unpatched class
     importlib.reload(core.utils.market_data)
     OriginalMarketData = core.utils.market_data.MarketData
 
-    # Create a temporary mock csv to avoid FileNotFoundError
-    with open("assets.csv", "w", encoding="utf-8-sig") as f:
-        f.write(
-            "CÓDIGO,NOME,IMAGEM,CNPJ,SETOR ECONÔMICO,SUBSETOR ,SEGMENTO / ADM / PAÍS,TIPO,SEGMENTO\n"
-        )
+    catalog_path = tmp_path / "assets.csv"
+    catalog_path.write_text(
+        "CÓDIGO,NOME,IMAGEM,CNPJ,SETOR ECONÔMICO,SUBSETOR ,SEGMENTO / ADM / PAÍS,TIPO,SEGMENTO\n",
+        encoding="utf-8-sig",
+    )
+    monkeypatch.setattr(
+        OriginalMarketData,
+        "resolve_catalog_path",
+        staticmethod(lambda: catalog_path),
+    )
 
     try:
         catalog = OriginalMarketData.load_assets_catalog()
         assert isinstance(catalog, pd.DataFrame)
     finally:
-        # Cleanup and restore monkeypatch for subsequent tests
-        if os.path.exists("assets.csv"):
-            os.remove("assets.csv")
         importlib.reload(core.utils.market_data)

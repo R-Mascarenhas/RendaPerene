@@ -232,4 +232,8 @@ venv/bin/ruff check .
 venv/bin/ruff format --check .
 ```
 
-O Ruff usa Python 3.10 como versão-alvo, limita as linhas a 100 caracteres e exclui intencionalmente `tests/`. A configuração inicial do CI ignora `PLR0913` apenas nas interfaces legadas de carteira e planejamento acompanhadas pelas issues #23 e #24. O GitHub Actions executa lint, formatação e testes de forma independente em pull requests destinados à `main` e em pushes para a `main`.
+O Ruff usa Python 3.10 como versão-alvo, limita as linhas a 100 caracteres e exclui intencionalmente
+`tests/`. A configuração inicial do CI ignora `PLR0913` apenas nas interfaces legadas de carteira e
+planejamento acompanhadas pelas issues #23 e #24. O GitHub Actions executa lint e formatação no
+Ubuntu e a suíte de testes no Ubuntu e no Windows, tanto em pull requests destinados à `main` quanto
+em pushes para a `main`.

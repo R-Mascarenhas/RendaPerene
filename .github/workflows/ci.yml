@@ -19,17 +19,23 @@ concurrency:
 jobs:
   validate:
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: Ruff lint
+            os: ubuntu-latest
             command: ruff check .
           - name: Ruff format
+            os: ubuntu-latest
             command: ruff format --check .
-          - name: Tests
+          - name: Tests (Ubuntu)
+            os: ubuntu-latest
+            command: pytest
+          - name: Tests (Windows)
+            os: windows-latest
             command: pytest
 
     steps:

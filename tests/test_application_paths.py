@@ -61,6 +61,10 @@ def test_discovers_linux_xdg_data_directory(monkeypatch, tmp_path):
     assert paths.backups_dir == xdg_data_home / "RendaPerene" / "backups"
 
 
+@pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason="Unix home expansion must be exercised on a Unix host",
+)
 def test_discovers_linux_home_fallback(monkeypatch, tmp_path):
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))

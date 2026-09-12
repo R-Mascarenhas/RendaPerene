@@ -48,6 +48,10 @@ def write_catalog(path: Path, rows: list[tuple[str, str]]) -> None:
     path.write_text(contents, encoding="utf-8-sig")
 
 
+@pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason="Unix XDG data directories must be exercised on a Unix host",
+)
 def test_discovers_linux_xdg_data_directory(monkeypatch, tmp_path):
     xdg_data_home = tmp_path / "xdg-data"
     monkeypatch.setenv("XDG_DATA_HOME", str(xdg_data_home))
@@ -61,6 +65,10 @@ def test_discovers_linux_xdg_data_directory(monkeypatch, tmp_path):
     assert paths.backups_dir == xdg_data_home / "RendaPerene" / "backups"
 
 
+@pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason="Unix home expansion must be exercised on a Unix host",
+)
 def test_discovers_linux_home_fallback(monkeypatch, tmp_path):
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))

@@ -1,25 +1,16 @@
-import pytest
-import os
-import shutil
 import pandas as pd
+
 from core.utils.b3_parser import B3ExcelParserAdapter
 from services.assets_service import AssetService
 
 
-def test_add_transaction_and_assets_creation():
+def test_add_transaction_and_assets_creation(mock_db):
     """Ensures that the transaction creates the asset using the fallback metadata in the assets csv."""
-    if os.path.exists("assets_temp.csv"):
-        os.remove("assets_temp.csv")
-    shutil.copy("test_assets.csv", "assets.csv")
-
     AssetService.add_transaction("MOCK4", "2021-04-30", "BUY", 100, 20.00, 5.0)
 
-    df = pd.read_csv("assets.csv", dtype=str, encoding="utf-8-sig").set_index("CÓDIGO")
+    df = pd.read_csv(mock_db["catalog_path"], dtype=str, encoding="utf-8-sig").set_index("CÓDIGO")
     assert "MOCK4" in df.index
     assert df.loc["MOCK4", "NOME"] == "Asset MOCK4"
-
-    if os.path.exists("assets.csv"):
-        os.remove("assets.csv")
 
 
 def test_b3_excel_importer_logic():

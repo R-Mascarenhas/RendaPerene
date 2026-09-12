@@ -86,8 +86,19 @@ cópia inválida mais nova não oculta uma cópia válida anterior. A migração
 (sem mover) um backup para `backups/legacy-import/`, valida novamente a cópia temporária e somente
 então publica o banco em
 `database/`. A operação é idempotente e recusa qualquer sobrescrita quando há conteúdo diferente.
+Bancos conflitantes podem ser publicados com outro nome seguro dentro de `database/`; a interface
+sugere um nome livre, permite editá-lo e preserva tanto o banco existente quanto a origem antiga.
+O marcador de conclusão registra o nome efetivamente publicado, continua aceitando o formato
+legado sem destino explícito e faz a origem voltar a ser oferecida se essa publicação desaparecer
+ou for recriada apenas com valores padrão. A detecção de uma carteira sem dados aceita tanto o
+esquema atual quanto o esquema legado anterior às tabelas de preferências, metas e registros B3,
+evitando tratar uma simples atualização de esquema como perda de conteúdo.
 Bancos importados não são oferecidos novamente quando uma migração de esquema altera os bytes do
 destino: a cópia imutável em `backups/legacy-import/` identifica a origem já processada.
+Origens antigas que o usuário decide não importar recebem um marcador local separado, gravado
+atomicamente em `backups/legacy-import/` com o digest lógico do SQLite. O marcador não altera nem
+remove a origem, deixa de valer se seu conteúdo mudar e pode ser removido pela interface para voltar
+a oferecer a carteira. Uma importação posterior elimina a preferência obsoleta.
 Bancos principais inicializados automaticamente apenas com os valores padrão podem ser substituídos
 durante a importação; qualquer dado ou configuração do usuário torna o destino não substituível. A
 cópia recuperável relevante permanece em `backups/legacy-import/`. Ao publicar uma carteira

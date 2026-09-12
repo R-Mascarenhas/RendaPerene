@@ -2,6 +2,7 @@ import csv
 import errno
 import hashlib
 import io
+import json
 import os
 import re
 import shutil
@@ -204,6 +205,16 @@ class MigrationResult:
     destination: Path
     backup: Path | None
     migrated: bool
+    message: str
+    warning: str | None = None
+
+
+@dataclass(frozen=True)
+class LegacySourcePreferenceResult:
+    """Describes a change to whether a legacy database should be offered."""
+
+    source: Path
+    changed: bool
     message: str
 
 
@@ -634,31 +645,165 @@ class ApplicationPaths:
         """Return legacy databases that can be imported without replacing user data."""
         candidates = []
         for source in self.legacy_databases():
-            destination = self.portfolio_database(source.name)
+            if self._ignored_legacy_marker_matches(source):
+                continue
             backup = self.backups_dir / "legacy-import" / source.name
             marker = backup.with_suffix(backup.suffix + ".done")
-            if (
-                destination.exists()
-                and backup.exists()
-                and marker.exists()
-                and self._completion_marker_matches(marker, source, backup)
-                and not (
-                    self._is_pristine_database(destination)
-                    and not self._is_pristine_database(source)
+            completed_destination_name = None
+            if backup.exists() and marker.exists():
+                completed_destination_name = self._completion_marker_destination(
+                    marker, source, backup
                 )
-            ):
-                continue
+            if completed_destination_name is not None:
+                try:
+                    completed_destination = self.portfolio_database(completed_destination_name)
+                except ValueError:
+                    completed_destination = None
+                if completed_destination is not None and completed_destination.exists():
+                    destination_needs_recovery = self._is_pristine_database(
+                        completed_destination
+                    ) and not self._is_pristine_database(source)
+                    if not destination_needs_recovery:
+                        continue
             candidates.append(source)
         return tuple(candidates)
 
-    def migrate_legacy_database(self, source: Path) -> MigrationResult:
+    def ignored_legacy_databases(self) -> tuple[Path, ...]:
+        """Return discovered legacy databases explicitly ignored at their current contents."""
+        return tuple(
+            source
+            for source in self.legacy_databases()
+            if self._ignored_legacy_marker_matches(source)
+        )
+
+    def ignore_legacy_database(self, source: Path) -> LegacySourcePreferenceResult:
+        """Stop offering a discovered legacy database while its contents remain unchanged."""
+        source = Path(source)
+        allowed_sources = {path.resolve() for path in self.legacy_databases()}
+        if source.resolve() not in allowed_sources:
+            raise ValueError("The ignored source is not a discovered legacy portfolio database.")
+        if not self.is_valid_sqlite(source):
+            return LegacySourcePreferenceResult(
+                source,
+                False,
+                "A carteira antiga não é um banco SQLite válido e não pôde ser ignorada.",
+            )
+
+        marker = self._ignored_legacy_marker(source)
+        if self._ignored_legacy_marker_matches(source):
+            return LegacySourcePreferenceResult(
+                source,
+                False,
+                "A carteira antiga já estava ignorada.",
+            )
+        try:
+            payload = {
+                "source_digest": self._sqlite_content_digest(source),
+                "version": 1,
+            }
+            self._write_json_atomically(marker, payload)
+        except (OSError, sqlite3.DatabaseError):
+            return LegacySourcePreferenceResult(
+                source,
+                False,
+                "Não foi possível salvar a preferência; a carteira continuará sendo oferecida.",
+            )
+        return LegacySourcePreferenceResult(
+            source,
+            True,
+            "A carteira antiga não será mais oferecida enquanto permanecer inalterada.",
+        )
+
+    def restore_legacy_database_offer(self, source: Path) -> LegacySourcePreferenceResult:
+        """Remove the local preference that suppresses a discovered legacy database."""
+        source = Path(source)
+        allowed_sources = {path.resolve() for path in self.legacy_databases()}
+        if source.resolve() not in allowed_sources:
+            raise ValueError("The restored source is not a discovered legacy portfolio database.")
+
+        marker = self._ignored_legacy_marker(source)
+        if not marker.exists():
+            return LegacySourcePreferenceResult(
+                source,
+                False,
+                "A carteira antiga já estava disponível para importação.",
+            )
+        try:
+            marker.unlink()
+        except OSError:
+            return LegacySourcePreferenceResult(
+                source,
+                False,
+                "Não foi possível remover a preferência; a carteira continuará ignorada.",
+            )
+        return LegacySourcePreferenceResult(
+            source,
+            True,
+            "A carteira antiga voltará a ser oferecida para importação.",
+        )
+
+    def _ignored_legacy_marker(self, source: Path) -> Path:
+        backup = self.backups_dir / "legacy-import" / Path(source).name
+        return backup.with_suffix(backup.suffix + ".ignored")
+
+    def _ignored_legacy_marker_matches(self, source: Path) -> bool:
+        marker = self._ignored_legacy_marker(source)
+        try:
+            payload = json.loads(marker.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                return False
+            marker_digest = payload.get("source_digest")
+            return isinstance(marker_digest, str) and marker_digest == self._sqlite_content_digest(
+                source
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError, sqlite3.DatabaseError):
+            return False
+
+    @staticmethod
+    def _write_json_atomically(path: Path, payload: dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+            os.replace(temporary, path)
+        finally:
+            with suppress(FileNotFoundError):
+                temporary.unlink()
+
+    def suggest_legacy_migration_filename(self, source: Path) -> str:
+        """Choose the original filename or a free alternative for a conflicting import."""
+        source = Path(source)
+        destination = self.portfolio_database(source.name)
+        if (
+            not destination.exists()
+            or (
+                self.is_valid_sqlite(destination)
+                and self._same_sqlite_contents(source, destination)
+            )
+            or self._is_pristine_database(destination)
+        ):
+            return source.name
+
+        candidate = f"{source.stem}_importada{source.suffix}"
+        sequence = 2
+        while self.portfolio_database(candidate).exists():
+            candidate = f"{source.stem}_importada_{sequence}{source.suffix}"
+            sequence += 1
+        return candidate
+
+    def migrate_legacy_database(
+        self, source: Path, destination_filename: str | None = None
+    ) -> MigrationResult:
         """Copy one legacy database into writable storage with validation and a backup."""
         source = Path(source)
         allowed_sources = {path.resolve() for path in self.legacy_databases()}
         if source.resolve() not in allowed_sources:
             raise ValueError("The migration source is not a discovered legacy portfolio database.")
 
-        destination = self.portfolio_database(source.name)
+        requested_destination = (
+            source.name if destination_filename is None else destination_filename
+        )
+        destination = self.portfolio_database(requested_destination)
         backup = self.backups_dir / "legacy-import" / source.name
         completion_marker = backup.with_suffix(backup.suffix + ".done")
 
@@ -671,22 +816,25 @@ class ApplicationPaths:
                 "O arquivo de origem não é um banco SQLite válido.",
             )
 
-        if (
-            destination.exists()
-            and backup.exists()
-            and completion_marker.exists()
-            and self._completion_marker_matches(completion_marker, source, backup)
-            and not (
-                self._is_pristine_database(destination) and not self._is_pristine_database(source)
+        if backup.exists() and completion_marker.exists():
+            completed_destination_name = self._completion_marker_destination(
+                completion_marker, source, backup
             )
-        ):
-            return MigrationResult(
-                source,
-                destination,
-                backup,
-                False,
-                "A carteira já foi importada anteriormente.",
-            )
+            if completed_destination_name is not None:
+                completed_destination = self.portfolio_database(completed_destination_name)
+                if completed_destination.exists() and not (
+                    self._is_pristine_database(completed_destination)
+                    and not self._is_pristine_database(source)
+                ):
+                    warning = self._ignored_marker_cleanup_warning(source)
+                    return MigrationResult(
+                        source,
+                        completed_destination,
+                        backup,
+                        False,
+                        "A carteira já foi importada anteriormente.",
+                        warning,
+                    )
 
         if destination.exists():
             if self.is_valid_sqlite(destination) and self._same_sqlite_contents(
@@ -714,9 +862,7 @@ class ApplicationPaths:
                         )
                 try:
                     completion_marker.parent.mkdir(parents=True, exist_ok=True)
-                    completion_marker.write_text(
-                        f"{self._sqlite_content_digest(source)}\n", encoding="ascii"
-                    )
+                    self._write_completion_marker(completion_marker, source, destination.name)
                 except (OSError, sqlite3.DatabaseError):
                     return MigrationResult(
                         source,
@@ -725,12 +871,14 @@ class ApplicationPaths:
                         False,
                         "A carteira já existe, mas não foi possível registrar a importação.",
                     )
+                warning = self._ignored_marker_cleanup_warning(source)
                 return MigrationResult(
                     source,
                     destination,
                     backup,
                     False,
                     "A carteira já foi importada anteriormente.",
+                    warning,
                 )
             if not self._is_pristine_database(destination):
                 return MigrationResult(
@@ -791,9 +939,7 @@ class ApplicationPaths:
                         self._remove_sqlite_sidecars(destination)
                         self._safe_copy(backup, destination, validate_sqlite=True)
                     self._write_database_generation(destination)
-                    completion_marker.write_text(
-                        f"{self._sqlite_content_digest(backup)}\n", encoding="ascii"
-                    )
+                    self._write_completion_marker(completion_marker, backup, destination.name)
                     portfolio_deletion_marker(destination).unlink(missing_ok=True)
                 except (OSError, sqlite3.DatabaseError, ValueError):
                     self._remove_sqlite_sidecars(destination)
@@ -834,30 +980,80 @@ class ApplicationPaths:
                 "Não foi possível copiar a carteira. Verifique as permissões de armazenamento e tente novamente.",
             )
 
+        warning = self._ignored_marker_cleanup_warning(source)
         return MigrationResult(
             source,
             destination,
             backup,
             True,
             "Carteira importada com sucesso e backup preservado.",
+            warning,
         )
+
+    def _ignored_marker_cleanup_warning(self, source: Path) -> str | None:
+        if self._clear_ignored_legacy_marker(source):
+            return None
+        return (
+            "A carteira foi importada, mas não foi possível remover a preferência "
+            "antiga. Ela poderá continuar na lista de carteiras ignoradas."
+        )
+
+    def _clear_ignored_legacy_marker(self, source: Path) -> bool:
+        try:
+            self._ignored_legacy_marker(source).unlink()
+        except FileNotFoundError:
+            return True
+        except OSError:
+            return False
+        return True
 
     @classmethod
     def _completion_marker_matches(cls, marker: Path, source: Path, backup: Path) -> bool:
+        return cls._completion_marker_destination(marker, source, backup) is not None
+
+    @classmethod
+    def _completion_marker_destination(cls, marker: Path, source: Path, backup: Path) -> str | None:
         try:
-            marker_value = marker.read_text(encoding="ascii").strip()
+            marker_value = marker.read_text(encoding="utf-8").strip()
         except (OSError, UnicodeError):
-            return False
+            return None
+
+        destination_name = source.name
+        try:
+            payload = json.loads(marker_value)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            marker_value = payload.get("source_digest")
+            destination_name = payload.get("destination")
+            if (
+                not isinstance(marker_value, str)
+                or not isinstance(destination_name, str)
+                or Path(destination_name).name != destination_name
+                or not destination_name.endswith(".db")
+            ):
+                return None
+
         if marker_value == "completed":
-            return cls._same_sqlite_contents(source, backup)
+            return destination_name if cls._same_sqlite_contents(source, backup) else None
         try:
             source_digest = cls._sqlite_content_digest(source)
-            return (
+            matches = (
                 marker_value == source_digest
                 and cls._sqlite_content_digest(backup) == source_digest
             )
         except (OSError, sqlite3.DatabaseError):
-            return False
+            return None
+        return destination_name if matches else None
+
+    @classmethod
+    def _write_completion_marker(cls, marker: Path, source: Path, destination_name: str) -> None:
+        payload = {
+            "destination": destination_name,
+            "source_digest": cls._sqlite_content_digest(source),
+            "version": 2,
+        }
+        marker.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
 
     @staticmethod
     def is_valid_sqlite(path: Path) -> bool:
@@ -1072,7 +1268,16 @@ class ApplicationPaths:
                     "asset_accumulation_goals",
                     "goal_settings",
                 }
-                if tables not in (expected_tables, expected_tables - {"b3_import_records"}):
+                legacy_required_tables = {
+                    "transactions",
+                    "dividends",
+                    "tracked_market_assets",
+                    "dividend_corrections",
+                    "planning_configuration",
+                }
+                if not legacy_required_tables.issubset(tables) or not tables.issubset(
+                    expected_tables
+                ):
                     return False
 
                 user_data_tables = (
@@ -1089,10 +1294,12 @@ class ApplicationPaths:
                     if connection.execute(f"SELECT 1 FROM {table_name} LIMIT 1").fetchone():
                         return False
 
-                goal_settings = connection.execute(
-                    "SELECT id, reinvest_dividends_enabled, share_quantity_enabled "
-                    "FROM goal_settings"
-                ).fetchall()
+                goal_settings = [(1, 1, 0)]
+                if "goal_settings" in tables:
+                    goal_settings = connection.execute(
+                        "SELECT id, reinvest_dividends_enabled, share_quantity_enabled "
+                        "FROM goal_settings"
+                    ).fetchall()
                 seeded_corrections = connection.execute(
                     "SELECT ticker, year, total_value FROM dividend_corrections "
                     "ORDER BY ticker, year"

@@ -70,10 +70,18 @@ Repetir a operação é seguro e um arquivo existente com conteúdo diferente nu
 o primeiro carregamento já tenha criado uma carteira principal somente com os valores padrão, a
 publicação final aguarda as operações em andamento e verifica novamente se ela continua sem dados
 do usuário. Caso positivo, ela pode ser substituída com segurança; qualquer dado ou configuração
-alterada impede essa substituição. Após uma importação bem-sucedida, a carteira importada é ativada
-e seus dados de planejamento são recarregados. Os bancos da demonstração hospedada continuam
+alterada impede essa substituição. Quando já existe uma carteira diferente com o mesmo nome, a barra
+lateral sugere um nome alternativo editável para importar e preservar as duas carteiras. O nome deve
+ser um arquivo `.db` local ainda não utilizado; a conclusão fica associada ao destino escolhido para
+que a carteira antiga não seja oferecida novamente. Após uma importação bem-sucedida, a carteira
+importada é ativada e seus dados de planejamento são recarregados. Os bancos da demonstração
+hospedada continuam
 isolados por sessão em armazenamento temporário. Bancos demo inválidos são restaurados
 automaticamente, e diretórios de sessões inativas há mais de 24 horas são descartados.
+
+Uma carteira antiga desatualizada também pode ser marcada como **não oferecer novamente** sem ser
+importada, movida ou excluída. A preferência local é vinculada ao conteúdo do arquivo: se a origem
+mudar, ela volta a ser oferecida. A seção **Carteiras antigas ignoradas** permite desfazer a decisão.
 
 Na primeira migração, o catálogo gravável também incorpora os registros alternativos dos
 `assets.csv` encontrados na instalação atual e nas pastas de releases anteriores. Depois, ele é

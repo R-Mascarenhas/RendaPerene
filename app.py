@@ -6,6 +6,7 @@ import streamlit as st
 
 from core.application_paths import ApplicationPaths
 from core.constants import (
+    SESSION_LEGACY_PREFERENCE_MESSAGES,
     SESSION_PORTFOLIO_DELETION_SUCCESS,
     WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX,
     WIDGET_PORTFOLIO_DELETION_TARGET,
@@ -38,6 +39,9 @@ if is_cloud:
 else:
     app_paths.prepare()
 
+    for message_type, message in st.session_state.pop(SESSION_LEGACY_PREFERENCE_MESSAGES, []):
+        getattr(st.sidebar, message_type)(message)
+
     legacy_sources = list(app_paths.migration_candidates())
     if legacy_sources:
         st.sidebar.warning(
@@ -50,21 +54,105 @@ else:
             default=legacy_sources,
             format_func=lambda path: path.name,
         )
+        migration_destinations = {}
+        for source in selected_legacy:
+            suggested_name = app_paths.suggest_legacy_migration_filename(source)
+            if suggested_name != source.name:
+                st.sidebar.info(
+                    f"{source.name}: já existe uma carteira diferente com esse nome. "
+                    "Escolha outro nome para preservar as duas."
+                )
+                migration_destinations[source] = st.sidebar.text_input(
+                    f"Importar {source.name} como",
+                    value=suggested_name,
+                    key=f"legacy_import_destination_{source.name}",
+                )
+            else:
+                migration_destinations[source] = source.name
         if st.sidebar.button("Importar carteiras antigas", use_container_width=True):
             migrated_databases = []
+            migration_warnings = []
             for source in selected_legacy:
-                result = app_paths.migrate_legacy_database(source)
+                try:
+                    result = app_paths.migrate_legacy_database(
+                        source, migration_destinations[source]
+                    )
+                except ValueError:
+                    st.sidebar.error(
+                        f"{source.name}: use um nome de arquivo local terminado em .db."
+                    )
+                    continue
                 if result.migrated:
-                    migrated_databases.append(source.name)
+                    migrated_databases.append(result.destination.name)
                     st.sidebar.success(f"{source.name}: {result.message}")
                 else:
                     st.sidebar.error(f"{source.name}: {result.message}")
+                if result.warning:
+                    warning = f"{source.name}: {result.warning}"
+                    migration_warnings.append(("warning", warning))
+                    st.sidebar.warning(warning)
             if migrated_databases:
+                if migration_warnings:
+                    st.session_state[SESSION_LEGACY_PREFERENCE_MESSAGES] = migration_warnings
                 requested_db = st.session_state.get("active_db", "portfolio.db")
                 st.session_state["active_db"] = (
                     requested_db if requested_db in migrated_databases else migrated_databases[0]
                 )
                 SessionManager.reset_portfolio_state()
+                st.rerun()
+        if st.sidebar.button(
+            "Não oferecer novamente",
+            use_container_width=True,
+            disabled=not selected_legacy,
+        ):
+            preference_messages = []
+            for source in selected_legacy:
+                try:
+                    result = app_paths.ignore_legacy_database(source)
+                except ValueError:
+                    preference_messages.append(
+                        (
+                            "error",
+                            f"{source.name}: a origem antiga não está mais disponível.",
+                        )
+                    )
+                    continue
+                message_type = "success" if result.changed else "error"
+                preference_messages.append((message_type, f"{source.name}: {result.message}"))
+            if preference_messages:
+                st.session_state[SESSION_LEGACY_PREFERENCE_MESSAGES] = preference_messages
+                st.rerun()
+
+    ignored_legacy_sources = list(app_paths.ignored_legacy_databases())
+    if ignored_legacy_sources:
+        ignored_panel = st.sidebar.expander("Carteiras antigas ignoradas")
+        selected_ignored_sources = ignored_panel.multiselect(
+            "Carteiras que devem voltar a ser oferecidas",
+            options=ignored_legacy_sources,
+            format_func=lambda path: path.name,
+            key="ignored_legacy_sources_to_restore",
+        )
+        if ignored_panel.button(
+            "Voltar a oferecer",
+            use_container_width=True,
+            disabled=not selected_ignored_sources,
+        ):
+            preference_messages = []
+            for source in selected_ignored_sources:
+                try:
+                    result = app_paths.restore_legacy_database_offer(source)
+                except ValueError:
+                    preference_messages.append(
+                        (
+                            "error",
+                            f"{source.name}: a origem antiga não está mais disponível.",
+                        )
+                    )
+                    continue
+                message_type = "success" if result.changed else "error"
+                preference_messages.append((message_type, f"{source.name}: {result.message}"))
+            if preference_messages:
+                st.session_state[SESSION_LEGACY_PREFERENCE_MESSAGES] = preference_messages
                 st.rerun()
 
 inventory = app_paths.inspect_portfolios()

@@ -48,6 +48,10 @@ def write_catalog(path: Path, rows: list[tuple[str, str]]) -> None:
     path.write_text(contents, encoding="utf-8-sig")
 
 
+@pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason="Unix XDG data directories must be exercised on a Unix host",
+)
 def test_discovers_linux_xdg_data_directory(monkeypatch, tmp_path):
     xdg_data_home = tmp_path / "xdg-data"
     monkeypatch.setenv("XDG_DATA_HOME", str(xdg_data_home))

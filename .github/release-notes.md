@@ -1,3 +1,8 @@
+## Novidades em 0.8.1
+
+- A exclusão de carteiras agora é recuperável.
+- Melhorias na migração de carteiras de versões anteriores.
+
 ## Sistemas suportados
 
 - Windows 10 ou posterior, 64 bits.

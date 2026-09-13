@@ -5,7 +5,6 @@ import pandas as pd
 import yfinance as yf
 
 from core.utils.market_history import get_annual_closing_prices, get_latest_valid_close
-from services.valuation_service import ValuationService
 
 
 class MarketData:
@@ -38,14 +37,6 @@ class MarketData:
             except (OSError, TypeError, ValueError):
                 continue
         return None
-
-    @staticmethod
-    def _dividend_average_period(current_year: int, listing_year: int | None) -> list[int]:
-        """Returns up to five completed years in which the asset was already listed."""
-        completed_years = [current_year - offset for offset in range(1, 6)]
-        if listing_year is None:
-            return completed_years
-        return [year for year in completed_years if year >= listing_year]
 
     @staticmethod
     def get_batch_quotes(tickers: list) -> dict:
@@ -108,10 +99,12 @@ class MarketData:
             return pd.DataFrame()
 
     @staticmethod
-    def _get_raw_ticker_market_analysis(ticker: str) -> dict:
+    def get_ticker_market_snapshot(ticker: str, reference_year: int) -> dict:
         """
-        Fetches raw core B3 valuation metrics and 5-year historical dividends from Yahoo Finance and database corrections.
-        Cached on ticker only, making it completely independent of dynamic target yield mathematical calculations.
+        Fetch portfolio-independent B3 metrics, dividends, and annual closing prices.
+
+        The reference year shapes the five- and ten-year windows and is therefore part
+        of the remote snapshot cache key.
         """
         ticker = ticker.strip().upper()
         try:
@@ -212,8 +205,9 @@ class MarketData:
             dividends_history = {}
             annual_closing_prices = {}
             dividend_events = []
-            current_year = datetime.date.today().year
+            current_year = reference_year
             listing_year = MarketData._listing_year(info)
+            history_listing_year = None
             last_5_years = [current_year - i for i in range(1, 6)]
             last_10_years = [current_year - i for i in range(1, 11)]
 
@@ -242,52 +236,15 @@ class MarketData:
                 for yr in last_10_years:
                     dividends_history[yr] = 0.0
 
-            # Dynamically adjust TTM sum from SQLite dividend corrections table
-            from core.database import db
-
-            conn_corr = db.get_personal_connection()
-            cursor_corr = conn_corr.cursor()
-            cursor_corr.execute(
-                "SELECT year, total_value FROM dividend_corrections WHERE ticker = ?", (ticker,)
-            )
-            db_corrections = cursor_corr.fetchall()
-            conn_corr.close()
-
-            for yr, corrected_total in db_corrections:
-                if yr in div_by_year:
-                    div_by_year[yr] = float(corrected_total)
-                if yr in dividends_history:
-                    dividends_history[yr] = float(corrected_total)
-
-            if any(dividend > 0 for dividend in dividends_history.values()):
-                try:
-                    annual_price_history = yt.history(
-                        period="10y", interval="1mo", auto_adjust=False
-                    )
-                    annual_closing_prices = get_annual_closing_prices(
-                        annual_price_history, last_10_years
-                    )
-                    if listing_year is None and not annual_price_history.empty:
-                        listing_year = int(annual_price_history.index.min().year)
-                except Exception:
-                    annual_closing_prices = {}
-
-            dividend_average_period = MarketData._dividend_average_period(
-                current_year, listing_year
-            )
-            dividend_average_years = len(dividend_average_period)
-            avg_dividend_5y = (
-                sum(div_by_year[year] for year in dividend_average_period) / dividend_average_years
-                if dividend_average_years
-                else 0.0
-            )
-            dividend_history_status = (
-                "complete"
-                if dividend_average_years == 5
-                else "partial"
-                if dividend_average_years > 0
-                else "unavailable"
-            )
+            try:
+                annual_price_history = yt.history(period="10y", interval="1mo", auto_adjust=False)
+                annual_closing_prices = get_annual_closing_prices(
+                    annual_price_history, last_10_years
+                )
+                if not annual_price_history.empty:
+                    history_listing_year = int(annual_price_history.index.min().year)
+            except Exception:
+                annual_closing_prices = {}
             return {
                 "name": info.get("longName", f"Asset {ticker}"),
                 "current_price": current_price,
@@ -304,9 +261,8 @@ class MarketData:
                 "dividends_history": dividends_history,
                 "annual_closing_prices": annual_closing_prices,
                 "dividend_events": dividend_events,
-                "avg_dividend_5y": avg_dividend_5y,
-                "dividend_average_years": dividend_average_years,
-                "dividend_history_status": dividend_history_status,
+                "listing_year": listing_year,
+                "history_listing_year": history_listing_year,
             }
         except Exception:
             return {}
@@ -321,19 +277,6 @@ class MarketData:
         if not math.isfinite(numeric_value):
             return None
         return numeric_value if numeric_value > 0 else None
-
-    @staticmethod
-    def get_ticker_market_analysis(ticker: str, target_yield_pct=6.0) -> dict:
-        """
-        Fetches core B3 valuation metrics and 5-year historical dividends, and performs Bazin ceiling calculations.
-        The underlying fetching is cached on ticker only, preventing redundant web API reloads when target yield model changes.
-        """
-        ticker = ticker.strip().upper()
-        raw_data = MarketData._get_raw_ticker_market_analysis(ticker)
-        if not raw_data:
-            return {}
-
-        return ValuationService.apply_bazin_valuation(raw_data, target_yield_pct)
 
     @staticmethod
     def load_assets_catalog():
@@ -389,7 +332,6 @@ class MarketData:
 
 
 # Attach direct clear dummy functions for backwards compatibility in headless environments
-MarketData.get_ticker_market_analysis.clear = lambda: None
 MarketData.get_current_ipca_l12m.clear = lambda: None
 MarketData.get_current_selic.clear = lambda: None
 MarketData.get_current_minimum_wage.clear = lambda: None

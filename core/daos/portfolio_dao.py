@@ -701,8 +701,6 @@ class PortfolioDAO:
                 (ticker.upper().strip(),),
             )
             return {row[0]: row[1] for row in cursor.fetchall()}
-        except Exception:
-            return {}
         finally:
             conn.close()
 

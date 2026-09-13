@@ -274,7 +274,7 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
     monkeypatch.setattr(st, "session_state", mock_session)
     cache_clear_calls = []
     monkeypatch.setattr(
-        session_module.MarketData._get_raw_ticker_market_analysis,
+        session_module.MarketData.get_ticker_market_snapshot,
         "clear",
         lambda: cache_clear_calls.append(True),
     )
@@ -284,7 +284,7 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
     assert portfolio_keys.isdisjoint(mock_session)
     assert mock_session["active_db"] == "portfolio.db"
     assert mock_session["session_id"] == "keep-me"
-    assert cache_clear_calls == [True]
+    assert cache_clear_calls == []
 
 
 def test_session_manager_switches_to_valid_fallback_and_resets_loaded_state(monkeypatch):

@@ -2,7 +2,6 @@ import pandas as pd
 import streamlit as st
 
 from core.utils.market_data import MarketData
-from services.valuation_service import ValuationService
 
 
 class StreamlitCachedMarketData:
@@ -11,8 +10,6 @@ class StreamlitCachedMarketData:
     Acts as a decorator layer positioned strictly at the presentation boundary.
     Delegates implementation details to pure headless MarketData.
     """
-
-    RAW_ANALYSIS_CACHE_VERSION = 10
 
     @staticmethod
     @st.cache_data(ttl=600)
@@ -38,29 +35,20 @@ class StreamlitCachedMarketData:
         return MarketData.get_ticker_history(ticker, period=period, interval=interval)
 
     @staticmethod
-    @st.cache_data(ttl=600)
-    def _get_raw_ticker_market_analysis(
-        ticker: str, cache_version: int, cache_scope: str = ""
-    ) -> dict:
-        """Fetch market metrics and dividend history with a versioned 10-minute cache."""
-        return MarketData._get_raw_ticker_market_analysis(ticker)
+    def get_ticker_market_snapshot(ticker: str, reference_year: int) -> dict:
+        """Normalize remote inputs before consulting the portfolio-independent cache."""
+        normalized_ticker = ticker.strip().upper()
+        if not normalized_ticker:
+            return {}
+        return StreamlitCachedMarketData._get_cached_ticker_market_snapshot(
+            normalized_ticker, reference_year
+        )
 
     @staticmethod
-    def get_ticker_market_analysis(ticker: str, target_yield_pct=6.0) -> dict:
-        """
-        Fetches core B3 valuation metrics and 5-year historical dividends, and performs Bazin ceiling calculations.
-        Underlying raw fetching is cached on StreamlitCachedMarketData to avoid redundant web reloads.
-        """
-        ticker = ticker.strip().upper()
-        raw_data = StreamlitCachedMarketData._get_raw_ticker_market_analysis(
-            ticker,
-            StreamlitCachedMarketData.RAW_ANALYSIS_CACHE_VERSION,
-            str(st.session_state.get("session_id", "")),
-        )
-        if not raw_data:
-            return {}
-
-        return ValuationService.apply_bazin_valuation(raw_data, target_yield_pct)
+    @st.cache_data(ttl=600)
+    def _get_cached_ticker_market_snapshot(ticker: str, reference_year: int) -> dict:
+        """Cache one Yahoo snapshot by its normalized remote inputs."""
+        return MarketData.get_ticker_market_snapshot(ticker, reference_year)
 
     @staticmethod
     @st.cache_data
@@ -96,7 +84,6 @@ class StreamlitCachedMarketData:
         return MarketData.get_current_minimum_wage()
 
 
-# Attach direct clear delegate function attribute for compatibility with existing tests/handlers
-StreamlitCachedMarketData.get_ticker_market_analysis.clear = (
-    StreamlitCachedMarketData._get_raw_ticker_market_analysis.clear
+StreamlitCachedMarketData.get_ticker_market_snapshot.clear = (
+    StreamlitCachedMarketData._get_cached_ticker_market_snapshot.clear
 )

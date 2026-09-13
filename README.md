@@ -95,6 +95,11 @@ O acesso à rede é necessário para obter dados atualizados:
 - O Yahoo Finance (`yfinance`) fornece cotações da B3, indicadores de mercado, histórico de preços e dados de dividendos. Se uma cotação em tempo real não estiver disponível, a análise do ativo utiliza o último fechamento diário válido.
 - O Banco Central do Brasil (BCB) fornece indicadores de IPCA, Selic e salário mínimo.
 
+Os snapshots do Yahoo Finance são armazenados em cache sem dados da carteira. As correções anuais de
+proventos permanecem no SQLite local, são relidas a cada análise e aplicadas antes do cálculo do
+dividend yield histórico e do preço-teto de Bazin. Assim, trocar de carteira ou salvar uma correção
+atualiza a análise seguinte sem enviar dados pessoais ao Yahoo nem limpar o cache remoto.
+
 A importação da B3 é iniciada pelo usuário: baixe a planilha oficial no Portal do Investidor da B3 e envie-a pela aplicação. Bancos locais e planilhas pessoais são ignorados pelo Git; não faça commit desses arquivos.
 
 Entradas de aquisição ou subscrição com valor financeiro zero ou ausente ficam com

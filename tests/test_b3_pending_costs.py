@@ -72,8 +72,11 @@ def test_deposit_without_value_is_a_zero_cost_acquisition():
 def test_zero_basis_returns_are_unavailable(monkeypatch):
     AssetService.process_b3_import(pd.DataFrame([movement("Depósito", quantity=6)]))
     api = AssetService.get_default()._market_data_api
+    analysis_api = AssetService.get_default()._market_analysis_api
     monkeypatch.setattr(api, "get_batch_quotes", lambda tickers: {"BBAS3": 30})
-    monkeypatch.setattr(api, "get_ticker_market_analysis", lambda *args, **kwargs: {})
+    monkeypatch.setattr(
+        analysis_api, "get_ticker_market_analysis", lambda *args, **kwargs: {}
+    )
 
     positions, metrics = AssetService.get_portfolio_summary_metrics(
         AssetService.calculate_positions()
@@ -792,8 +795,11 @@ def test_corporate_event_does_not_turn_unknown_cost_into_known_cost():
 def test_pending_cost_hides_portfolio_profit_and_holdings_metrics(monkeypatch):
     AssetService.process_b3_import(pd.DataFrame([movement()]))
     api = AssetService.get_default()._market_data_api
+    analysis_api = AssetService.get_default()._market_analysis_api
     monkeypatch.setattr(api, "get_batch_quotes", lambda tickers: {"BBAS3": 30})
-    monkeypatch.setattr(api, "get_ticker_market_analysis", lambda *args, **kwargs: {})
+    monkeypatch.setattr(
+        analysis_api, "get_ticker_market_analysis", lambda *args, **kwargs: {}
+    )
     positions, metrics = AssetService.get_portfolio_summary_metrics(
         AssetService.calculate_positions()
     )

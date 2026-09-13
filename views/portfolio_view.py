@@ -54,7 +54,7 @@ class PortfolioView:
         metadata = AssetService.get_asset_metadata(ticker)
 
         with st.spinner(f"Buscando cotações em tempo real para {ticker}..."):
-            details = MarketData.get_ticker_market_analysis(ticker)
+            details = AssetService.get_asset_market_analysis(ticker)
 
         self._render_header_metadata_block(ticker, metadata)
         self._render_behavior_chart(ticker, details)

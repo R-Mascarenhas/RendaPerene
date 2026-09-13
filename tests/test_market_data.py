@@ -3,10 +3,19 @@ import datetime
 import pandas as pd
 import pytest
 import yfinance as yf
-from core.utils.market_data import MarketData
-from core.database import db
+from core.daos.portfolio_dao import PortfolioDAO
+from core.database import DatabaseManager, db
 from core.strings import MODEL_CLASSIC, MODEL_IPCA_SPREAD, MODEL_SELIC
+from core.utils.market_data import MarketData
 from services.assets_service import AssetService
+from services.market_analysis_service import MarketAnalysisService
+
+
+def get_market_analysis(ticker: str, target_yield_pct: float = 6.0) -> dict:
+    """Exercise the portfolio-aware analysis through its public seam."""
+    return MarketAnalysisService(MarketData, PortfolioDAO()).get_ticker_market_analysis(
+        ticker, target_yield_pct
+    )
 
 
 def test_new_asset_dividend_average_uses_only_listed_years_and_zero_payment_years(
@@ -36,12 +45,183 @@ def test_new_asset_dividend_average_uses_only_listed_years_and_zero_payment_year
 
     monkeypatch.setattr(yf, "Ticker", MockTicker)
 
-    analysis = MarketData.get_ticker_market_analysis("NEW3")
+    analysis = get_market_analysis("NEW3")
 
     assert analysis["dividend_average_years"] == 3
     assert analysis["dividends_5y"][current_year - 2] == 0
     assert analysis["avg_dividend_5y"] == pytest.approx(4 / 3)
     assert analysis["dividend_history_status"] == "partial"
+
+
+def test_market_analysis_isolates_portfolio_corrections_while_reusing_remote_snapshot(
+    monkeypatch, tmp_path
+):
+    """Each portfolio gets fresh corrections without invalidating the remote snapshot."""
+    from views.cached_market_data import StreamlitCachedMarketData
+
+    current_year = datetime.date.today().year
+    corrected_year = current_year - 1
+    remote_calls = []
+
+    def get_remote_snapshot(ticker, reference_year):
+        remote_calls.append((ticker, reference_year))
+        return {
+            "name": "Empresa Teste S.A.",
+            "current_price": 20.0,
+            "listing_year": None,
+            "dividends_5y": {year: 0.0 for year in range(current_year - 5, current_year)},
+            "dividends_history": {year: 0.0 for year in range(current_year - 10, current_year)},
+            "annual_closing_prices": {corrected_year: 25.0},
+            "dividend_events": [{"date": f"{corrected_year}-04-01", "value": 1.0}],
+        }
+
+    monkeypatch.setattr(MarketData, "get_ticker_market_snapshot", get_remote_snapshot)
+    StreamlitCachedMarketData.get_ticker_market_snapshot.clear()
+
+    first_manager = DatabaseManager(tmp_path / "first_portfolio.db")
+    second_manager = DatabaseManager(tmp_path / "second_portfolio.db")
+    first_manager.init_personal_db()
+    second_manager.init_personal_db()
+    first_corrections = PortfolioDAO(first_manager)
+    second_corrections = PortfolioDAO(second_manager)
+    first_corrections.insert_dividend_correction("TEST3", corrected_year, 2.5)
+    second_corrections.insert_dividend_correction("TEST3", corrected_year, 5.0)
+
+    first_analysis = MarketAnalysisService(
+        StreamlitCachedMarketData, first_corrections
+    ).get_ticker_market_analysis(" test3 ")
+    second_analysis = MarketAnalysisService(
+        StreamlitCachedMarketData, second_corrections
+    ).get_ticker_market_analysis("TEST3")
+
+    assert first_analysis["dividends_history"][corrected_year] == 2.5
+    assert first_analysis["dividend_yields_history"][corrected_year] == 10.0
+    assert second_analysis["dividends_history"][corrected_year] == 5.0
+    assert second_analysis["dividend_yields_history"][corrected_year] == 20.0
+    assert first_analysis["dividend_events"] == second_analysis["dividend_events"]
+    assert remote_calls == [("TEST3", current_year)]
+
+    first_corrections.insert_dividend_correction("TEST3", corrected_year, 3.0)
+    refreshed_analysis = MarketAnalysisService(
+        StreamlitCachedMarketData, first_corrections
+    ).get_ticker_market_analysis("TEST3")
+
+    assert refreshed_analysis["dividends_history"][corrected_year] == 3.0
+    assert remote_calls == [("TEST3", current_year)]
+
+
+def test_remote_snapshot_cache_normalizes_ticker_before_building_its_key(monkeypatch):
+    """Equivalent ticker spellings must reuse the same portfolio-independent snapshot."""
+    from views.cached_market_data import StreamlitCachedMarketData
+
+    current_year = datetime.date.today().year
+    remote_calls = []
+
+    def get_remote_snapshot(ticker, reference_year):
+        remote_calls.append((ticker, reference_year))
+        return {"current_price": 20.0}
+
+    monkeypatch.setattr(MarketData, "get_ticker_market_snapshot", get_remote_snapshot)
+    StreamlitCachedMarketData.get_ticker_market_snapshot.clear()
+
+    first_snapshot = StreamlitCachedMarketData.get_ticker_market_snapshot(" test3 ", current_year)
+    second_snapshot = StreamlitCachedMarketData.get_ticker_market_snapshot("TEST3", current_year)
+
+    assert first_snapshot == second_snapshot
+    assert remote_calls == [("TEST3", current_year)]
+
+
+def test_remote_market_snapshot_does_not_include_portfolio_corrections(monkeypatch):
+    """The cacheable Yahoo payload must not contain active-portfolio state."""
+    current_year = datetime.date.today().year
+    dividend_year = current_year - 1
+
+    class MockTicker:
+        def __init__(self, ticker_name):
+            assert ticker_name == "TEST3.SA"
+            self.info = {"longName": "Empresa Teste S.A."}
+            self.fast_info = {"lastPrice": 20.0}
+            self.dividends = pd.Series(
+                [1.5],
+                index=pd.to_datetime([f"{dividend_year}-12-01"]),
+                name="Dividends",
+            ).rename_axis("Date")
+
+        def history(self, period, interval, auto_adjust):
+            assert (period, interval, auto_adjust) == ("10y", "1mo", False)
+            return pd.DataFrame(
+                {"Close": [25.0]},
+                index=pd.to_datetime([f"{dividend_year}-12-30"]),
+            )
+
+    monkeypatch.setattr(yf, "Ticker", MockTicker)
+    connection = db.get_personal_connection()
+    connection.execute(
+        "INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES (?, ?, ?)",
+        ("TEST3", dividend_year, 9.0),
+    )
+    connection.commit()
+    connection.close()
+
+    snapshot = MarketData.get_ticker_market_snapshot(" test3 ", current_year)
+
+    assert snapshot["dividends_history"][dividend_year] == 1.5
+
+
+@pytest.mark.parametrize("invalid_total", ["not-a-number", float("nan"), float("inf"), -1.0])
+def test_market_analysis_maps_invalid_portfolio_correction_to_unavailable_result(
+    invalid_total,
+):
+    """Corrupt local correction values must not leak an exception or stale remote result."""
+    current_year = datetime.date.today().year
+    corrected_year = current_year - 1
+
+    class RemoteSnapshot:
+        @staticmethod
+        def get_ticker_market_snapshot(ticker, reference_year):
+            return {
+                "current_price": 20.0,
+                "dividends_5y": {corrected_year: 1.0},
+                "dividends_history": {corrected_year: 1.0},
+                "annual_closing_prices": {corrected_year: 20.0},
+            }
+
+    class InvalidCorrections:
+        @staticmethod
+        def get_dividend_corrections(ticker):
+            return {corrected_year: invalid_total}
+
+    analysis = MarketAnalysisService(RemoteSnapshot, InvalidCorrections).get_ticker_market_analysis(
+        "TEST3"
+    )
+
+    assert analysis == {}
+
+
+def test_market_analysis_maps_invalid_ticker_snapshot_to_unavailable_result():
+    """A Yahoo response without a usable quote does not represent a valid ticker analysis."""
+
+    class InvalidTickerSnapshot:
+        @staticmethod
+        def get_ticker_market_snapshot(ticker, reference_year):
+            return {
+                "name": f"Asset {ticker}",
+                "current_price": 0.0,
+                "dividends_5y": {},
+                "dividends_history": {},
+                "annual_closing_prices": {},
+            }
+
+    class EmptyCorrections:
+        @staticmethod
+        def get_dividend_corrections(ticker):
+            return {}
+
+    analysis = MarketAnalysisService(
+        InvalidTickerSnapshot, EmptyCorrections
+    ).get_ticker_market_analysis("INVALID3")
+
+    assert analysis == {}
 
 
 def test_get_ticker_market_analysis(monkeypatch):
@@ -73,7 +253,7 @@ def test_get_ticker_market_analysis(monkeypatch):
     monkeypatch.setattr(yf, "Ticker", MockTicker)
 
     # Call get_ticker_market_analysis for a mock ticker
-    analysis = MarketData.get_ticker_market_analysis("BBAS3")
+    analysis = get_market_analysis("BBAS3")
 
     # Assertions
     assert analysis["name"] == "Banco do Brasil S.A."
@@ -130,11 +310,8 @@ def test_get_ticker_market_analysis_normalization(monkeypatch):
     conn.commit()
     conn.close()
 
-    # Clear cache to avoid hits from previous tests
-    MarketData.get_ticker_market_analysis.clear()
-
     # Call with unnormalized ticker: lowercase and with spaces
-    analysis = MarketData.get_ticker_market_analysis("  bbas3   ")
+    analysis = get_market_analysis("  bbas3   ")
 
     # Assertions
     assert (
@@ -240,9 +417,11 @@ def test_asset_service_returns_analysis_for_catalog_asset_without_tracking():
             assert target_yield_pct == 6.0
             return {"current_price": 10.0, "ceiling_price": 12.0}
 
-    analysis = AssetService(market_data_api=FakeMarketData()).get_asset_market_analysis(
-        "test3", 6.0
-    )
+    fake_market_data = FakeMarketData()
+    analysis = AssetService(
+        market_data_api=fake_market_data,
+        market_analysis_api=fake_market_data,
+    ).get_asset_market_analysis("test3", 6.0)
 
     assert analysis["current_price"] == 10.0
     assert analysis["metadata"]["name"] == "Empresa Teste"
@@ -304,7 +483,7 @@ def test_market_analysis_falls_back_to_latest_valid_close(monkeypatch, live_pric
 
     monkeypatch.setattr(yf, "Ticker", MockTicker)
 
-    analysis = MarketData.get_ticker_market_analysis("BBAS3")
+    analysis = get_market_analysis("BBAS3")
 
     assert analysis["current_price"] == 11.0
     assert analysis["quote_snapshot"]["closing_price"] == 11.0
@@ -333,7 +512,7 @@ def test_market_analysis_uses_annual_closes_for_historical_dividend_yields(monke
 
     monkeypatch.setattr(yf, "Ticker", MockTicker)
 
-    analysis = MarketData.get_ticker_market_analysis("BBAS3")
+    analysis = get_market_analysis("BBAS3")
 
     assert analysis["dividends_history"][2024] == 2.61
     assert analysis["dividends_history"][2023] == 2.29
@@ -372,7 +551,7 @@ def test_market_analysis_uses_annual_close_for_manual_dividend_correction(monkey
     connection.commit()
     connection.close()
 
-    analysis = MarketData.get_ticker_market_analysis("BBAS3")
+    analysis = get_market_analysis("BBAS3")
 
     assert analysis["dividends_history"][2024] == 2.5
     assert analysis["dividend_yields_history"][2024] == 10.0

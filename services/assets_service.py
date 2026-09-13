@@ -9,6 +9,7 @@ from core.daos.portfolio_dao import PortfolioDAO
 from core.ports import (
     AssetsCatalogPort,
     ExcelParserPort,
+    MarketAnalysisPort,
     MarketDataPort,
     PlanningProviderPort,
     PortfolioPort,
@@ -27,12 +28,14 @@ class AssetService:
         portfolio_repo: PortfolioPort = None,
         catalog_repo: AssetsCatalogPort = None,
         market_data_api: MarketDataPort = None,
+        market_analysis_api: MarketAnalysisPort = None,
         excel_parser: ExcelParserPort = None,
         planning_provider: PlanningProviderPort = None,
     ):
         self._portfolio_repo = portfolio_repo or PortfolioDAO()
         self._catalog_repo = catalog_repo or AssetsCatalogDAO()
         self._market_data_api = market_data_api or MarketData
+        self._market_analysis_api = market_analysis_api
         self._excel_parser = excel_parser
         self._planning_provider = planning_provider
 
@@ -51,6 +54,7 @@ class AssetService:
         portfolio_repo: PortfolioPort = None,
         catalog_repo: AssetsCatalogPort = None,
         market_data_api: MarketDataPort = None,
+        market_analysis_api: MarketAnalysisPort = None,
         excel_parser: ExcelParserPort = None,
         planning_provider: PlanningProviderPort = None,
     ):
@@ -62,6 +66,8 @@ class AssetService:
             inst._catalog_repo = catalog_repo
         if market_data_api is not None:
             inst._market_data_api = market_data_api
+        if market_analysis_api is not None:
+            inst._market_analysis_api = market_analysis_api
         if excel_parser is not None:
             inst._excel_parser = excel_parser
         if planning_provider is not None:
@@ -467,10 +473,10 @@ class AssetService:
         return {"target_yield": target_yield, "reference_rate": reference_rate}
 
     @hybridmethod
-    def get_asset_market_analysis(self, ticker: str, target_yield: float) -> dict:
+    def get_asset_market_analysis(self, ticker: str, target_yield: float = 6.0) -> dict:
         """Return catalog metadata and Bazin valuation data for any catalog ticker."""
         ticker = ticker.strip().upper()
-        details = self._market_data_api.get_ticker_market_analysis(
+        details = self._market_analysis_api.get_ticker_market_analysis(
             ticker, target_yield_pct=target_yield
         )
         if not details:
@@ -569,7 +575,10 @@ class AssetService:
     @hybridmethod
     def get_dividend_corrections(self, ticker: str) -> dict:
         """Returns all custom dividend corrections registered for a specific ticker."""
-        return self._portfolio_repo.get_dividend_corrections(ticker)
+        try:
+            return self._portfolio_repo.get_dividend_corrections(ticker)
+        except Exception:
+            return {}
 
     @hybridmethod
     def calculate_prior_invested_amount(self, start_date) -> float | None:
@@ -916,7 +925,7 @@ class AssetService:
 
         market_rows = []
         for t in tracked_tickers:
-            details = self._market_data_api.get_ticker_market_analysis(
+            details = self._market_analysis_api.get_ticker_market_analysis(
                 t, target_yield_pct=target_yield
             )
             metadata = self.get_asset_metadata(t)
@@ -1119,7 +1128,7 @@ class AssetService:
 
         ceilings = {}
         for t in df_positions[TICKER]:
-            details = self._market_data_api.get_ticker_market_analysis(
+            details = self._market_analysis_api.get_ticker_market_analysis(
                 t, target_yield_pct=target_yield
             )
             ceilings[t] = details.get("ceiling_price", 0.0) if details else 0.0

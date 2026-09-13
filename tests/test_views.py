@@ -270,8 +270,8 @@ def test_portfolio_view_renders_missing_market_multiples_as_unavailable(monkeypa
     monkeypatch.setattr(AssetService, "get_asset_years_with_dividends", lambda ticker: [])
     monkeypatch.setattr(AssetService, "get_asset_transactions", lambda ticker: pd.DataFrame())
     monkeypatch.setattr(
-        StreamlitCachedMarketData,
-        "get_ticker_market_analysis",
+        AssetService,
+        "get_asset_market_analysis",
         lambda ticker: {
             "current_price": 20.0,
             "dy": 0.0,

@@ -12,6 +12,7 @@ from core.constants import (
     WIDGET_PORTFOLIO_DELETION_TARGET,
 )
 from core.daos.assets_catalog_dao import AssetsCatalogDAO
+from core.daos.portfolio_dao import PortfolioDAO
 from core.database import DatabaseManager, db
 from core.utils import SessionManager, get_app_version
 from core.utils.market_data import MarketData
@@ -334,13 +335,19 @@ st.set_page_config(page_title=f"Renda Perene v{get_app_version()}", page_icon="ð
 from core.utils.b3_parser import B3ExcelParserAdapter
 from services.assets_service import AssetService
 from services.goals_service import GoalService
+from services.market_analysis_service import MarketAnalysisService
 from services.planning_service import SimulationService
 from services.share_quantity_goal_service import ShareQuantityGoalService
 from views.cached_market_data import StreamlitCachedMarketData
 
+portfolio_repo = PortfolioDAO()
+market_analysis = MarketAnalysisService(StreamlitCachedMarketData, portfolio_repo)
+
 AssetService.set_adapters(
+    portfolio_repo=portfolio_repo,
     catalog_repo=AssetsCatalogDAO(catalog_path),
     market_data_api=StreamlitCachedMarketData,
+    market_analysis_api=market_analysis,
     excel_parser=B3ExcelParserAdapter(),
     planning_provider=SimulationService.get_default(),
 )
@@ -351,7 +358,7 @@ GoalService.set_adapters(
 )
 ShareQuantityGoalService.set_adapters(
     portfolio_provider=AssetService.get_default(),
-    market_data_api=StreamlitCachedMarketData,
+    market_analysis_api=market_analysis,
     planning_provider=SimulationService.get_default(),
 )
 

@@ -17,6 +17,12 @@ O RendaPerene é uma aplicação Streamlit para registrar carteiras de investime
 
 A interface e a documentação do projeto estão em português brasileiro (PT-BR); o código-fonte, seus identificadores e comentários técnicos permanecem em inglês.
 
+## Download
+
+Baixe o pacote mais recente para Windows ou Ubuntu na página de
+[Releases do RendaPerene](https://github.com/R-Mascarenhas/RendaPerene/releases/latest). A aplicação
+é executada localmente e abre a interface Streamlit no navegador do próprio computador.
+
 ## Funcionalidades
 
 - **Dashboard da carteira:** totais da carteira, progresso dos aportes anuais, indicadores de desempenho, tabelas de posições e gráficos Plotly.
@@ -53,8 +59,8 @@ precisa ser a carteira ativa. O banco e seus arquivos auxiliares SQLite são mov
 pasta exclusiva em **backups/deleted-portfolios/**; esses backups não expiram nem são removidos
 automaticamente. Para restaurar uma carteira, feche a aplicação e copie o banco e os auxiliares
 preservados nessa pasta de volta para **database/**; remova também o marcador oculto
-**.nome-da-carteira.db.deleted** correspondente. Bancos inválidos e carteiras de demonstração ou
-sessão não podem ser removidos por esse fluxo.
+**.nome-da-carteira.db.deleted** correspondente. Bancos inválidos não podem ser removidos por esse
+fluxo.
 
 Se uma nova carteira reutilizar o nome de uma carteira excluída, as demais sessões abertas com esse
 nome são reiniciadas antes de acessar o novo banco, evitando que dados mantidos em memória sejam
@@ -74,10 +80,7 @@ alterada impede essa substituição. Quando já existe uma carteira diferente co
 lateral sugere um nome alternativo editável para importar e preservar as duas carteiras. O nome deve
 ser um arquivo `.db` local ainda não utilizado; a conclusão fica associada ao destino escolhido para
 que a carteira antiga não seja oferecida novamente. Após uma importação bem-sucedida, a carteira
-importada é ativada e seus dados de planejamento são recarregados. Os bancos da demonstração
-hospedada continuam
-isolados por sessão em armazenamento temporário. Bancos demo inválidos são restaurados
-automaticamente, e diretórios de sessões inativas há mais de 24 horas são descartados.
+importada é ativada e seus dados de planejamento são recarregados.
 
 Uma carteira antiga desatualizada também pode ser marcada como **não oferecer novamente** sem ser
 importada, movida ou excluída. A preferência local é vinculada ao conteúdo do arquivo: se a origem

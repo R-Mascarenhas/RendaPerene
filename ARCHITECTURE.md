@@ -16,11 +16,9 @@ O `app.py` é a raiz de composição. Ele:
 4. inicializa o estado da sessão; e
 5. direciona para as três telas principais: Dashboard, Ativos e Planejamento.
 
-Em uma execução local normal, o banco ativo é `portfolio.db` ou outro arquivo `portfolio*.db`
-selecionado na barra lateral, sempre dentro do diretório gravável do usuário. Quando um ambiente de
-hospedagem compartilhada do Streamlit é detectado, a aplicação cria para a sessão um banco clonado
-do recurso `database/portfolio_demo.db` em um diretório temporário isolado; esse recurso serve
-apenas para demonstração e não representa o modelo principal de persistência.
+O RendaPerene possui apenas execução local. O banco ativo é `portfolio.db` ou outro arquivo `.db`
+selecionado na barra lateral, sempre dentro do diretório gravável do usuário. Os pacotes nativos
+iniciam o servidor Streamlit somente em `127.0.0.1`.
 
 Execute a aplicação com:
 
@@ -62,13 +60,9 @@ as views não calculam caminhos do sistema operacional.
 
 As raízes graváveis padrão são `%LOCALAPPDATA%\RendaPerene` no Windows e
 `$XDG_DATA_HOME/RendaPerene` no Linux, com fallback para `~/.local/share/RendaPerene`. O executável
-e seus recursos podem ser substituídos sem mover as carteiras. Sessões da demonstração hospedada
-usam uma raiz temporária própria por sessão. Os caminhos do banco e do catálogo demo são resolvidos
-a cada operação a partir do contexto atual do Streamlit, sem armazenar o identificador de uma
-sessão nos singletons compartilhados. O caminho resolvido do catálogo também integra a chave de
-cache, impedindo que leituras sejam reutilizadas entre sessões. Bancos demo inválidos são
-restaurados a partir do recurso incluído no pacote, e diretórios de sessões sem atividade há mais
-de 24 horas são removidos durante novas execuções para limitar o uso do armazenamento temporário.
+e seus recursos podem ser substituídos sem mover as carteiras. O caminho resolvido do catálogo
+integra a chave do cache de leitura, evitando reutilizar uma entrada caso a configuração do caminho
+mude durante a execução.
 
 Ao preparar o armazenamento gravável, `ApplicationPaths` incorpora primeiro os antigos `assets.csv`
 ao lado do executável e nas pastas irmãs `RendaPerene-v*`, em ordem de versão, e depois aplica o
@@ -79,9 +73,8 @@ baseline válida incluída no pacote. Todas as camadas legadas e a baseline atua
 memória sob um único lock; somente o resultado final é publicado, e apenas quando seu conteúdo
 muda.
 
-Quando existem bancos `.db` (exceto arquivos de demonstração) na antiga pasta `database/` ao lado da
-aplicação ou em pastas irmãs de releases anteriores chamadas `RendaPerene-v*`, a barra lateral oferece
-sua importação. Se
+Quando existem bancos `.db` na antiga pasta `database/` ao lado da aplicação ou em pastas irmãs de
+releases anteriores chamadas `RendaPerene-v*`, a barra lateral oferece sua importação. Se
 mais de uma versão contém o mesmo nome de carteira, a versão válida mais recente prevalece; uma
 cópia inválida mais nova não oculta uma cópia válida anterior. A migração valida a origem, copia
 (sem mover) um backup para `backups/legacy-import/`, valida novamente a cópia temporária e somente
@@ -123,8 +116,8 @@ dados financeiros não são escritos em logs.
 
 A exclusão iniciada pela barra lateral também permanece encapsulada em `ApplicationPaths`. A
 operação exige o nome completo do arquivo, aceita somente um banco SQLite válido dentro de
-`database/`, permite selecionar uma carteira diferente da ativa, recusa carteiras de
-demonstração e impede a remoção da última carteira válida. Um lock de gerenciamento serializa
+`database/`, permite selecionar uma carteira diferente da ativa e impede a remoção da última
+carteira válida. Um lock de gerenciamento serializa
 exclusões concorrentes e o lock exclusivo existente da carteira aguarda conexões leitoras antes da
 movimentação. O banco, WAL, SHM e marcador de geração existentes são
 movidos para uma pasta exclusiva em `backups/deleted-portfolios/`, com rollback em caso de falha.

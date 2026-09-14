@@ -270,7 +270,7 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
         WIDGET_INITIAL_EQUITY,
     }
     mock_session = {key: "stale" for key in portfolio_keys}
-    mock_session.update({"active_db": "portfolio.db", "session_id": "keep-me"})
+    mock_session.update({"active_db": "portfolio.db"})
     monkeypatch.setattr(st, "session_state", mock_session)
     cache_clear_calls = []
     monkeypatch.setattr(
@@ -283,7 +283,6 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
 
     assert portfolio_keys.isdisjoint(mock_session)
     assert mock_session["active_db"] == "portfolio.db"
-    assert mock_session["session_id"] == "keep-me"
     assert cache_clear_calls == []
 
 
@@ -295,7 +294,6 @@ def test_session_manager_switches_to_valid_fallback_and_resets_loaded_state(monk
         "db_loaded": True,
         SESSION_ACTIVE_DATABASE_GENERATION: "missing-generation",
         SESSION_BIRTH_DATE: "stale",
-        "session_id": "keep-me",
     }
     monkeypatch.setattr(st, "session_state", mock_session)
     fallback = ApplicationPaths.choose_portfolio(mock_session["active_db"], ["portfolio_family.db"])
@@ -307,7 +305,6 @@ def test_session_manager_switches_to_valid_fallback_and_resets_loaded_state(monk
     assert "db_loaded" not in mock_session
     assert SESSION_ACTIVE_DATABASE_GENERATION not in mock_session
     assert SESSION_BIRTH_DATE not in mock_session
-    assert mock_session["session_id"] == "keep-me"
 
 
 def test_session_manager_invalidates_state_when_portfolio_generation_changes(monkeypatch):
@@ -321,7 +318,6 @@ def test_session_manager_invalidates_state_when_portfolio_generation_changes(mon
         "db_loaded": True,
         SESSION_ACTIVE_DATABASE_GENERATION: "deleted-generation",
         SESSION_BIRTH_DATE: "stale",
-        "session_id": "keep-me",
     }
     monkeypatch.setattr(st, "session_state", mock_session)
 
@@ -332,7 +328,6 @@ def test_session_manager_invalidates_state_when_portfolio_generation_changes(mon
     assert SESSION_BIRTH_DATE not in mock_session
     assert mock_session[SESSION_ACTIVE_DATABASE_GENERATION] == "replacement-generation"
     assert mock_session["active_db"] == "portfolio_family.db"
-    assert mock_session["session_id"] == "keep-me"
 
     changed = SessionManager.refresh_portfolio_generation("replacement-generation")
 

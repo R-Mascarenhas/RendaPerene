@@ -108,6 +108,15 @@ def test_frozen_windows_discovers_portfolios_in_previous_release_directory(monke
     assert legacy_database in paths.migration_candidates()
 
 
+def test_legacy_discovery_treats_demo_named_database_as_a_local_portfolio(tmp_path):
+    legacy_root = tmp_path / "legacy"
+    legacy_database = legacy_root / "database" / "portfolio_demo.db"
+    create_database(legacy_database)
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", legacy_root)
+
+    assert legacy_database in paths.legacy_databases()
+
+
 def test_legacy_discovery_prefers_newest_release_for_duplicate_portfolio_names(tmp_path):
     releases_root = tmp_path / "releases"
     older_database = releases_root / "RendaPerene-v2.9.0" / "database" / "portfolio.db"
@@ -987,58 +996,6 @@ def test_migration_destination_matches_source_but_backup_differs_is_conflict(tmp
     assert not completion_marker.exists()
 
 
-def test_demo_session_uses_an_isolated_seeded_database(tmp_path, monkeypatch):
-    resource_root = tmp_path / "application"
-    source = resource_root / "database" / "portfolio_demo.db"
-    create_database(source, "demo")
-    monkeypatch.setattr("core.application_paths.tempfile.gettempdir", lambda: str(tmp_path))
-    paths = ApplicationPaths(resource_root, tmp_path / "unused", resource_root)
-
-    demo_paths = paths.for_demo_session("session-123")
-    demo_paths.prepare(source)
-
-    destination = demo_paths.portfolio_database("portfolio.db")
-    assert demo_paths.data_root == tmp_path / "RendaPerene" / "demo" / "session-123"
-    assert destination.exists()
-    assert ApplicationPaths.is_valid_sqlite(destination)
-
-    destination.write_text("invalid", encoding="utf-8")
-    Path(f"{destination}-wal").write_text("stale", encoding="utf-8")
-    Path(f"{destination}-shm").write_text("stale", encoding="utf-8")
-    demo_paths.prepare(source)
-
-    connection = sqlite3.connect(destination)
-    try:
-        assert connection.execute("SELECT value FROM marker").fetchone() == ("demo",)
-    finally:
-        connection.close()
-    assert not Path(f"{destination}-wal").exists()
-    assert not Path(f"{destination}-shm").exists()
-
-
-def test_demo_session_cleanup_removes_only_abandoned_directories(tmp_path, monkeypatch):
-    resource_root = tmp_path / "application"
-    monkeypatch.setattr("core.application_paths.tempfile.gettempdir", lambda: str(tmp_path))
-    paths = ApplicationPaths(resource_root, tmp_path / "unused", resource_root)
-    active = paths.for_demo_session("active").data_root
-    recent = paths.for_demo_session("recent").data_root
-    abandoned = paths.for_demo_session("abandoned").data_root
-    for session_root in (active, recent, abandoned):
-        session_root.mkdir(parents=True)
-        (session_root / "data").write_text("session", encoding="utf-8")
-    now = time.time()
-    recent.touch()
-    abandoned.touch()
-    os.utime(recent, (now - 60, now - 60))
-    os.utime(abandoned, (now - 101, now - 101))
-
-    paths.cleanup_demo_sessions("active", max_age_seconds=100)
-
-    assert active.exists()
-    assert recent.exists()
-    assert not abandoned.exists()
-
-
 def test_database_manager_resolves_the_current_session_path_for_each_connection(tmp_path):
     session_database = ContextVar("session_database")
     manager = DatabaseManager(lambda: session_database.get())
@@ -1067,7 +1024,7 @@ def test_database_manager_resolves_the_current_session_path_for_each_connection(
         first_connection.close()
 
 
-def test_catalog_repository_resolves_the_current_demo_session_for_each_operation(tmp_path):
+def test_catalog_repository_resolves_the_current_context_for_each_operation(tmp_path):
     from views.cached_market_data import StreamlitCachedMarketData
 
     session_catalog = ContextVar("session_catalog")
@@ -1489,9 +1446,21 @@ def test_delete_portfolio_rejects_invalid_confirmation_and_unsafe_names(tmp_path
     assert family.exists()
 
 
-def test_delete_portfolio_rejects_last_invalid_demo_and_demo_session_databases(
-    tmp_path, monkeypatch
-):
+def test_delete_portfolio_treats_demo_named_database_as_a_local_portfolio(tmp_path):
+    paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
+    principal = paths.portfolio_database("portfolio.db")
+    demo_named = paths.portfolio_database("portfolio_demo.db")
+    create_database(principal)
+    create_database(demo_named)
+
+    result = paths.delete_portfolio("portfolio_demo.db", "portfolio_demo.db")
+
+    assert result.deleted is True
+    assert not demo_named.exists()
+    assert principal.exists()
+
+
+def test_delete_portfolio_rejects_last_and_invalid_databases(tmp_path):
     paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)
     principal = paths.portfolio_database("portfolio.db")
     create_database(principal)
@@ -1510,42 +1479,6 @@ def test_delete_portfolio_rejects_last_invalid_demo_and_demo_session_databases(
     assert invalid_result.deleted is False
     assert "SQLite válido" in invalid_result.message
     assert invalid.exists()
-
-    demo = paths.portfolio_database("portfolio_demo.db")
-    create_database(demo)
-    demo_result = paths.delete_portfolio("portfolio_demo.db", "portfolio_demo.db")
-    assert demo_result.deleted is False
-    assert "demonstração" in demo_result.message
-    assert demo.exists()
-
-    user_portfolio_with_demo_in_its_name = paths.portfolio_database(
-        "portfolio_demonstracao.db"
-    )
-    create_database(user_portfolio_with_demo_in_its_name)
-    user_portfolio_result = paths.delete_portfolio(
-        user_portfolio_with_demo_in_its_name.name,
-        user_portfolio_with_demo_in_its_name.name,
-    )
-    assert user_portfolio_result.deleted is True
-    assert not user_portfolio_with_demo_in_its_name.exists()
-
-    alternative.unlink()
-    normal_with_only_demo_alternative = paths.delete_portfolio("portfolio.db", "portfolio.db")
-    assert normal_with_only_demo_alternative.deleted is False
-    assert "última carteira válida" in normal_with_only_demo_alternative.message
-    assert principal.exists()
-
-    monkeypatch.setattr("core.application_paths.tempfile.gettempdir", lambda: str(tmp_path))
-    demo_paths = paths.for_demo_session("session-123")
-    demo_principal = demo_paths.portfolio_database("portfolio.db")
-    demo_alternative = demo_paths.portfolio_database("portfolio_family.db")
-    create_database(demo_principal)
-    create_database(demo_alternative)
-    session_result = demo_paths.delete_portfolio("portfolio.db", "portfolio.db")
-    assert session_result.deleted is False
-    assert "demonstração" in session_result.message
-    assert demo_principal.exists()
-
 
 def test_delete_portfolio_times_out_without_moving_an_active_reader(tmp_path, monkeypatch):
     paths = ApplicationPaths(tmp_path / "application", tmp_path / "user-data", tmp_path)

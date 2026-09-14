@@ -17,6 +17,7 @@ from core.application_paths import (
 )
 from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.database import DatabaseManager
+from core.ports import AssetsCatalogPort
 from core.utils.market_data import MarketData
 
 
@@ -48,6 +49,57 @@ def write_catalog(path: Path, rows: list[tuple[str, str]]) -> None:
     path.write_text(contents, encoding="utf-8-sig")
 
 
+def test_catalog_file_resolves_the_bundled_resource(tmp_path):
+    resource_root = tmp_path / "bundle"
+    paths = ApplicationPaths(resource_root, tmp_path / "user-data", tmp_path / "legacy")
+
+    assert paths.catalog_file == resource_root / "assets.csv"
+
+
+def test_prepare_does_not_copy_or_merge_asset_catalogs(tmp_path):
+    resource_root = tmp_path / "bundle"
+    data_root = tmp_path / "user-data"
+    legacy_root = tmp_path / "legacy"
+    paths = ApplicationPaths(resource_root, data_root, legacy_root)
+    bundled_catalog = resource_root / "assets.csv"
+    writable_catalog = data_root / "catalog" / "assets.csv"
+    legacy_catalog = legacy_root / "assets.csv"
+    write_catalog(bundled_catalog, [("BASE3", "Bundled")])
+    write_catalog(writable_catalog, [("USER3", "User fallback")])
+    write_catalog(legacy_catalog, [("LEGACY3", "Legacy fallback")])
+    before = {
+        path: path.read_bytes() for path in (bundled_catalog, writable_catalog, legacy_catalog)
+    }
+
+    paths.prepare()
+
+    assert {path: path.read_bytes() for path in before} == before
+
+
+def test_new_release_uses_its_own_bundled_catalog_without_migration(tmp_path):
+    data_root = tmp_path / "user-data"
+    first_release = tmp_path / "release-1"
+    second_release = tmp_path / "release-2"
+    write_catalog(first_release / "assets.csv", [("BASE3", "Old metadata")])
+    write_catalog(second_release / "assets.csv", [("BASE3", "New metadata")])
+
+    first_paths = ApplicationPaths(first_release, data_root, first_release)
+    second_paths = ApplicationPaths(second_release, data_root, second_release)
+    first_paths.prepare()
+    second_paths.prepare()
+
+    first_catalog = AssetsCatalogDAO(first_paths.catalog_file).load_catalog()
+    second_catalog = AssetsCatalogDAO(second_paths.catalog_file).load_catalog()
+    assert first_catalog.loc["BASE3", "NOME"] == "Old metadata"
+    assert second_catalog.loc["BASE3", "NOME"] == "New metadata"
+    assert not (data_root / "catalog" / "assets.csv").exists()
+
+
+def test_asset_catalog_interface_and_adapter_are_read_only():
+    assert not hasattr(AssetsCatalogPort, "add_fallback_asset")
+    assert not hasattr(AssetsCatalogDAO, "add_fallback_asset")
+
+
 @pytest.mark.skipif(
     sys.platform.startswith("win"),
     reason="Unix XDG data directories must be exercised on a Unix host",
@@ -60,7 +112,7 @@ def test_discovers_linux_xdg_data_directory(monkeypatch, tmp_path):
 
     assert paths.data_root == xdg_data_home / "RendaPerene"
     assert paths.database_dir == xdg_data_home / "RendaPerene" / "database"
-    assert paths.catalog_file == xdg_data_home / "RendaPerene" / "catalog" / "assets.csv"
+    assert paths.catalog_file == paths.resource_root / "assets.csv"
     assert paths.logs_dir == xdg_data_home / "RendaPerene" / "logs"
     assert paths.backups_dir == xdg_data_home / "RendaPerene" / "backups"
 
@@ -1031,17 +1083,15 @@ def test_catalog_repository_resolves_the_current_context_for_each_operation(tmp_
     repository = AssetsCatalogDAO(lambda: session_catalog.get())
     first_catalog = tmp_path / "first" / "assets.csv"
     second_catalog = tmp_path / "second" / "assets.csv"
-    write_catalog(first_catalog, [("BASE3", "Base")])
-    write_catalog(second_catalog, [("BASE3", "Base")])
+    write_catalog(first_catalog, [("FIRST3", "First")])
+    write_catalog(second_catalog, [("SECOND3", "Second")])
     original_catalog_path = MarketData._catalog_path
     MarketData.configure_catalog(lambda: session_catalog.get())
 
     try:
         session_catalog.set(first_catalog)
-        repository.add_fallback_asset("FIRST3")
         assert MarketData.resolve_catalog_path() == first_catalog
         session_catalog.set(second_catalog)
-        repository.add_fallback_asset("SECOND3")
         assert MarketData.resolve_catalog_path() == second_catalog
 
         session_catalog.set(first_catalog)
@@ -1059,125 +1109,6 @@ def test_catalog_repository_resolves_the_current_context_for_each_operation(tmp_
     assert "FIRST3" not in second_tickers
     assert first_cached_tickers == first_tickers
     assert second_cached_tickers == second_tickers
-
-
-def test_prepare_merges_new_catalog_baseline_while_preserving_user_rows(tmp_path):
-    resource_root = tmp_path / "application"
-    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
-    bundled_catalog = resource_root / "assets.csv"
-    write_catalog(bundled_catalog, [("BASE3", "Old metadata")])
-    paths.prepare()
-    catalog_repository = AssetsCatalogDAO(paths.catalog_file)
-    catalog_repository.add_fallback_asset("USER3")
-
-    write_catalog(
-        bundled_catalog,
-        [("BASE3", "Updated metadata"), ("NEW3", "New bundled asset")],
-    )
-    paths.prepare()
-
-    catalog = catalog_repository.load_catalog()
-    assert catalog.loc["BASE3", "NOME"] == "Updated metadata"
-    assert catalog.loc["NEW3", "NOME"] == "New bundled asset"
-    assert "USER3" in catalog.index
-
-
-def test_prepare_preserves_legacy_catalog_rows_before_applying_bundled_baseline(tmp_path):
-    resource_root = tmp_path / "bundle"
-    releases_root = tmp_path / "releases"
-    previous_release = releases_root / "RendaPerene-v2.0.0"
-    current_release = releases_root / "RendaPerene-v2.1.0"
-    paths = ApplicationPaths(resource_root, tmp_path / "user-data", current_release)
-    write_catalog(
-        previous_release / "assets.csv",
-        [("BASE3", "Legacy metadata"), ("LEGACY3", "Legacy fallback")],
-    )
-    write_catalog(
-        resource_root / "assets.csv",
-        [("BASE3", "Bundled metadata")],
-    )
-
-    paths.prepare()
-
-    catalog = AssetsCatalogDAO(paths.catalog_file).load_catalog()
-    assert catalog.loc["BASE3", "NOME"] == "Bundled metadata"
-    assert catalog.loc["LEGACY3", "NOME"] == "Legacy fallback"
-
-
-def test_prepare_skips_malformed_legacy_catalog_and_uses_bundled_baseline(tmp_path):
-    resource_root = tmp_path / "bundle"
-    legacy_root = tmp_path / "legacy-install"
-    paths = ApplicationPaths(resource_root, tmp_path / "user-data", legacy_root)
-    malformed_catalog = legacy_root / "assets.csv"
-    malformed_catalog.parent.mkdir(parents=True)
-    malformed_catalog.write_text("not,a,catalog\n", encoding="utf-8")
-    write_catalog(resource_root / "assets.csv", [("BASE3", "Bundled metadata")])
-
-    paths.prepare()
-
-    catalog = AssetsCatalogDAO(paths.catalog_file).load_catalog()
-    assert catalog.loc["BASE3", "NOME"] == "Bundled metadata"
-    assert malformed_catalog.read_text(encoding="utf-8") == "not,a,catalog\n"
-
-    paths.catalog_file.write_text("still,not,a,catalog\n", encoding="utf-8")
-    paths.prepare()
-
-    recovered_catalog = AssetsCatalogDAO(paths.catalog_file).load_catalog()
-    assert recovered_catalog.loc["BASE3", "NOME"] == "Bundled metadata"
-
-
-def test_prepare_replaces_an_invalid_catalog_while_holding_the_catalog_lock(tmp_path, monkeypatch):
-    resource_root = tmp_path / "application"
-    paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
-    write_catalog(resource_root / "assets.csv", [("BASE3", "Bundled metadata")])
-    paths.catalog_file.parent.mkdir(parents=True)
-    paths.catalog_file.write_text("invalid", encoding="utf-8")
-    real_merge = ApplicationPaths._merge_catalogs_locked
-    merge_was_locked = False
-
-    def checked_merge(sources, destination):
-        nonlocal merge_was_locked
-        lock = destination.with_name(f".{destination.name}.lock")
-        merge_was_locked = lock.exists()
-        real_merge(sources, destination)
-
-    monkeypatch.setattr(
-        ApplicationPaths,
-        "_merge_catalogs_locked",
-        staticmethod(checked_merge),
-    )
-
-    paths.prepare()
-
-    assert merge_was_locked is True
-    assert AssetsCatalogDAO(paths.catalog_file).load_catalog().loc["BASE3", "NOME"] == (
-        "Bundled metadata"
-    )
-
-
-def test_prepare_publishes_the_final_legacy_and_bundled_catalog_only_once(tmp_path, monkeypatch):
-    resource_root = tmp_path / "bundle"
-    legacy_root = tmp_path / "legacy"
-    paths = ApplicationPaths(resource_root, tmp_path / "user-data", legacy_root)
-    write_catalog(legacy_root / "assets.csv", [("BASE3", "Legacy"), ("USER3", "Fallback")])
-    write_catalog(resource_root / "assets.csv", [("BASE3", "Bundled")])
-    paths.prepare()
-    real_replace = os.replace
-    replace_count = 0
-
-    def counting_replace(source, destination):
-        nonlocal replace_count
-        replace_count += 1
-        real_replace(source, destination)
-
-    monkeypatch.setattr("core.application_paths.os.replace", counting_replace)
-
-    paths.prepare()
-
-    assert replace_count == 0
-    catalog = AssetsCatalogDAO(paths.catalog_file).load_catalog()
-    assert catalog.loc["BASE3", "NOME"] == "Bundled"
-    assert catalog.loc["USER3", "NOME"] == "Fallback"
 
 
 def test_sqlite_validation_reuses_result_for_unchanged_file(monkeypatch, tmp_path):

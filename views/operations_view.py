@@ -32,7 +32,7 @@ class OperationsView:
         if is_sale or is_earning or is_corp_event:
             try:
                 owned_tickers = AssetService.get_owned_tickers()
-                return sorted([ticker for ticker in owned_tickers if ticker in catalog.index])
+                return sorted(owned_tickers)
             except Exception:
                 pass
             return []
@@ -121,9 +121,16 @@ class OperationsView:
         is_corp_event = "Desdobro" in entry_type or "Grupamento" in entry_type
         available_tickers = self._get_available_tickers(entry_type, catalog)
 
-        options = ["--- Selecione ---"] + [
-            f"{t} - {catalog.loc[t, 'NOME']}" for t in available_tickers if t in catalog.index
-        ]
+        options = ["--- Selecione ---"]
+        for ticker in available_tickers:
+            if not catalog.empty and ticker in catalog.index:
+                catalog_row = catalog.loc[ticker]
+                if isinstance(catalog_row, pd.DataFrame):
+                    catalog_row = catalog_row.iloc[0]
+                name = catalog_row.get("NOME", "Nome não disponível")
+            else:
+                name = "Ativo não catalogado"
+            options.append(f"{ticker} - {name}")
 
         with st.form("form_unified_entry", clear_on_submit=True):
             date = st.date_input(
@@ -132,7 +139,11 @@ class OperationsView:
 
             # Premium autocomplete select box enabling searching by either ticker or company name!
             ticker_selection = st.selectbox(
-                "Selecione o Ativo", options=options, index=0, help=HELP_OPS_SEARCH
+                "Selecione o Ativo",
+                options=options,
+                index=0,
+                help=HELP_OPS_SEARCH,
+                accept_new_options=not (is_sale or is_earning or is_corp_event),
             )
 
             if (is_sale or is_earning or is_corp_event) and not available_tickers:
@@ -195,9 +206,18 @@ class OperationsView:
                         elif "Grupamento" in entry_type:
                             tx_type = "Grupamento"  # Maps to GROUP in service
 
-                        success = AssetService.add_transaction(
-                            ticker_input, date.strftime("%Y-%m-%d"), tx_type, qty, price, fees
-                        )
+                        try:
+                            success = AssetService.add_transaction(
+                                ticker_input,
+                                date.strftime("%Y-%m-%d"),
+                                tx_type,
+                                qty,
+                                price,
+                                fees,
+                            )
+                        except ValueError as error:
+                            st.error(str(error))
+                            return
                         if success:
                             if "Compra" in entry_type:
                                 success_msg = MSG_MANUAL_ENTRY_SUCCESS_TX.format(

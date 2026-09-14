@@ -6,6 +6,8 @@ from typing import Any
 
 import pandas as pd
 
+from core.utils.ticker import normalize_b3_ticker
+
 
 class B3ExcelParserAdapter:
     """Concrete implementation of ExcelParserPort to parse raw B3 investment account excel spreadsheet rows,
@@ -53,9 +55,9 @@ class B3ExcelParserAdapter:
                 date = pd.to_datetime(date_str, dayfirst="/" in date_str).strftime("%Y-%m-%d")
 
                 raw_product = str(row.get("Código de Negociação", row.get("Produto", ""))).strip()
-                ticker = raw_product.split("-")[0].strip().upper()
-
-                if not ticker or len(ticker) < 5 or not ticker[:4].isalpha():
+                try:
+                    ticker = normalize_b3_ticker(raw_product.split("-")[0])
+                except ValueError:
                     continue
 
                 quantity = int(row.get("Quantidade", 0))

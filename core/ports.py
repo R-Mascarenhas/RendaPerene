@@ -103,8 +103,6 @@ class AssetsCatalogPort(Protocol):
 
     def load_catalog(self) -> pd.DataFrame: ...
 
-    def add_fallback_asset(self, ticker: str) -> None: ...
-
 
 class MarketDataPort(Protocol):
     """Outbound Port interface defining market integration and quotation lookup (DIP compliant)."""

@@ -43,10 +43,10 @@ manuais. Os diretórios padrão são:
 - Linux: `$XDG_DATA_HOME/RendaPerene` ou, quando a variável não estiver definida,
   `~/.local/share/RendaPerene`.
 
-Dentro desse diretório, `database/` contém as carteiras, `catalog/assets.csv` contém o catálogo
-gravável, `backups/` preserva cópias de recuperação e `logs/` é reservado para registros locais.
-A aplicação não utiliza banco de dados em nuvem, contas de usuário ou telemetria, nem realiza
-scraping do portal da B3.
+Dentro desse diretório, `database/` contém as carteiras, `backups/` preserva cópias de recuperação
+e `logs/` é reservado para registros locais. O catálogo `assets.csv` é um recurso somente leitura
+incluído na aplicação, não um dado da carteira. A aplicação não utiliza banco de dados em nuvem,
+contas de usuário ou telemetria, nem realiza scraping do portal da B3.
 
 Bancos inválidos são ignorados na seleção. Se a carteira ativa for removida ou deixar de ser um
 SQLite válido, a aplicação seleciona outra carteira disponível e recarrega suas configurações sem
@@ -86,12 +86,11 @@ Uma carteira antiga desatualizada também pode ser marcada como **não oferecer 
 importada, movida ou excluída. A preferência local é vinculada ao conteúdo do arquivo: se a origem
 mudar, ela volta a ser oferecida. A seção **Carteiras antigas ignoradas** permite desfazer a decisão.
 
-Na primeira migração, o catálogo gravável também incorpora os registros alternativos dos
-`assets.csv` encontrados na instalação atual e nas pastas de releases anteriores. Depois, ele é
-atualizado a partir do catálogo incluído em cada nova versão: metadados e tickers do pacote são
-incorporados sem remover registros locais de ativos que ainda não fazem parte do catálogo oficial.
-Catálogos antigos sem o cabeçalho esperado são ignorados; se a cópia gravável estiver malformada,
-ela é recuperada a partir do catálogo válido incluído no pacote.
+Cada versão lê diretamente o catálogo `assets.csv` incluído no pacote. Uma nova versão pode
+substituí-lo sem migração ou mesclagem com arquivos anteriores. Tickers ausentes do catálogo
+continuam válidos quando aparecem em transações da carteira: o ticker permanece no banco local e a
+interface apresenta metadados neutros sem criar uma entrada de catálogo. Cópias graváveis ou
+catálogos legados deixados por versões anteriores são preservados no disco, mas ignorados.
 
 O acesso à rede é necessário para obter dados atualizados:
 

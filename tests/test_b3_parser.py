@@ -1,16 +1,51 @@
 import pandas as pd
+import pytest
 
 from core.utils.b3_parser import B3ExcelParserAdapter
 from services.assets_service import AssetService
 
 
-def test_add_transaction_and_assets_creation(mock_db):
-    """Ensures that the transaction creates the asset using the fallback metadata in the assets csv."""
-    AssetService.add_transaction("MOCK4", "2021-04-30", "BUY", 100, 20.00, 5.0)
+def test_manual_transaction_for_uncatalogued_ticker_keeps_catalog_immutable(mock_db):
+    catalog_path = mock_db["catalog_path"]
+    catalog_before = catalog_path.read_bytes()
 
-    df = pd.read_csv(mock_db["catalog_path"], dtype=str, encoding="utf-8-sig").set_index("CÓDIGO")
-    assert "MOCK4" in df.index
-    assert df.loc["MOCK4", "NOME"] == "Asset MOCK4"
+    assert AssetService.add_transaction("MOCK4", "2021-04-30", "BUY", 100, 20.00, 5.0)
+
+    assert catalog_path.read_bytes() == catalog_before
+
+
+def test_manual_transaction_rejects_text_that_is_not_a_b3_ticker(mock_db):
+    catalog_path = mock_db["catalog_path"]
+    catalog_before = catalog_path.read_bytes()
+
+    with pytest.raises(ValueError, match="ticker válido da B3"):
+        AssetService.add_transaction("Petrobras", "2021-04-30", "BUY", 100, 20.00, 5.0)
+
+    assert AssetService.calculate_positions().empty
+    assert catalog_path.read_bytes() == catalog_before
+
+
+def test_b3_import_for_uncatalogued_ticker_keeps_catalog_immutable(mock_db):
+    catalog_path = mock_db["catalog_path"]
+    catalog_before = catalog_path.read_bytes()
+    statement = pd.DataFrame(
+        [
+            {
+                "Movimentação": "Compra",
+                "Data": "30/04/2021",
+                "Produto": "MOCK4",
+                "Instituição": "Corretora Teste",
+                "Quantidade": 100,
+                "Preço unitário": 20.0,
+                "Valor da Operação": 2000.0,
+                "Entrada/Saída": "Crédito",
+            }
+        ]
+    )
+
+    assert AssetService.process_b3_import(statement) == (1, 0)
+
+    assert catalog_path.read_bytes() == catalog_before
 
 
 def test_b3_excel_importer_logic():
@@ -32,6 +67,27 @@ def test_b3_excel_importer_logic():
         round(df_positions.loc[0, "average_price"], 2) == 6.67
     )  # (100 * 20.00 - 50 * 20.00) / 150 = 1000 / 150 = 6.67
     assert df_positions.loc[0, "total_dividends"] == 80.00
+
+
+def test_b3_parser_rejects_product_text_that_is_not_a_ticker():
+    transactions, dividends = B3ExcelParserAdapter().parse_b3_excel(
+        pd.DataFrame(
+            [
+                {
+                    "Movimentação": "Compra",
+                    "Data": "30/04/2021",
+                    "Produto": "ABCDE",
+                    "Quantidade": 100,
+                    "Preço unitário": 20.0,
+                    "Valor da Operação": 2000.0,
+                    "Entrada/Saída": "Crédito",
+                }
+            ]
+        )
+    )
+
+    assert transactions.empty
+    assert dividends.empty
 
 
 def test_b3_importer_deduplication():

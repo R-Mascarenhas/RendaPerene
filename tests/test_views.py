@@ -541,6 +541,98 @@ def test_operations_view_only_offers_owned_assets_for_sales(mock_db, monkeypatch
     assert available == ["BBAS3"]
 
 
+def test_operations_view_offers_uncatalogued_owned_asset_for_sales(mock_db, monkeypatch):
+    from views.operations_view import OperationsView
+
+    monkeypatch.setattr(AssetService, "get_owned_tickers", lambda: ["MOCK4"])
+    catalog = pd.DataFrame({"NOME": ["Banco do Brasil"]}, index=["BBAS3"])
+
+    available = OperationsView()._get_available_tickers("Venda (Resgate)", catalog)
+
+    assert available == ["MOCK4"]
+
+
+def test_operations_view_accepts_a_new_ticker_for_manual_purchase(mock_db, monkeypatch):
+    from contextlib import nullcontext
+
+    from views.operations_view import OperationsView
+
+    ticker_selectbox = {}
+
+    def selectbox(label, options, **kwargs):
+        if label == "Tipo de Lançamento":
+            return "Compra (Aporte)"
+        ticker_selectbox.update(options=options, kwargs=kwargs)
+        return "--- Selecione ---"
+
+    monkeypatch.setattr(st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(st, "selectbox", selectbox)
+    monkeypatch.setattr(st, "form", lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr(st, "date_input", lambda *args, **kwargs: datetime.date.today())
+    monkeypatch.setattr(st, "number_input", lambda *args, **kwargs: kwargs["value"])
+    monkeypatch.setattr(st, "form_submit_button", lambda *args, **kwargs: False)
+
+    OperationsView()._render_unified_manual_form()
+
+    assert ticker_selectbox["kwargs"]["accept_new_options"] is True
+
+
+def test_operations_view_reports_invalid_free_form_ticker_without_saving(mock_db, monkeypatch):
+    from contextlib import nullcontext
+
+    from views.operations_view import OperationsView
+
+    errors = []
+
+    def selectbox(label, options, **kwargs):
+        if label == "Tipo de Lançamento":
+            return "Compra (Aporte)"
+        return "Petrobras"
+
+    monkeypatch.setattr(st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(st, "selectbox", selectbox)
+    monkeypatch.setattr(st, "form", lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr(st, "date_input", lambda *args, **kwargs: datetime.date.today())
+    monkeypatch.setattr(st, "number_input", lambda *args, **kwargs: kwargs["value"])
+    monkeypatch.setattr(st, "form_submit_button", lambda *args, **kwargs: True)
+    monkeypatch.setattr(st, "error", errors.append)
+    monkeypatch.setattr(st.cache_data, "clear", lambda: None)
+    monkeypatch.setattr(st, "rerun", lambda: None)
+
+    OperationsView()._render_unified_manual_form()
+
+    assert errors == [
+        "Informe um ticker válido da B3, como PETR4, BOVA11, NUBR33 ou PETR4F."
+    ]
+    assert AssetService.calculate_positions().empty
+
+
+def test_operations_view_labels_uncatalogued_owned_ticker_neutrally(mock_db, monkeypatch):
+    from contextlib import nullcontext
+
+    from views.operations_view import OperationsView
+
+    ticker_options = []
+
+    def selectbox(label, options, **kwargs):
+        if label == "Tipo de Lançamento":
+            return "Venda (Resgate)"
+        ticker_options.extend(options)
+        return "--- Selecione ---"
+
+    monkeypatch.setattr(AssetService, "get_owned_tickers", lambda: ["MOCK4"])
+    monkeypatch.setattr(st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(st, "selectbox", selectbox)
+    monkeypatch.setattr(st, "form", lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr(st, "date_input", lambda *args, **kwargs: datetime.date.today())
+    monkeypatch.setattr(st, "number_input", lambda *args, **kwargs: kwargs["value"])
+    monkeypatch.setattr(st, "form_submit_button", lambda *args, **kwargs: False)
+
+    OperationsView()._render_unified_manual_form()
+
+    assert "MOCK4 - Ativo não catalogado" in ticker_options
+
+
 def test_market_monitoring_preserves_initial_equity_flags(mock_db, monkeypatch):
     from core.constants import (
         ANNUAL_INTEREST_RATE,

@@ -1,7 +1,5 @@
-import csv
 import errno
 import hashlib
-import io
 import json
 import os
 import re
@@ -11,7 +9,6 @@ import sqlite3
 import sys
 import time
 import uuid
-from collections.abc import Iterable
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from functools import lru_cache
@@ -266,7 +263,7 @@ class ApplicationPaths:
 
     @property
     def catalog_file(self) -> Path:
-        return self.data_root / "catalog" / "assets.csv"
+        return self.bundled_resource("assets.csv")
 
     @property
     def logs_dir(self) -> Path:
@@ -284,29 +281,13 @@ class ApplicationPaths:
         return self.resource_root / relative
 
     def prepare(self) -> None:
-        """Create writable directories and prepare the local asset catalog."""
+        """Create writable application-data directories."""
         for directory in (
             self.database_dir,
-            self.catalog_file.parent,
             self.logs_dir,
             self.backups_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
-
-        bundled_catalog = self.bundled_resource("assets.csv")
-        current_catalog_paths = {bundled_catalog.resolve(), self.catalog_file.resolve()}
-        catalog_sources = []
-        for legacy_root in reversed(self._legacy_roots()):
-            legacy_catalog = legacy_root / "assets.csv"
-            if legacy_catalog.resolve() not in current_catalog_paths and self._is_valid_catalog(
-                legacy_catalog
-            ):
-                catalog_sources.append(legacy_catalog)
-
-        if self._is_valid_catalog(bundled_catalog):
-            catalog_sources.append(bundled_catalog)
-        if catalog_sources:
-            self._merge_catalogs(catalog_sources, self.catalog_file)
 
     def portfolio_database(self, filename: str) -> Path:
         """Resolve a portfolio filename without allowing directory traversal or unrelated files."""
@@ -1145,88 +1126,6 @@ class ApplicationPaths:
         for suffix in ("-wal", "-shm"):
             with suppress(FileNotFoundError):
                 Path(f"{path}{suffix}").unlink()
-
-    @staticmethod
-    def _merge_catalog(bundled_catalog: Path, writable_catalog: Path) -> None:
-        """Apply bundled metadata updates while retaining user-only fallback rows."""
-        ApplicationPaths._merge_catalogs((bundled_catalog,), writable_catalog)
-
-    @staticmethod
-    def _merge_catalogs(catalog_sources: Iterable[Path], writable_catalog: Path) -> None:
-        """Build all catalog layers in memory and publish the final result once."""
-        with ApplicationPaths._catalog_lock(writable_catalog):
-            ApplicationPaths._merge_catalogs_locked(catalog_sources, writable_catalog)
-
-    @staticmethod
-    def _merge_catalogs_locked(catalog_sources: Iterable[Path], writable_catalog: Path) -> None:
-        if ApplicationPaths._is_valid_catalog(writable_catalog):
-            fieldnames, rows = ApplicationPaths._read_catalog(writable_catalog)
-        else:
-            fieldnames, rows = [], []
-
-        merged_source = False
-        for catalog_source in catalog_sources:
-            try:
-                source_fields, source_rows = ApplicationPaths._read_catalog(catalog_source)
-            except (OSError, UnicodeError, csv.Error, ValueError):
-                continue
-            merged_source = True
-            combined_fields = source_fields + [
-                field for field in fieldnames if field not in source_fields
-            ]
-            source_codes = {row["CÓDIGO"] for row in source_rows}
-            retained_rows = [
-                row for row in rows if row.get("CÓDIGO") and row["CÓDIGO"] not in source_codes
-            ]
-            fieldnames = combined_fields
-            rows = [*source_rows, *retained_rows]
-
-        if not merged_source:
-            return
-
-        text_buffer = io.StringIO(newline="")
-        writer = csv.DictWriter(text_buffer, fieldnames=fieldnames, lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
-        merged_contents = text_buffer.getvalue().encode("utf-8-sig")
-        if writable_catalog.exists() and writable_catalog.read_bytes() == merged_contents:
-            return
-
-        temporary = writable_catalog.with_name(f".{writable_catalog.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            temporary.write_bytes(merged_contents)
-            os.replace(temporary, writable_catalog)
-        finally:
-            with suppress(FileNotFoundError):
-                temporary.unlink()
-
-    @staticmethod
-    @contextmanager
-    def _catalog_lock(catalog: Path):
-        catalog = Path(catalog)
-        lock = catalog.with_name(f".{catalog.name}.lock")
-        with _exclusive_file_lock(lock):
-            yield
-
-    @staticmethod
-    def _read_catalog(path: Path) -> tuple[list[str], list[dict[str, str]]]:
-        with path.open(encoding="utf-8-sig", newline="") as catalog_file:
-            reader = csv.DictReader(catalog_file)
-            fieldnames = list(reader.fieldnames or [])
-            if "CÓDIGO" not in fieldnames:
-                raise ValueError("The assets catalog must contain a CÓDIGO column.")
-            rows = list(reader)
-            if any(None in row for row in rows):
-                raise ValueError("The assets catalog contains rows with extra columns.")
-            return fieldnames, rows
-
-    @classmethod
-    def _is_valid_catalog(cls, path: Path) -> bool:
-        try:
-            cls._read_catalog(path)
-            return True
-        except (OSError, UnicodeError, csv.Error, ValueError):
-            return False
 
     @staticmethod
     def _snapshot_sqlite(source: Path, destination: Path) -> None:

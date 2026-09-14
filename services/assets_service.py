@@ -4,10 +4,8 @@ import math
 
 import pandas as pd
 
-from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.daos.portfolio_dao import PortfolioDAO
 from core.ports import (
-    AssetsCatalogPort,
     ExcelParserPort,
     MarketAnalysisPort,
     MarketDataPort,
@@ -17,6 +15,7 @@ from core.ports import (
 )
 from core.strings import MODEL_IPCA_SPREAD, MODEL_SELIC
 from core.utils.market_data import MarketData
+from core.utils.ticker import normalize_b3_ticker
 from services.valuation_service import ValuationService
 
 
@@ -26,14 +25,12 @@ class AssetService:
     def __init__(
         self,
         portfolio_repo: PortfolioPort = None,
-        catalog_repo: AssetsCatalogPort = None,
         market_data_api: MarketDataPort = None,
         market_analysis_api: MarketAnalysisPort = None,
         excel_parser: ExcelParserPort = None,
         planning_provider: PlanningProviderPort = None,
     ):
         self._portfolio_repo = portfolio_repo or PortfolioDAO()
-        self._catalog_repo = catalog_repo or AssetsCatalogDAO()
         self._market_data_api = market_data_api or MarketData
         self._market_analysis_api = market_analysis_api
         self._excel_parser = excel_parser
@@ -52,7 +49,6 @@ class AssetService:
     def set_adapters(
         cls,
         portfolio_repo: PortfolioPort = None,
-        catalog_repo: AssetsCatalogPort = None,
         market_data_api: MarketDataPort = None,
         market_analysis_api: MarketAnalysisPort = None,
         excel_parser: ExcelParserPort = None,
@@ -62,8 +58,6 @@ class AssetService:
         inst = cls.get_default()
         if portfolio_repo is not None:
             inst._portfolio_repo = portfolio_repo
-        if catalog_repo is not None:
-            inst._catalog_repo = catalog_repo
         if market_data_api is not None:
             inst._market_data_api = market_data_api
         if market_analysis_api is not None:
@@ -72,11 +66,6 @@ class AssetService:
             inst._excel_parser = excel_parser
         if planning_provider is not None:
             inst._planning_provider = planning_provider
-
-    @hybridmethod
-    def register_fallback_asset(self, ticker: str):
-        """Appends a fallback asset to assets.csv if not found in the catalog."""
-        self._catalog_repo.add_fallback_asset(ticker)
 
     @hybridmethod
     def add_transaction(
@@ -89,7 +78,7 @@ class AssetService:
         fees: float = 0.0,
     ) -> bool:
         """Inserts a Buy (BUY), Sell (SELL), or Group (GROUP) asset transaction into the personal database, avoiding duplicates."""
-        ticker = ticker.strip().upper()
+        ticker = normalize_b3_ticker(ticker)
         if transaction_type in ("Compra", "BUY"):
             transaction_type = "BUY"
         elif transaction_type in ("Venda", "SELL"):
@@ -104,10 +93,6 @@ class AssetService:
             date, ticker, transaction_type, quantity, unit_price, fees
         ):
             return False  # Skipped duplicate
-
-        catalog = self._market_data_api.load_assets_catalog()
-        if catalog.empty or ticker not in catalog.index:
-            self.register_fallback_asset(ticker)
 
         success = self._portfolio_repo.insert_transaction(
             date, ticker, transaction_type, quantity, unit_price, fees
@@ -135,10 +120,6 @@ class AssetService:
 
         if self._portfolio_repo.find_dividend(date, ticker, dividend_type, total_value):
             return False
-
-        catalog = self._market_data_api.load_assets_catalog()
-        if catalog.empty or ticker not in catalog.index:
-            self.register_fallback_asset(ticker)
 
         return self._portfolio_repo.insert_dividend(date, ticker, dividend_type, total_value)
 
@@ -194,13 +175,12 @@ class AssetService:
                 success = self._portfolio_repo.import_b3_transaction(
                     record, self._has_sufficient_cost_history
                 )
-                if success:
-                    self.register_fallback_asset(row["ticker"])
-                    if (
-                        row["transaction_type"] == "SELL"
-                        and self.get_quantity_on_date(row["ticker"], row["date"]) == 0
-                    ):
-                        self.add_tracked_market_asset(row["ticker"])
+                if (
+                    success
+                    and row["transaction_type"] == "SELL"
+                    and self.get_quantity_on_date(row["ticker"], row["date"]) == 0
+                ):
+                    self.add_tracked_market_asset(row["ticker"])
             else:
                 success = self.add_transaction(
                     ticker=row["ticker"],
@@ -403,8 +383,13 @@ class AssetService:
 
     @hybridmethod
     def get_asset_metadata(self, ticker: str) -> dict:
-        """Returns static metadata for a specific ticker from the local assets.csv catalog."""
+        """Return catalog metadata or neutral display metadata for an uncatalogued ticker."""
+        ticker = ticker.strip().upper()
         catalog = self._market_data_api.load_assets_catalog()
+        return self._resolve_asset_metadata(catalog, ticker)
+
+    @staticmethod
+    def _resolve_asset_metadata(catalog: pd.DataFrame, ticker: str) -> dict:
         if not catalog.empty and ticker in catalog.index:
             row = catalog.loc[ticker]
             if isinstance(row, pd.DataFrame):
@@ -416,22 +401,20 @@ class AssetService:
                 "sector": str(row.get("SETOR ECONÔMICO", "Outros"))
                 if pd.notna(row.get("SETOR ECONÔMICO"))
                 else "Outros",
-                "sub_sector": str(row.get("SUBSETOR ", ""))
-                if pd.notna(row.get("SUBSETOR "))
-                else "",
+                "sub_sector": str(row.get("SUBSETOR", "")) if pd.notna(row.get("SUBSETOR")) else "",
                 "segment": str(row.get("SEGMENTO / ADM / PAÍS", ""))
                 if pd.notna(row.get("SEGMENTO / ADM / PAÍS"))
                 else "",
                 "asset_type": str(row.get("TIPO", "Ação")) if pd.notna(row.get("TIPO")) else "Ação",
             }
         return {
-            "name": f"Asset {ticker}",
+            "name": f"Ativo não catalogado ({ticker})",
             "image": "",
             "cnpj": "N/D",
-            "sector": "Outros",
-            "sub_sector": "",
-            "segment": "",
-            "asset_type": "Ação",
+            "sector": "Não informado",
+            "sub_sector": "Não informado",
+            "segment": "Não informado",
+            "asset_type": "Não informado",
         }
 
     @hybridmethod
@@ -443,7 +426,7 @@ class AssetService:
 
         catalog = catalog.loc[~catalog.index.duplicated(keep="first")]
         entries = [
-            (str(ticker), str(row.get("NOME", f"Asset {ticker}")))
+            (str(ticker), str(row.get("NOME", "Nome não disponível")))
             for ticker, row in catalog.iterrows()
         ]
         return sorted(entries, key=lambda entry: entry[0])
@@ -537,12 +520,12 @@ class AssetService:
         try:
             df_positions = self.calculate_positions()
             if not df_positions.empty:
-                # Filter positions that have positive quantity and are of type 'Ação'
+                # Include owned stocks and uncatalogued positions whose type is unknown.
                 owned_stocks = df_positions[
                     df_positions["asset_type"]
                     .str.strip()
                     .str.lower()
-                    .isin(["ação", "acao", "ações", "acoes"])
+                    .isin(["ação", "acao", "ações", "acoes", "não informado"])
                 ]["ticker"].tolist()
             else:
                 owned_stocks = []
@@ -709,23 +692,18 @@ class AssetService:
         active_assets = []
         for ticker, info in portfolio_state.items():
             if info[QUANTITY] > 0:
-                if not catalog.empty and ticker in catalog.index:
-                    row = catalog.loc[ticker]
-                    if isinstance(row, pd.DataFrame):
-                        row = row.iloc[0]
-                    name = str(row.get("NOME", f"Asset {ticker}"))
-                    asset_type = str(row.get("TIPO", "Ação"))
-                    sector = str(row.get("SETOR ECONÔMICO", "Outros"))
-                    segment = str(row.get("SEGMENTO / ADM / PAÍS", ""))
-                    asset_type_clean = asset_type.strip().lower()
-                    if asset_type_clean in ["ação", "acao"]:
-                        display_sector = segment if segment else sector
-                    elif asset_type_clean == "etf":
-                        display_sector = "-"
-                    else:
-                        display_sector = sector
+                metadata = self._resolve_asset_metadata(catalog, ticker)
+                name = metadata["name"]
+                asset_type = metadata["asset_type"]
+                sector = metadata["sector"]
+                segment = metadata["segment"]
+                asset_type_clean = asset_type.strip().lower()
+                if asset_type_clean in ["ação", "acao"]:
+                    display_sector = segment if segment else sector
+                elif asset_type_clean == "etf":
+                    display_sector = "-"
                 else:
-                    name, asset_type, display_sector = f"Asset {ticker}", "Ação", "Outros"
+                    display_sector = sector
 
                 if start_date is not None:
                     total_dividends = self._portfolio_repo.get_dividends_by_ticker_since_date(
@@ -923,12 +901,13 @@ class AssetService:
             DISPLAY_TICKER,
         )
 
+        catalog = self._market_data_api.load_assets_catalog()
         market_rows = []
         for t in tracked_tickers:
             details = self._market_analysis_api.get_ticker_market_analysis(
                 t, target_yield_pct=target_yield
             )
-            metadata = self.get_asset_metadata(t)
+            metadata = self._resolve_asset_metadata(catalog, t)
 
             if details:
                 current_year = datetime.date.today().year
@@ -936,7 +915,9 @@ class AssetService:
 
                 row_data = {
                     DISPLAY_TICKER: t,
-                    DISPLAY_COMPANY: details.get(MARKET_NAME, metadata.get(NAME, t)),
+                    DISPLAY_COMPANY: details.get(MARKET_NAME, metadata.get(NAME, t))
+                    if not catalog.empty and t in catalog.index
+                    else metadata["name"],
                     DISPLAY_QUOTE: details.get(CURRENT_PRICE, 0.0),
                     DISPLAY_CEILING: details.get(CEILING_PRICE, 0.0),
                     DISPLAY_P_VP: details.get(MARKET_PB, 0.0),

@@ -3,6 +3,34 @@ import datetime
 import pandas as pd
 from services.assets_service import AssetService
 
+
+def test_uncatalogued_ticker_persists_with_neutral_metadata_after_service_restart():
+    from core.daos.portfolio_dao import PortfolioDAO
+    from core.utils.market_data import MarketData
+
+    assert AssetService.add_transaction("MOCK4", "2025-01-10", "BUY", 10, 20.0, 5.0)
+
+    reloaded_service = AssetService(portfolio_repo=PortfolioDAO(), market_data_api=MarketData)
+    position = reloaded_service.calculate_positions().iloc[0]
+
+    assert position["ticker"] == "MOCK4"
+    assert position["quantity"] == 10
+    assert position["average_price"] == 20.5
+    assert position["invested_amount"] == 205.0
+    assert position["name"] == "Ativo não catalogado (MOCK4)"
+    assert position["asset_type"] == "Não informado"
+    assert position["sector"] == "Não informado"
+    assert reloaded_service.get_asset_metadata("MOCK4") == {
+        "name": "Ativo não catalogado (MOCK4)",
+        "image": "",
+        "cnpj": "N/D",
+        "sector": "Não informado",
+        "sub_sector": "Não informado",
+        "segment": "Não informado",
+        "asset_type": "Não informado",
+    }
+    assert "MOCK4" in reloaded_service.get_tracked_market_assets()
+
 def test_average_price_calculation():
     """Ensures chronologically weighted average price math works perfectly."""
     AssetService.add_transaction("BBAS3", "2021-04-30", "BUY", 100, 20.00)

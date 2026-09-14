@@ -14,6 +14,22 @@ from core.utils.session import (
     get_app_version,
     monitor_active_sessions,
 )
+from core.utils.ticker import normalize_b3_ticker
+
+
+@pytest.mark.parametrize(
+    ("raw_ticker", "expected"),
+    [
+        (" petr4 ", "PETR4"),
+        ("BOVA11", "BOVA11"),
+        ("NUBR33", "NUBR33"),
+        ("PETR4F", "PETR4F"),
+        ("B3SA3", "B3SA3"),
+        ("ANCR11B", "ANCR11B"),
+    ],
+)
+def test_normalize_b3_ticker_accepts_supported_exchange_formats(raw_ticker, expected):
+    assert normalize_b3_ticker(raw_ticker) == expected
 
 
 def test_formatter_colored_cell_style_dry_sanity():

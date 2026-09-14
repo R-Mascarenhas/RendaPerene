@@ -38,12 +38,10 @@ def mock_db(monkeypatch, tmp_path):
     from services.share_quantity_goal_service import ShareQuantityGoalService
     from core.utils.b3_parser import B3ExcelParserAdapter
 
-    monkeypatch.setattr("services.assets_service.AssetsCatalogDAO", lambda: catalog_repo)
     portfolio_repo = PortfolioDAO()
     market_analysis = MarketAnalysisService(MarketData, portfolio_repo)
     AssetService.set_adapters(
         portfolio_repo=portfolio_repo,
-        catalog_repo=catalog_repo,
         market_data_api=MarketData,
         market_analysis_api=market_analysis,
         excel_parser=B3ExcelParserAdapter(),

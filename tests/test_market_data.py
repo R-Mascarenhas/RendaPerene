@@ -5,7 +5,7 @@ import pytest
 import yfinance as yf
 from core.daos.portfolio_dao import PortfolioDAO
 from core.database import DatabaseManager, db
-from core.strings import MODEL_CLASSIC, MODEL_IPCA_SPREAD, MODEL_SELIC
+from core.strings import DISPLAY_COMPANY, MODEL_CLASSIC, MODEL_IPCA_SPREAD, MODEL_SELIC
 from core.utils.market_data import MarketData
 from services.assets_service import AssetService
 from services.market_analysis_service import MarketAnalysisService
@@ -439,6 +439,25 @@ def test_asset_service_prepares_unique_sorted_catalog_entries():
     entries = AssetService(market_data_api=FakeMarketData()).get_asset_catalog_entries()
 
     assert entries == [("AAAA3", "Empresa A"), ("BBBB3", "Empresa B")]
+
+
+def test_market_monitor_uses_neutral_name_for_uncatalogued_ticker():
+    class EmptyCatalog:
+        @staticmethod
+        def load_assets_catalog():
+            return pd.DataFrame()
+
+    class RemoteAnalysis:
+        @staticmethod
+        def get_ticker_market_analysis(ticker, target_yield_pct):
+            return {"name": f"Asset {ticker}", "current_price": 10.0}
+
+    display, _ = AssetService(
+        market_data_api=EmptyCatalog(),
+        market_analysis_api=RemoteAnalysis(),
+    ).get_market_analysis_data(["MOCK4"], 6.0)
+
+    assert display.loc[0, DISPLAY_COMPANY] == "Ativo não catalogado (MOCK4)"
 
 
 def test_asset_service_resolves_bazin_targets_with_injected_market_rates():

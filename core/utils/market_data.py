@@ -14,7 +14,7 @@ class MarketData:
 
     @classmethod
     def configure_catalog(cls, catalog_path) -> None:
-        """Configure the writable catalog selected at the application composition root."""
+        """Configure the bundled read-only catalog at the application composition root."""
         cls._catalog_path = catalog_path
 
     @classmethod
@@ -280,7 +280,7 @@ class MarketData:
 
     @staticmethod
     def load_assets_catalog():
-        """Loads the B3 assets static catalog from assets.csv into memory RAM (Vastly faster!)."""
+        """Load the static B3 asset catalog from the bundled assets.csv resource."""
         from core.daos.assets_catalog_dao import AssetsCatalogDAO
 
         return AssetsCatalogDAO(MarketData.resolve_catalog_path()).load_catalog()

@@ -53,10 +53,10 @@ O arquivo `core/ports.py` define as fronteiras para persistência da carteira, c
 
 `ApplicationPaths`, em `core/application_paths.py`, é o módulo profundo que separa os recursos
 descartáveis do pacote dos dados graváveis. Sua interface resolve os recursos incluídos no pacote,
-a raiz de dados, o diretório das carteiras, o catálogo, os logs e os backups. Também prepara o
-layout, inventaria apenas bancos SQLite válidos e concentra a migração das versões antigas. A raiz
-de composição `app.py` conecta esses caminhos ao `DatabaseManager`, ao catálogo e aos adaptadores;
-as views não calculam caminhos do sistema operacional.
+a raiz de dados, o diretório das carteiras, o catálogo somente leitura, os logs e os backups. Também
+prepara o layout gravável, inventaria apenas bancos SQLite válidos e concentra a migração das
+carteiras antigas. A raiz de composição `app.py` conecta esses caminhos ao `DatabaseManager`, ao
+catálogo e aos adaptadores; as views não calculam caminhos do sistema operacional.
 
 As raízes graváveis padrão são `%LOCALAPPDATA%\RendaPerene` no Windows e
 `$XDG_DATA_HOME/RendaPerene` no Linux, com fallback para `~/.local/share/RendaPerene`. O executável
@@ -64,14 +64,11 @@ e seus recursos podem ser substituídos sem mover as carteiras. O caminho resolv
 integra a chave do cache de leitura, evitando reutilizar uma entrada caso a configuração do caminho
 mude durante a execução.
 
-Ao preparar o armazenamento gravável, `ApplicationPaths` incorpora primeiro os antigos `assets.csv`
-ao lado do executável e nas pastas irmãs `RendaPerene-v*`, em ordem de versão, e depois aplica o
-catálogo incluído na versão atual. Assim, a baseline mais nova prevalece para tickers oficiais,
-enquanto tickers alternativos existentes apenas nos catálogos legados são preservados. Catálogos
-legados malformados são ignorados, e uma cópia gravável inválida é substituída atomicamente pela
-baseline válida incluída no pacote. Todas as camadas legadas e a baseline atual são combinadas em
-memória sob um único lock; somente o resultado final é publicado, e apenas quando seu conteúdo
-muda.
+O catálogo é o `assets.csv` incluído no pacote e nunca faz parte do armazenamento gravável. A
+aplicação lê esse recurso diretamente, sem copiar, migrar ou mesclar catálogos de versões
+anteriores. Dessa forma, uma nova versão substitui integralmente a referência distribuída. Tickers
+presentes na carteira, mas ausentes do catálogo, permanecem no SQLite e recebem metadados neutros
+somente para apresentação; esses metadados não constituem uma entrada de catálogo.
 
 Quando existem bancos `.db` na antiga pasta `database/` ao lado da aplicação ou em pastas irmãs de
 releases anteriores chamadas `RendaPerene-v*`, a barra lateral oferece sua importação. Se
@@ -141,11 +138,9 @@ Substituir o banco ou um auxiliar, mesmo preservando tamanho e data de modifica�
 verificação.
 
 O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO
-registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa; o
-catálogo estático incluído no pacote é copiado para o arquivo gravável `catalog/assets.csv` na
-primeira execução. Nas versões seguintes, o baseline incluído no novo pacote atualiza metadados e
-adiciona tickers, enquanto registros alternativos existentes somente no catálogo do usuário são
-preservados pela mesclagem baseada em `CÓDIGO`.
+registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa. O
+catálogo estático não é persistência do usuário: ele permanece no pacote, é acessado por uma porta
+somente leitura e pode ser substituído por uma nova versão sem migração.
 
 | Armazenamento | Finalidade |
 | --- | --- |
@@ -157,7 +152,7 @@ preservados pela mesclagem baseada em `CÓDIGO`.
 | `planning_configuration` | Configuração única (`id = 1`): data de nascimento, idade de aposentadoria, dados de renda, taxa de juros anual, salário mínimo, patrimônio inicial, modalidade de renda, parâmetros do modelo de Bazin e data opcional de início do planejamento. |
 | `asset_accumulation_goals` | Uma meta de quantidade por ticker: base anual persistida, quantidade-alvo e modalidade, percentual-alvo opcional, peso editável (incluindo zero), estado ativo, média de proventos de cinco anos e data de criação. A aplicação atualiza a base efetiva para 1º de janeiro no carregamento, sem depender de salvar novamente a cada virada de ano. |
 | `goal_settings` | Preferências únicas da carteira para reinvestimento de dividendos e metas de quantidade de ações. O reinvestimento é ativado por padrão; as metas por ação permanecem desativadas até serem habilitadas. |
-| `catalog/assets.csv` | Cópia gravável do catálogo estático da B3 com metadados dos tickers. Tickers desconhecidos encontrados na importação podem ser adicionados como registros alternativos do catálogo. |
+| `assets.csv` (recurso do pacote) | Catálogo versionado e somente leitura com metadados descritivos de tickers conhecidos. Tickers da carteira ausentes desse recurso permanecem válidos e não o alteram. |
 
 O SQLite não declara chaves estrangeiras entre esses armazenamentos. Os serviços preservam programaticamente a consistência necessária.
 
@@ -192,8 +187,8 @@ Essas integrações permitem o uso local, mas precisam de acesso à rede quando 
 
 `RendaPerene.spec` é a definição comum do PyInstaller para os builds `onedir`. O entry point é
 `run_app.py`, e o bundle contém `app.py`, `core/`, `views/`, `services/`, o catálogo base,
-`version.txt` e os recursos/metadados dinâmicos de Streamlit e Plotly. Bancos SQLite, catálogos
-graváveis, planilhas, logs e outros arquivos pessoais ou gerados não são adicionados ao bundle.
+`version.txt` e os recursos/metadados dinâmicos de Streamlit e Plotly. Bancos SQLite, catálogos do
+usuário, planilhas, logs e outros arquivos pessoais ou gerados não são adicionados ao bundle.
 
 Os scripts `build_windows.ps1` e `build_linux.sh` são apenas comandos nativos de empacotamento e
 criam ambientes virtuais dedicados antes de instalar as dependências. Eles produzem os arquivos ZIP

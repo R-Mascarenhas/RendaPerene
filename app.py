@@ -7,7 +7,6 @@ from core.constants import (
     WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX,
     WIDGET_PORTFOLIO_DELETION_TARGET,
 )
-from core.daos.assets_catalog_dao import AssetsCatalogDAO
 from core.daos.portfolio_dao import PortfolioDAO
 from core.database import DatabaseManager, db
 from core.utils import SessionManager, get_app_version
@@ -297,7 +296,6 @@ market_analysis = MarketAnalysisService(StreamlitCachedMarketData, portfolio_rep
 
 AssetService.set_adapters(
     portfolio_repo=portfolio_repo,
-    catalog_repo=AssetsCatalogDAO(catalog_path),
     market_data_api=StreamlitCachedMarketData,
     market_analysis_api=market_analysis,
     excel_parser=B3ExcelParserAdapter(),

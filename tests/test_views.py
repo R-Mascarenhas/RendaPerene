@@ -577,6 +577,36 @@ def test_operations_view_accepts_a_new_ticker_for_manual_purchase(mock_db, monke
     assert ticker_selectbox["kwargs"]["accept_new_options"] is True
 
 
+def test_operations_view_reports_invalid_free_form_ticker_without_saving(mock_db, monkeypatch):
+    from contextlib import nullcontext
+
+    from views.operations_view import OperationsView
+
+    errors = []
+
+    def selectbox(label, options, **kwargs):
+        if label == "Tipo de Lançamento":
+            return "Compra (Aporte)"
+        return "Petrobras"
+
+    monkeypatch.setattr(st, "subheader", lambda *args, **kwargs: None)
+    monkeypatch.setattr(st, "selectbox", selectbox)
+    monkeypatch.setattr(st, "form", lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr(st, "date_input", lambda *args, **kwargs: datetime.date.today())
+    monkeypatch.setattr(st, "number_input", lambda *args, **kwargs: kwargs["value"])
+    monkeypatch.setattr(st, "form_submit_button", lambda *args, **kwargs: True)
+    monkeypatch.setattr(st, "error", errors.append)
+    monkeypatch.setattr(st.cache_data, "clear", lambda: None)
+    monkeypatch.setattr(st, "rerun", lambda: None)
+
+    OperationsView()._render_unified_manual_form()
+
+    assert errors == [
+        "Informe um ticker válido da B3, como PETR4, BOVA11, NUBR33 ou PETR4F."
+    ]
+    assert AssetService.calculate_positions().empty
+
+
 def test_operations_view_labels_uncatalogued_owned_ticker_neutrally(mock_db, monkeypatch):
     from contextlib import nullcontext
 

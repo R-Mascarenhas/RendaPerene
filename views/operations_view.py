@@ -206,9 +206,18 @@ class OperationsView:
                         elif "Grupamento" in entry_type:
                             tx_type = "Grupamento"  # Maps to GROUP in service
 
-                        success = AssetService.add_transaction(
-                            ticker_input, date.strftime("%Y-%m-%d"), tx_type, qty, price, fees
-                        )
+                        try:
+                            success = AssetService.add_transaction(
+                                ticker_input,
+                                date.strftime("%Y-%m-%d"),
+                                tx_type,
+                                qty,
+                                price,
+                                fees,
+                            )
+                        except ValueError as error:
+                            st.error(str(error))
+                            return
                         if success:
                             if "Compra" in entry_type:
                                 success_msg = MSG_MANUAL_ENTRY_SUCCESS_TX.format(

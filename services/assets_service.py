@@ -15,6 +15,7 @@ from core.ports import (
 )
 from core.strings import MODEL_IPCA_SPREAD, MODEL_SELIC
 from core.utils.market_data import MarketData
+from core.utils.ticker import normalize_b3_ticker
 from services.valuation_service import ValuationService
 
 
@@ -77,7 +78,7 @@ class AssetService:
         fees: float = 0.0,
     ) -> bool:
         """Inserts a Buy (BUY), Sell (SELL), or Group (GROUP) asset transaction into the personal database, avoiding duplicates."""
-        ticker = ticker.strip().upper()
+        ticker = normalize_b3_ticker(ticker)
         if transaction_type in ("Compra", "BUY"):
             transaction_type = "BUY"
         elif transaction_type in ("Venda", "SELL"):

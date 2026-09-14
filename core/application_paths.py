@@ -9,7 +9,6 @@ import shutil
 import socket
 import sqlite3
 import sys
-import tempfile
 import time
 import uuid
 from collections.abc import Iterable
@@ -23,8 +22,6 @@ from platformdirs.windows import Windows
 
 APP_NAME = "RendaPerene"
 DEFAULT_PORTFOLIO = "portfolio.db"
-DEMO_PORTFOLIO = "portfolio_demo.db"
-DEMO_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
 FILE_LOCK_TIMEOUT_SECONDS = 5
 _GENERATION_NOT_PROVIDED = object()
 
@@ -245,7 +242,6 @@ class ApplicationPaths:
     resource_root: Path
     data_root: Path
     legacy_root: Path
-    is_demo_session: bool = False
 
     @classmethod
     def discover(cls, system: str | None = None) -> "ApplicationPaths":
@@ -287,45 +283,8 @@ class ApplicationPaths:
             raise ValueError("Bundled resource paths must be relative and cannot contain '..'.")
         return self.resource_root / relative
 
-    def for_demo_session(self, session_id: str) -> "ApplicationPaths":
-        """Return isolated, disposable writable paths for one shared-host demo session."""
-        safe_session_id = "".join(char for char in session_id if char.isalnum() or char in "-_")
-        if not safe_session_id:
-            raise ValueError("A demo session identifier is required.")
-        demo_root = Path(tempfile.gettempdir()) / APP_NAME / "demo" / safe_session_id
-        return ApplicationPaths(self.resource_root, demo_root, self.legacy_root, True)
-
-    def cleanup_demo_sessions(
-        self,
-        active_session_id: str,
-        max_age_seconds: int = DEMO_SESSION_MAX_AGE_SECONDS,
-    ) -> None:
-        """Refresh the active demo session and remove abandoned session directories."""
-        active_paths = self.for_demo_session(active_session_id)
-        sessions_root = active_paths.data_root.parent
-        now = time.time()
-        if active_paths.data_root.exists():
-            with suppress(OSError):
-                os.utime(active_paths.data_root, (now, now))
-        if not sessions_root.is_dir():
-            return
-
-        try:
-            session_roots = tuple(sessions_root.iterdir())
-        except OSError:
-            return
-        for session_root in session_roots:
-            if not session_root.is_dir() or session_root == active_paths.data_root:
-                continue
-            try:
-                if now - session_root.stat().st_mtime > max_age_seconds:
-                    shutil.rmtree(session_root)
-            except OSError:
-                continue
-
-    def prepare(self, default_database_source: Path | None = None) -> bool:
-        """Create writable directories and seed catalog or demo data when absent."""
-        recovered_database = False
+    def prepare(self) -> None:
+        """Create writable directories and prepare the local asset catalog."""
         for directory in (
             self.database_dir,
             self.catalog_file.parent,
@@ -348,20 +307,6 @@ class ApplicationPaths:
             catalog_sources.append(bundled_catalog)
         if catalog_sources:
             self._merge_catalogs(catalog_sources, self.catalog_file)
-
-        if default_database_source is not None:
-            destination = self.portfolio_database(DEFAULT_PORTFOLIO)
-            if not self.is_valid_sqlite(default_database_source):
-                raise ValueError("The default portfolio database is not a valid SQLite file.")
-            if destination.exists() and not self.is_valid_sqlite(destination):
-                self._replace_with_validated_copy(default_database_source, destination)
-                self._remove_sqlite_sidecars(destination)
-                self._write_database_generation(destination)
-                recovered_database = True
-            elif not destination.exists():
-                self._safe_copy(default_database_source, destination, validate_sqlite=True)
-                recovered_database = True
-        return recovered_database
 
     def portfolio_database(self, filename: str) -> Path:
         """Resolve a portfolio filename without allowing directory traversal or unrelated files."""
@@ -481,14 +426,6 @@ class ApplicationPaths:
                 False,
                 "Digite o nome completo do arquivo da carteira para confirmar a exclusão.",
             )
-        if self.is_demo_session or filename.casefold() == DEMO_PORTFOLIO:
-            return PortfolioDeletionResult(
-                database,
-                None,
-                False,
-                "Carteiras de demonstração ou de sessão não podem ser excluídas por este fluxo.",
-            )
-
         management_lock = self.database_dir / ".portfolio-management.lock"
         try:
             with (
@@ -520,7 +457,6 @@ class ApplicationPaths:
                     path.resolve()
                     for path in inventory.valid
                     if path.resolve().parent == resolved_database_dir
-                    and path.name.casefold() != DEMO_PORTFOLIO
                 }
                 if len(deletable_databases) <= 1:
                     return PortfolioDeletionResult(
@@ -610,8 +546,7 @@ class ApplicationPaths:
             if legacy_database_dir.resolve() == self.database_dir.resolve():
                 continue
             for path in sorted(legacy_database_dir.glob("*.db")):
-                if "demo" not in path.name.casefold():
-                    databases_by_name.setdefault(path.name, []).append(path)
+                databases_by_name.setdefault(path.name, []).append(path)
 
         selected_databases = []
         for name in sorted(databases_by_name):

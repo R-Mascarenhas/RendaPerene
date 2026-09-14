@@ -1,4 +1,4 @@
-# .streamlit/config.toml
+# Local development configuration
 [server]
 headless = true
 runOnSave = true

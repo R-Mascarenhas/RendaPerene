@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import time
 import uuid
@@ -21,6 +22,7 @@ DEFAULT_BACKUP_TIMEOUT_SECONDS = 60.0
 BACKUP_BUSY_TIMEOUT_MILLISECONDS = 100
 BACKUP_PAGES_PER_STEP = 128
 BACKUP_RETRY_SLEEP_SECONDS = 0.01
+OWNER_ONLY_FILE_MODE = 0o600
 
 
 class SQLitePortfolioBackupReader:
@@ -45,6 +47,14 @@ class SQLitePortfolioBackupReader:
                     raise TimeoutError("Timed out while waiting for the SQLite backup.")
 
             self._connection.execute(f"PRAGMA busy_timeout = {BACKUP_BUSY_TIMEOUT_MILLISECONDS}")
+            destination_descriptor = os.open(
+                destination,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                OWNER_ONLY_FILE_MODE,
+            )
+            os.close(destination_descriptor)
+            if os.name == "posix":
+                os.chmod(destination, OWNER_ONLY_FILE_MODE)
             destination_connection = sqlite3.connect(destination)
             try:
                 self._connection.backup(

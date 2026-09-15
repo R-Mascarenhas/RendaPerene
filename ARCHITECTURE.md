@@ -84,7 +84,9 @@ estado da criptografia. Todas as conexões selecionadas e seus reader locks perm
 publicação do conjunto, impedindo exclusão ou substituição de uma carteira depois de sua cópia.
 Cada cópia possui prazo total de 60 segundos e divide a operação em lotes; tentativas bloqueadas usam
 um `busy_timeout` curto para que o callback de progresso possa cancelar a operação dentro desse
-limite. O cancelamento é tratado como carteira em uso e remove todo o diretório temporário.
+limite. Em sistemas POSIX, os diretórios de staging e publicados usam modo `0700`, e os SQLite e
+JSON nascem com modo `0600`; diretórios de backup existentes também são restringidos antes da nova
+operação. O cancelamento é tratado como carteira em uso e remove todo o diretório temporário.
 Carteiras diferentes podem representar instantes ligeiramente distintos, mas cada SQLite é
 internamente consistente. O diretório temporário do conjunto é renomeado somente quando todas as
 carteiras e o manifesto estão completos; falhas removem todo o staging e não publicam nem substituem

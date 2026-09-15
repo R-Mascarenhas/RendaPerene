@@ -1,7 +1,9 @@
 import hashlib
 import json
+import os
 import shutil
 import sqlite3
+import stat
 import time
 import uuid
 from contextlib import contextmanager
@@ -68,6 +70,35 @@ def test_backup_preserves_the_user_visible_portfolio_name(tmp_path):
     )
     assert portfolio_entry["display_name"] == "Carteira: Família"
     assert metadata["display_name"] == "Carteira: Família"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Permissões POSIX não se aplicam ao Windows.")
+def test_backup_creates_owner_only_artifacts_on_posix(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = create_portfolio(paths, "portfolio.db", "MAIN3")
+    paths.backups_dir.chmod(0o755)
+    paths.local_backups_dir.mkdir(parents=True)
+    paths.local_backups_dir.chmod(0o755)
+
+    result = build_backup_service(paths).create_backup([select_portfolio(paths, database.name)])
+
+    portfolio_directory = result.directory / result.manifest["portfolios"][0]["relative_path"]
+    private_directories = (
+        paths.backups_dir,
+        paths.local_backups_dir,
+        result.directory,
+        result.directory / "carteiras",
+        portfolio_directory,
+    )
+    private_files = (
+        result.manifest_file,
+        portfolio_directory / "metadata.json",
+        portfolio_directory / "backup.sqlite3",
+    )
+
+    assert all(stat.S_IMODE(path.stat().st_mode) == 0o700 for path in private_directories)
+    assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in private_files)
 
 
 def test_backup_contains_only_the_selected_portfolios(tmp_path):

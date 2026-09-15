@@ -67,8 +67,10 @@ segundos, em vez de deixar a interface aguardando indefinidamente.
 
 Os backups desta versão **não são criptografados**, não expiram e não são enviados para serviços
 externos. Eles contêm o nome exibido e todos os dados financeiros do banco original, portanto devem
-ser guardados em local seguro. A restauração pela interface ainda não está disponível; não substitua
-manualmente uma carteira enquanto a aplicação estiver aberta.
+ser guardados em local seguro. Em sistemas POSIX, os diretórios e arquivos desse conjunto são
+criados com acesso restrito ao proprietário; essa proteção não substitui a criptografia. A
+restauração pela interface ainda não está disponível; não substitua manualmente uma carteira enquanto
+a aplicação estiver aberta.
 
 Bancos inválidos são ignorados na seleção. Se a carteira ativa for removida ou deixar de ser um
 SQLite válido, a aplicação seleciona outra carteira disponível e recarrega suas configurações sem

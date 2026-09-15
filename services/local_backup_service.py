@@ -21,6 +21,8 @@ from core.ports import (
 )
 
 BACKUP_FORMAT_VERSION = 2
+OWNER_ONLY_DIRECTORY_MODE = 0o700
+OWNER_ONLY_FILE_MODE = 0o600
 
 
 @dataclass(frozen=True)
@@ -91,8 +93,10 @@ class LocalBackupService:
                 )
                 for selection in pinned_selections
             ]
-            backups_dir.mkdir(parents=True, exist_ok=True)
-            portfolios_dir.mkdir(parents=True, exist_ok=False)
+            self._create_owner_only_directory(self._paths.backups_dir, parents=True)
+            self._create_owner_only_directory(backups_dir, parents=True)
+            self._create_owner_only_directory(temporary_dir, parents=False, exist_ok=False)
+            self._create_owner_only_directory(portfolios_dir, parents=False, exist_ok=False)
             installation_id = self._paths.get_or_create_installation_id()
             context = _BackupSetContext(
                 backup_id=backup_id,
@@ -179,7 +183,7 @@ class LocalBackupService:
         context: _BackupSetContext,
         display_name: str,
     ) -> dict:
-        staging_directory.mkdir(parents=False, exist_ok=False)
+        self._create_owner_only_directory(staging_directory, parents=False, exist_ok=False)
         database_file = staging_directory / "backup.sqlite3"
         metadata_file = staging_directory / "metadata.json"
         snapshot_identity = reader.backup_to(database_file)
@@ -241,9 +245,36 @@ class LocalBackupService:
         return checksum.hexdigest()
 
     @staticmethod
+    def _create_owner_only_directory(
+        path: Path,
+        *,
+        parents: bool,
+        exist_ok: bool = True,
+    ) -> None:
+        path.mkdir(
+            parents=parents,
+            exist_ok=exist_ok,
+            mode=OWNER_ONLY_DIRECTORY_MODE,
+        )
+        if os.name == "posix":
+            path.chmod(OWNER_ONLY_DIRECTORY_MODE)
+
+    @staticmethod
     def _write_json(path: Path, payload: dict) -> None:
-        with path.open("x", encoding="utf-8") as destination:
-            json.dump(payload, destination, ensure_ascii=False, indent=2, sort_keys=True)
-            destination.write("\n")
-            destination.flush()
-            os.fsync(destination.fileno())
+        descriptor = os.open(
+            path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            OWNER_ONLY_FILE_MODE,
+        )
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as destination:
+                descriptor = None
+                if os.name == "posix":
+                    os.chmod(path, OWNER_ONLY_FILE_MODE)
+                json.dump(payload, destination, ensure_ascii=False, indent=2, sort_keys=True)
+                destination.write("\n")
+                destination.flush()
+                os.fsync(destination.fileno())
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)

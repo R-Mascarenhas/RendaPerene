@@ -69,11 +69,14 @@ O backup manual da carteira ativa é publicado em
 `backups/local-backups/<backup_id>/`, sem incorporar o nome do arquivo da carteira. O diretório contém
 `backup.sqlite3` e `metadata.json`. `LocalSnapshotService` abre a origem pelo `DatabaseManager`, de
 modo que a conexão participa do reader lock já usado pelo ciclo de vida da carteira, e usa a API de
-backup do SQLite para incluir páginas confirmadas do WAL sem produzir uma cópia parcial. Depois de
-fechar o arquivo, o serviço exige `PRAGMA integrity_check = ok`, calcula o SHA-256 e grava metadados
-com identificadores da carteira, instalação e backup, criação em UTC, versões da aplicação e schema
-e estado da criptografia. O diretório temporário é renomeado somente quando banco e metadados estão
-completos; falhas removem o staging e não alteram a carteira ativa nem backups anteriores.
+backup do SQLite para incluir páginas confirmadas do WAL sem produzir uma cópia parcial. A raiz de
+composição fornece um manager dedicado ao caminho já resolvido da carteira ativa; cada instância do
+serviço preserva esse caminho, mesmo que outra sessão altere o singleton compartilhado. Depois de
+fechar o arquivo, o serviço abre a cópia como SQLite imutável, sem criar sidecars WAL/SHM, exige
+`PRAGMA integrity_check = ok`, calcula o SHA-256 e grava metadados com identificadores da carteira,
+instalação e backup, criação em UTC, versões da aplicação e schema e estado da criptografia. O
+diretório temporário é renomeado somente quando banco e metadados estão completos; falhas removem o
+staging e não alteram a carteira ativa nem backups anteriores.
 
 Cada carteira mantém seu UUID estável na tabela `portfolio_metadata`, portanto a identidade
 acompanha uma futura restauração e não depende do nome do arquivo. A instalação mantém outro UUID

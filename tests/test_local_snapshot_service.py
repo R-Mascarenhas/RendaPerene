@@ -88,6 +88,43 @@ def test_backup_identifiers_are_stable_without_using_the_portfolio_filename(tmp_
     assert "portfolio" not in other.directory.name
 
 
+def test_backup_remains_bound_to_the_portfolio_selected_during_composition(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    first_database = paths.portfolio_database("portfolio.db")
+    shared_manager = DatabaseManager(first_database)
+    shared_manager.init_personal_db()
+    service = LocalSnapshotService(shared_manager, paths, "1.2.3")
+    first_connection = sqlite3.connect(first_database)
+    try:
+        first_connection.execute("INSERT INTO tracked_market_assets VALUES ('FIRST3')")
+        first_connection.commit()
+    finally:
+        first_connection.close()
+
+    second_database = paths.portfolio_database("portfolio_second.db")
+    second_manager = DatabaseManager(second_database)
+    second_manager.init_personal_db()
+    second_connection = sqlite3.connect(second_database)
+    try:
+        second_connection.execute("INSERT INTO tracked_market_assets VALUES ('SECOND4')")
+        second_connection.commit()
+    finally:
+        second_connection.close()
+
+    shared_manager.personal_db = second_database
+
+    result = service.create_snapshot()
+
+    backup = sqlite3.connect(f"{result.database_file.resolve().as_uri()}?mode=ro", uri=True)
+    try:
+        assert backup.execute("SELECT ticker FROM tracked_market_assets").fetchall() == [
+            ("FIRST3",)
+        ]
+    finally:
+        backup.close()
+
+
 def test_backup_uses_a_complete_committed_state_while_wal_writer_is_open(tmp_path):
     service, database, _ = build_snapshot_service(tmp_path)
     writer = sqlite3.connect(database)
@@ -103,6 +140,10 @@ def test_backup_uses_a_complete_committed_state_while_wal_writer_is_open(tmp_pat
         writer.rollback()
         writer.close()
 
+    assert {path.name for path in result.directory.iterdir()} == {
+        "backup.sqlite3",
+        "metadata.json",
+    }
     snapshot = sqlite3.connect(f"{result.database_file.resolve().as_uri()}?mode=ro", uri=True)
     try:
         tickers = snapshot.execute(

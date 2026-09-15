@@ -37,7 +37,10 @@ class LocalSnapshotService:
         application_paths: ApplicationPaths,
         app_version: str,
     ):
-        self._database_manager = database_manager
+        self._database_manager = DatabaseManager(
+            database_manager.get_personal_database_path(),
+            connection_guard=database_manager.connection_guard,
+        )
         self._paths = application_paths
         self._app_version = app_version
 
@@ -113,7 +116,9 @@ class LocalSnapshotService:
 
     @staticmethod
     def _validate_and_read_identity(database_file: Path) -> tuple[str, int]:
-        connection = sqlite3.connect(f"{database_file.resolve().as_uri()}?mode=ro", uri=True)
+        connection = sqlite3.connect(
+            f"{database_file.resolve().as_uri()}?mode=ro&immutable=1", uri=True
+        )
         try:
             integrity_rows = connection.execute("PRAGMA integrity_check").fetchall()
             if integrity_rows != [("ok",)]:

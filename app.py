@@ -282,7 +282,11 @@ db.connection_guard = guard_portfolio_generation
 db.init_personal_db()
 app_version = get_app_version()
 
-backup_service = LocalSnapshotService(db, app_paths, app_version)
+backup_database_manager = DatabaseManager(
+    app_paths.portfolio_database(current_active_db),
+    connection_guard=guard_portfolio_generation,
+)
+backup_service = LocalSnapshotService(backup_database_manager, app_paths, app_version)
 with st.sidebar.expander("💾 Backup local"):
     st.warning(
         "O backup contém todos os dados financeiros da carteira e ainda não é criptografado. "

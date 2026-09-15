@@ -29,6 +29,7 @@ class PortfolioBackupSelection:
 
     filename: str
     expected_generation: str | None
+    display_name: str
 
 
 @dataclass(frozen=True)
@@ -106,11 +107,14 @@ class LocalBackupService:
 
             with ExitStack() as source_stack:
                 readers = [source_stack.enter_context(source.open_reader()) for source in sources]
-                for index, reader in enumerate(readers):
+                for index, (selection, reader) in enumerate(
+                    zip(pinned_selections, readers, strict=True)
+                ):
                     entry = self._create_portfolio_snapshot(
                         reader=reader,
                         staging_directory=portfolios_dir / f".{index}.tmp",
                         context=context,
+                        display_name=selection.display_name,
                     )
                     portfolio_entries.append(entry)
 
@@ -173,6 +177,7 @@ class LocalBackupService:
         reader: PortfolioBackupReaderPort,
         staging_directory: Path,
         context: _BackupSetContext,
+        display_name: str,
     ) -> dict:
         staging_directory.mkdir(parents=False, exist_ok=False)
         database_file = staging_directory / "backup.sqlite3"
@@ -185,6 +190,7 @@ class LocalBackupService:
             "format_version": BACKUP_FORMAT_VERSION,
             "backup_id": context.backup_id,
             "portfolio_id": portfolio_id,
+            "display_name": display_name,
             "created_at_utc": context.created_at_utc,
             "app_version": self._app_version,
             "schema_version": schema_version,
@@ -203,6 +209,7 @@ class LocalBackupService:
         os.replace(staging_directory, published_directory)
         return {
             "portfolio_id": portfolio_id,
+            "display_name": display_name,
             "relative_path": f"carteiras/{portfolio_id}",
             "schema_version": schema_version,
             "sha256": checksum,
@@ -217,6 +224,13 @@ class LocalBackupService:
         filenames = [selection.filename for selection in selections]
         if len(set(filenames)) != len(filenames):
             raise BackupCreationError("Cada carteira deve ser selecionada apenas uma vez.")
+        if any(
+            not isinstance(selection.display_name, str) or not selection.display_name.strip()
+            for selection in selections
+        ):
+            raise BackupCreationError(
+                "Cada carteira selecionada deve possuir um nome exibido válido."
+            )
 
     @staticmethod
     def _sha256(path: Path) -> str:

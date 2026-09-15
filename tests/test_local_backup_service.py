@@ -33,11 +33,40 @@ def create_portfolio(paths: ApplicationPaths, filename: str, ticker: str):
 
 def select_portfolio(paths: ApplicationPaths, filename: str) -> PortfolioBackupSelection:
     database = paths.portfolio_database(filename)
-    return PortfolioBackupSelection(filename, paths.database_generation(database))
+    return PortfolioBackupSelection(
+        filename,
+        paths.database_generation(database),
+        f"Carteira: {filename}",
+    )
 
 
 def build_backup_service(paths: ApplicationPaths) -> LocalBackupService:
     return LocalBackupService(SQLitePortfolioBackupSourceFactory(paths), paths, "1.2.3")
+
+
+def test_backup_preserves_the_user_visible_portfolio_name(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = create_portfolio(paths, "portfolio_familia.db", "FAMILY4")
+
+    result = build_backup_service(paths).create_backup(
+        [
+            PortfolioBackupSelection(
+                database.name,
+                paths.database_generation(database),
+                "Carteira: Família",
+            )
+        ]
+    )
+
+    portfolio_entry = result.manifest["portfolios"][0]
+    metadata = json.loads(
+        (result.directory / portfolio_entry["relative_path"] / "metadata.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert portfolio_entry["display_name"] == "Carteira: Família"
+    assert metadata["display_name"] == "Carteira: Família"
 
 
 def test_backup_contains_only_the_selected_portfolios(tmp_path):
@@ -52,6 +81,7 @@ def test_backup_contains_only_the_selected_portfolios(tmp_path):
             PortfolioBackupSelection(
                 "portfolio_family.db",
                 paths.database_generation(selected_database),
+                "Carteira: Família",
             )
         ]
     )
@@ -215,6 +245,25 @@ def test_backup_requires_at_least_one_selected_portfolio(tmp_path):
     assert not paths.local_backups_dir.exists()
 
 
+def test_backup_rejects_a_selection_without_a_visible_name(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = create_portfolio(paths, "portfolio.db", "MAIN3")
+
+    with pytest.raises(BackupCreationError, match="nome exibido"):
+        build_backup_service(paths).create_backup(
+            [
+                PortfolioBackupSelection(
+                    database.name,
+                    paths.database_generation(database),
+                    "   ",
+                )
+            ]
+        )
+
+    assert not paths.local_backups_dir.exists()
+
+
 def test_backup_rejects_a_selected_symlink_outside_the_portfolio_directory(tmp_path):
     paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
     paths.prepare()
@@ -228,7 +277,7 @@ def test_backup_rejects_a_selected_symlink_outside_the_portfolio_directory(tmp_p
 
     with pytest.raises(BackupCreationError, match="carteira local inválida"):
         build_backup_service(paths).create_backup(
-            [PortfolioBackupSelection(selected_link.name, None)]
+            [PortfolioBackupSelection(selected_link.name, None, "Carteira externa")]
         )
 
     assert not paths.local_backups_dir.exists()
@@ -254,8 +303,16 @@ def test_failure_after_first_snapshot_does_not_publish_a_partial_set(tmp_path):
     first = create_portfolio(paths, "portfolio.db", "MAIN3")
     second = create_portfolio(paths, "portfolio_family.db", "FAMILY4")
     selections = [
-        PortfolioBackupSelection(first.name, paths.database_generation(first)),
-        PortfolioBackupSelection(second.name, paths.database_generation(second)),
+        PortfolioBackupSelection(
+            first.name,
+            paths.database_generation(first),
+            "Carteira Principal",
+        ),
+        PortfolioBackupSelection(
+            second.name,
+            paths.database_generation(second),
+            "Carteira Família",
+        ),
     ]
     second.unlink()
 

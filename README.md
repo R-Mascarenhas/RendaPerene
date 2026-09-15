@@ -54,9 +54,10 @@ marcadas por padrão. O conjunto é publicado em `backups/local-backups/<identif
 todas as carteiras selecionadas forem copiadas e validadas. `manifest.json` descreve o conjunto e
 cada subdiretório `carteiras/<identificador-da-carteira>/` contém `backup.sqlite3` e
 `metadata.json`. Os metadados registram identificadores aleatórios da carteira, da instalação e do
-backup, data UTC, versões da aplicação e do schema, SHA-256 e o estado da criptografia. O nome da
-carteira não é usado nos diretórios nem nos metadados. O hash permite detectar alterações
-acidentais, mas não autentica o arquivo contra adulteração.
+backup, o nome da carteira exibido na interface, data UTC, versões da aplicação e do schema, SHA-256
+e o estado da criptografia. O nome também aparece na entrada correspondente do manifesto para que o
+usuário identifique o conteúdo; os diretórios continuam usando apenas identificadores aleatórios. O
+hash permite detectar alterações acidentais, mas não autentica o arquivo contra adulteração.
 
 Cada carteira representa um estado SQLite consistente, mas carteiras diferentes do mesmo conjunto
 podem corresponder a instantes ligeiramente diferentes. Se uma carteira for removida, substituída,
@@ -64,9 +65,9 @@ invalidada ou estiver bloqueada durante a operação, nenhum conjunto parcial se
 válido.
 
 Os backups desta versão **não são criptografados**, não expiram e não são enviados para serviços
-externos. Eles contêm todos os dados financeiros do banco original e devem ser guardados em local
-seguro. A restauração pela interface ainda não está disponível; não substitua manualmente uma
-carteira enquanto a aplicação estiver aberta.
+externos. Eles contêm o nome exibido e todos os dados financeiros do banco original, portanto devem
+ser guardados em local seguro. A restauração pela interface ainda não está disponível; não substitua
+manualmente uma carteira enquanto a aplicação estiver aberta.
 
 Bancos inválidos são ignorados na seleção. Se a carteira ativa for removida ou deixar de ser um
 SQLite válido, a aplicação seleciona outra carteira disponível e recarrega suas configurações sem

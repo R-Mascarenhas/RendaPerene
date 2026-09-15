@@ -65,22 +65,24 @@ e seus recursos podem ser substituídos sem mover as carteiras. O caminho resolv
 integra a chave do cache de leitura, evitando reutilizar uma entrada caso a configuração do caminho
 mude durante a execução.
 
-O backup manual é publicado em `backups/local-backups/<backup_id>/`, sem incorporar os nomes dos
-arquivos das carteiras. A interface apresenta todas as carteiras válidas marcadas por padrão e
+O backup manual é publicado em `backups/local-backups/<backup_id>/`, sem incorporar os nomes das
+carteiras nos caminhos. A interface apresenta todas as carteiras válidas marcadas por padrão e
 permite selecionar um subconjunto. O conjunto contém `manifest.json` e, para cada carteira,
-`carteiras/<portfolio_id>/backup.sqlite3` e `metadata.json`. A raiz de composição injeta
-`SQLitePortfolioBackupSourceFactory` em `LocalBackupService`. O adaptador fixa o nome e a geração de
-cada seleção, prepara o schema existente e fornece uma conexão dedicada pelo `DatabaseManager`.
+`carteiras/<portfolio_id>/backup.sqlite3` e `metadata.json`. O manifesto e os metadados individuais
+incluem o nome exibido na interface para que uma pessoa identifique o conteúdo sem depender da
+carteira original. A raiz de composição injeta `SQLitePortfolioBackupSourceFactory` em
+`LocalBackupService`. A seleção fixa o nome exibido, o arquivo e sua geração; o adaptador prepara o
+schema existente e fornece uma conexão dedicada pelo `DatabaseManager`.
 Carteiras ainda não abertas nesta versão recebem as migrações já existentes antes da cópia,
 garantindo que possuam um identificador estável.
 
 O módulo usa a API de backup do SQLite para incluir páginas confirmadas do WAL sem produzir cópias
 parciais. Depois de fechar cada arquivo, abre a cópia como SQLite imutável, sem criar sidecars
-WAL/SHM, exige `PRAGMA integrity_check = ok`, calcula o SHA-256 e grava metadados com identificadores
-da carteira, instalação e backup, criação em UTC, versões da aplicação e schema e estado da
-criptografia. Todas as conexões selecionadas e seus reader locks permanecem abertos até a publicação
-do conjunto, impedindo exclusão ou substituição de uma carteira depois de sua cópia. Carteiras
-diferentes podem representar instantes ligeiramente distintos, mas cada SQLite é internamente
+WAL/SHM, exige `PRAGMA integrity_check = ok`, calcula o SHA-256 e grava metadados com o nome exibido,
+identificadores da carteira, instalação e backup, criação em UTC, versões da aplicação e schema e
+estado da criptografia. Todas as conexões selecionadas e seus reader locks permanecem abertos até a
+publicação do conjunto, impedindo exclusão ou substituição de uma carteira depois de sua cópia.
+Carteiras diferentes podem representar instantes ligeiramente distintos, mas cada SQLite é internamente
 consistente. O diretório temporário do conjunto é renomeado somente quando todas as carteiras e o
 manifesto estão completos; falhas removem todo o staging e não publicam nem substituem backups. As
 migrações normais eventualmente aplicadas às carteiras selecionadas permanecem como ocorreriam ao

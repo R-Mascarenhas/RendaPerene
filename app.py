@@ -322,6 +322,7 @@ with st.sidebar.expander("💾 Backup local"):
             PortfolioBackupSelection(
                 filename,
                 app_paths.database_generation(app_paths.portfolio_database(filename)),
+                labels.get(filename, filename),
             )
             for filename in selected_backup_portfolios
         ]

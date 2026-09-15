@@ -273,6 +273,14 @@ class ApplicationPaths:
     def backups_dir(self) -> Path:
         return self.data_root / "backups"
 
+    @property
+    def local_backups_dir(self) -> Path:
+        return self.backups_dir / "local-backups"
+
+    @property
+    def installation_id_file(self) -> Path:
+        return self.data_root / ".installation-id"
+
     def bundled_resource(self, relative_path: str | Path) -> Path:
         """Resolve a resource while refusing paths that escape the application bundle."""
         relative = Path(relative_path)
@@ -288,6 +296,17 @@ class ApplicationPaths:
             self.backups_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
+
+    def get_or_create_installation_id(self) -> str:
+        """Return a stable random identifier for this local installation."""
+        candidate = str(uuid.uuid4())
+        with suppress(FileExistsError):
+            _create_owned_file(self.installation_id_file, candidate)
+        value = self.installation_id_file.read_text(encoding="ascii").strip()
+        parsed = uuid.UUID(value)
+        if str(parsed) != value:
+            raise ValueError("The installation identifier is not a canonical UUID.")
+        return value
 
     def portfolio_database(self, filename: str) -> Path:
         """Resolve a portfolio filename without allowing directory traversal or unrelated files."""
@@ -1163,6 +1182,7 @@ class ApplicationPaths:
                     "planning_configuration",
                     "asset_accumulation_goals",
                     "goal_settings",
+                    "portfolio_metadata",
                 }
                 legacy_required_tables = {
                     "transactions",

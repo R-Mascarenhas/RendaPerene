@@ -2,6 +2,7 @@ import hashlib
 import json
 import shutil
 import sqlite3
+import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
@@ -11,7 +12,7 @@ import pytest
 from core.application_paths import ApplicationPaths, portfolio_database_lock
 from core.database import CURRENT_SCHEMA_VERSION, DatabaseManager
 from core.ports import PortfolioSnapshotIdentity
-from core.sqlite_backup import SQLitePortfolioBackupSourceFactory
+from core.sqlite_backup import SQLitePortfolioBackupReader, SQLitePortfolioBackupSourceFactory
 from services.local_backup_service import (
     BackupCreationError,
     LocalBackupService,
@@ -376,6 +377,46 @@ def test_backup_uses_complete_committed_states_while_wal_writer_is_open(tmp_path
         assert snapshot.execute("PRAGMA integrity_check").fetchone() == ("ok",)
     finally:
         snapshot.close()
+
+
+def test_backup_fails_within_deadline_when_source_remains_exclusively_locked(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = create_portfolio(paths, "portfolio.db", "MAIN3")
+
+    class ExclusivelyLockedSource:
+        def prepare(self):
+            pass
+
+        @contextmanager
+        def open_reader(self):
+            source_connection = sqlite3.connect(database)
+            writer = sqlite3.connect(database)
+            writer.execute("PRAGMA journal_mode = DELETE")
+            writer.execute("BEGIN EXCLUSIVE")
+            try:
+                yield SQLitePortfolioBackupReader(
+                    source_connection,
+                    backup_timeout_seconds=0.2,
+                )
+            finally:
+                writer.rollback()
+                writer.close()
+                source_connection.close()
+
+    class ExclusivelyLockedSourceFactory:
+        def create(self, _filename, _expected_generation):
+            return ExclusivelyLockedSource()
+
+    service = LocalBackupService(ExclusivelyLockedSourceFactory(), paths, "1.2.3")
+    started_at = time.monotonic()
+
+    with pytest.raises(BackupCreationError, match="carteiras está em uso"):
+        service.create_backup([select_portfolio(paths, database.name)])
+
+    assert time.monotonic() - started_at < 1
+    assert database.exists()
+    assert list(paths.local_backups_dir.iterdir()) == []
 
 
 def test_backup_initializes_existing_schema_metadata_for_an_unopened_portfolio(tmp_path):

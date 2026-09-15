@@ -82,12 +82,15 @@ WAL/SHM, exige `PRAGMA integrity_check = ok`, calcula o SHA-256 e grava metadado
 identificadores da carteira, instalação e backup, criação em UTC, versões da aplicação e schema e
 estado da criptografia. Todas as conexões selecionadas e seus reader locks permanecem abertos até a
 publicação do conjunto, impedindo exclusão ou substituição de uma carteira depois de sua cópia.
-Carteiras diferentes podem representar instantes ligeiramente distintos, mas cada SQLite é internamente
-consistente. O diretório temporário do conjunto é renomeado somente quando todas as carteiras e o
-manifesto estão completos; falhas removem todo o staging e não publicam nem substituem backups. As
-migrações normais eventualmente aplicadas às carteiras selecionadas permanecem como ocorreriam ao
-abri-las no aplicativo. Seleções removidas, substituídas, inválidas, bloqueadas ou com identificadores
-duplicados impedem a publicação do conjunto completo.
+Cada cópia possui prazo total de 60 segundos e divide a operação em lotes; tentativas bloqueadas usam
+um `busy_timeout` curto para que o callback de progresso possa cancelar a operação dentro desse
+limite. O cancelamento é tratado como carteira em uso e remove todo o diretório temporário.
+Carteiras diferentes podem representar instantes ligeiramente distintos, mas cada SQLite é
+internamente consistente. O diretório temporário do conjunto é renomeado somente quando todas as
+carteiras e o manifesto estão completos; falhas removem todo o staging e não publicam nem substituem
+backups. As migrações normais eventualmente aplicadas às carteiras selecionadas permanecem como
+ocorreriam ao abri-las no aplicativo. Seleções removidas, substituídas, inválidas, bloqueadas ou com
+identificadores duplicados impedem a publicação do conjunto completo.
 
 Cada carteira mantém seu UUID estável na tabela `portfolio_metadata`, portanto a identidade
 acompanha uma futura restauração e não depende do nome do arquivo. A instalação mantém outro UUID

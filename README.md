@@ -62,7 +62,8 @@ hash permite detectar alterações acidentais, mas não autentica o arquivo cont
 Cada carteira representa um estado SQLite consistente, mas carteiras diferentes do mesmo conjunto
 podem corresponder a instantes ligeiramente diferentes. Se uma carteira for removida, substituída,
 invalidada ou estiver bloqueada durante a operação, nenhum conjunto parcial será apresentado como
-válido.
+válido. Uma carteira que permaneça ocupada faz a tentativa ser cancelada após aproximadamente 60
+segundos, em vez de deixar a interface aguardando indefinidamente.
 
 Os backups desta versão **não são criptografados**, não expiram e não são enviados para serviços
 externos. Eles contêm o nome exibido e todos os dados financeiros do banco original, portanto devem

@@ -1,4 +1,5 @@
 import sqlite3
+import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -15,18 +16,43 @@ from core.ports import (
     PortfolioSnapshotIdentity,
 )
 
+DEFAULT_BACKUP_TIMEOUT_SECONDS = 60.0
+# Bound each busy backup step so the progress callback can enforce the total deadline.
+BACKUP_BUSY_TIMEOUT_MILLISECONDS = 100
+BACKUP_PAGES_PER_STEP = 128
+BACKUP_RETRY_SLEEP_SECONDS = 0.01
+
 
 class SQLitePortfolioBackupReader:
     """Copy and validate one SQLite portfolio while its reader lock remains held."""
 
-    def __init__(self, connection):
+    def __init__(
+        self,
+        connection,
+        backup_timeout_seconds: float = DEFAULT_BACKUP_TIMEOUT_SECONDS,
+    ):
+        if backup_timeout_seconds <= 0:
+            raise ValueError("The SQLite backup timeout must be positive.")
         self._connection = connection
+        self._backup_timeout_seconds = backup_timeout_seconds
 
     def backup_to(self, destination: Path) -> PortfolioSnapshotIdentity:
         try:
+            deadline = time.monotonic() + self._backup_timeout_seconds
+
+            def enforce_deadline(_status, _remaining, _total):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Timed out while waiting for the SQLite backup.")
+
+            self._connection.execute(f"PRAGMA busy_timeout = {BACKUP_BUSY_TIMEOUT_MILLISECONDS}")
             destination_connection = sqlite3.connect(destination)
             try:
-                self._connection.backup(destination_connection)
+                self._connection.backup(
+                    destination_connection,
+                    pages=BACKUP_PAGES_PER_STEP,
+                    progress=enforce_deadline,
+                    sleep=BACKUP_RETRY_SLEEP_SECONDS,
+                )
                 destination_connection.commit()
             finally:
                 destination_connection.close()
@@ -68,8 +94,13 @@ class SQLitePortfolioBackupReader:
 class SQLitePortfolioBackupSource:
     """Prepare and lock one concrete SQLite portfolio selected for backup."""
 
-    def __init__(self, database_manager: DatabaseManager):
+    def __init__(
+        self,
+        database_manager: DatabaseManager,
+        backup_timeout_seconds: float = DEFAULT_BACKUP_TIMEOUT_SECONDS,
+    ):
         self._database_manager = database_manager
+        self._backup_timeout_seconds = backup_timeout_seconds
 
     def prepare(self) -> None:
         try:
@@ -111,7 +142,10 @@ class SQLitePortfolioBackupSource:
         except sqlite3.DatabaseError as error:
             raise PortfolioBackupSourceError from error
         try:
-            yield SQLitePortfolioBackupReader(connection)
+            yield SQLitePortfolioBackupReader(
+                connection,
+                backup_timeout_seconds=self._backup_timeout_seconds,
+            )
         finally:
             connection.close()
 
@@ -119,8 +153,13 @@ class SQLitePortfolioBackupSource:
 class SQLitePortfolioBackupSourceFactory:
     """Build lifecycle-aware SQLite sources for local portfolio selections."""
 
-    def __init__(self, application_paths: ApplicationPaths):
+    def __init__(
+        self,
+        application_paths: ApplicationPaths,
+        backup_timeout_seconds: float = DEFAULT_BACKUP_TIMEOUT_SECONDS,
+    ):
         self._paths = application_paths
+        self._backup_timeout_seconds = backup_timeout_seconds
 
     def create(
         self,
@@ -144,5 +183,6 @@ class SQLitePortfolioBackupSourceFactory:
                 raise PortfolioBackupIntegrityError
 
         return SQLitePortfolioBackupSource(
-            DatabaseManager(database, connection_guard=guard_selected_generation)
+            DatabaseManager(database, connection_guard=guard_selected_generation),
+            backup_timeout_seconds=self._backup_timeout_seconds,
         )

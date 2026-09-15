@@ -1,6 +1,61 @@
+from contextlib import AbstractContextManager
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 import pandas as pd
+
+
+class PortfolioBackupSourceError(RuntimeError):
+    """Base error exposed by the portfolio backup source seam."""
+
+
+class PortfolioBackupSelectionError(PortfolioBackupSourceError):
+    """The requested source is outside the valid local portfolio inventory."""
+
+
+class PortfolioBackupUnavailableError(PortfolioBackupSourceError):
+    """The selected source was removed or replaced before it could be read."""
+
+
+class PortfolioBackupIntegrityError(PortfolioBackupSourceError):
+    """The source or generated SQLite snapshot failed its integrity check."""
+
+
+class PortfolioBackupIdentityError(PortfolioBackupSourceError):
+    """The generated snapshot does not contain a valid stable portfolio identity."""
+
+
+@dataclass(frozen=True)
+class PortfolioSnapshotIdentity:
+    """Stable identity and schema version read from a validated SQLite snapshot."""
+
+    portfolio_id: str
+    schema_version: int
+
+
+class PortfolioBackupReaderPort(Protocol):
+    """Reader held open while a selected portfolio participates in one backup set."""
+
+    def backup_to(self, destination: Path) -> PortfolioSnapshotIdentity: ...
+
+
+class PortfolioBackupSourcePort(Protocol):
+    """Lifecycle-aware source for one selected portfolio."""
+
+    def prepare(self) -> None: ...
+
+    def open_reader(self) -> AbstractContextManager[PortfolioBackupReaderPort]: ...
+
+
+class PortfolioBackupSourceFactoryPort(Protocol):
+    """Create pinned portfolio sources without exposing storage details to callers."""
+
+    def create(
+        self,
+        filename: str,
+        expected_generation: str | None,
+    ) -> PortfolioBackupSourcePort: ...
 
 
 class hybridmethod:

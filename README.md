@@ -32,7 +32,7 @@ Baixe o pacote mais recente para Windows ou Ubuntu na página de
 - **Planejamento de aposentadoria:** cálculo do aporte mensal vitalício e do aporte corrigido ao longo do tempo por meio da fórmula de anuidade antecipada, com projeções baseadas no plano salvo e no histórico da carteira.
 - **Metas de investimento:** a tela de Planejamento possui uma aba `Metas` para ativar independentemente o reinvestimento de dividendos e as metas de quantidade por ação. A base anual das metas por ação é a quantidade mantida em 1º de janeiro; o Dashboard exibe uma barra ponderada pelos pesos, com detalhes por ticker ao passar o cursor e em uma seção expansível. Peso 0% desativa o ativo, o progresso pode superar 100% e históricos parciais ou indisponíveis exibem uma observação sem inventar uma meta.
 - **Múltiplas carteiras locais:** seleção, criação e exclusão recuperável de carteiras pela barra lateral.
-- **Backup local consistente:** criação manual de uma cópia íntegra da carteira ativa, inclusive quando o SQLite está em uso ou opera com WAL.
+- **Backup local consistente:** seleção de uma ou mais carteiras para criar um único conjunto de backup, inclusive quando o SQLite está em uso ou opera com WAL.
 
 ## Dados e privacidade
 
@@ -49,12 +49,19 @@ e `logs/` é reservado para registros locais. O catálogo `assets.csv` é um rec
 incluído na aplicação, não um dado da carteira. A aplicação não utiliza banco de dados em nuvem,
 contas de usuário ou telemetria, nem realiza scraping do portal da B3.
 
-A seção **Backup local** da barra lateral cria manualmente uma cópia consistente da carteira ativa
-em `backups/local-backups/<identificador>/`. Cada backup contém `backup.sqlite3` e `metadata.json`.
-O arquivo de metadados registra identificadores aleatórios da carteira, da instalação e do próprio
+A seção **Backup local** da barra lateral permite selecionar uma ou mais carteiras; todas aparecem
+marcadas por padrão. O conjunto é publicado em `backups/local-backups/<identificador>/` somente se
+todas as carteiras selecionadas forem copiadas e validadas. `manifest.json` descreve o conjunto e
+cada subdiretório `carteiras/<identificador-da-carteira>/` contém `backup.sqlite3` e
+`metadata.json`. Os metadados registram identificadores aleatórios da carteira, da instalação e do
 backup, data UTC, versões da aplicação e do schema, SHA-256 e o estado da criptografia. O nome da
-carteira não é usado no diretório nem nos metadados. O hash permite detectar alterações acidentais,
-mas não autentica o arquivo contra adulteração.
+carteira não é usado nos diretórios nem nos metadados. O hash permite detectar alterações
+acidentais, mas não autentica o arquivo contra adulteração.
+
+Cada carteira representa um estado SQLite consistente, mas carteiras diferentes do mesmo conjunto
+podem corresponder a instantes ligeiramente diferentes. Se uma carteira for removida, substituída,
+invalidada ou estiver bloqueada durante a operação, nenhum conjunto parcial será apresentado como
+válido.
 
 Os backups desta versão **não são criptografados**, não expiram e não são enviados para serviços
 externos. Eles contêm todos os dados financeiros do banco original e devem ser guardados em local

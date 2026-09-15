@@ -42,13 +42,13 @@ A direção das dependências é `views` → `services` → contratos e adaptado
 - `SimulationService` controla as configurações de aposentadoria e os cálculos de anuidade antecipada. Os consumidores devem usar `get_current_simulation()` em vez de reimplementar o cálculo dos aportes.
 - `GoalService`, em `services/goals_service.py`, controla as metas gerais da carteira, incluindo o reinvestimento opcional de dividendos e o progresso dos aportes anuais. Ele consome os valores planejados de `SimulationService` por meio de `PlanningProviderPort`, sem duplicar os cálculos de aposentadoria.
 - `ShareQuantityGoalService`, em `services/share_quantity_goal_service.py`, controla a meta anual de quantidade de cotas por ticker. A base é a quantidade mantida em 1º de janeiro do ano corrente; o progresso mede as aquisições desde essa data, inclusive as que ainda têm custo pendente, excluindo entradas de custódia e ações corporativas. O serviço distribui os proventos planejados entre pesos iguais ou personalizados, considera peso zero como inatividade, calcula a meta de cotas a partir do histórico de proventos e informa o crescimento planejado da posição, permitindo progresso acima de 100%.
-- `LocalSnapshotService`, em `services/local_snapshot_service.py`, cria o backup local consistente da carteira ativa, valida sua integridade, calcula o hash, gera os metadados e publica o artefato de forma atômica. Sua interface não depende de provedor de nuvem.
+- `LocalBackupService`, em `services/local_backup_service.py`, cria um conjunto de backup local para as carteiras selecionadas, valida cada cópia, calcula os hashes, gera os metadados e publica o conjunto de forma atômica. Sua interface não depende de provedor de nuvem.
 - `MarketAnalysisService` é o módulo profundo de análise de mercado. Sua interface pública retorna a análise final do ticker; internamente, ele combina o snapshot remoto independente da carteira com as correções anuais da carteira ativa e somente então aplica as regras de `ValuationService`.
 - `ValuationService` contém as regras puras do dividend yield alvo e do preço-teto de Bazin; não possui dependências do Streamlit, do banco de dados ou dos dados de mercado.
 
 ### Portas e adaptadores
 
-O arquivo `core/ports.py` define as fronteiras para persistência da carteira, correções de proventos, snapshots remotos, análise final de mercado, acesso ao catálogo de ativos, configuração do planejamento, registro do esquema do banco, processamento das planilhas da B3 e comunicação entre serviços. Os adaptadores de produção são os DAOs SQLite, `MarketData`, `StreamlitCachedMarketData` e `B3ExcelParserAdapter`. Nos testes, essas fronteiras são substituídas por bancos isolados, mocks ou adaptadores injetados.
+O arquivo `core/ports.py` define as fronteiras para persistência da carteira, origens de backup, correções de proventos, snapshots remotos, análise final de mercado, acesso ao catálogo de ativos, configuração do planejamento, registro do esquema do banco, processamento das planilhas da B3 e comunicação entre serviços. Os adaptadores de produção são os DAOs SQLite, `SQLitePortfolioBackupSourceFactory`, `MarketData`, `StreamlitCachedMarketData` e `B3ExcelParserAdapter`. Nos testes, essas fronteiras são substituídas por bancos isolados, mocks ou adaptadores injetados.
 
 ## Persistência
 
@@ -65,18 +65,27 @@ e seus recursos podem ser substituídos sem mover as carteiras. O caminho resolv
 integra a chave do cache de leitura, evitando reutilizar uma entrada caso a configuração do caminho
 mude durante a execução.
 
-O backup manual da carteira ativa é publicado em
-`backups/local-backups/<backup_id>/`, sem incorporar o nome do arquivo da carteira. O diretório contém
-`backup.sqlite3` e `metadata.json`. `LocalSnapshotService` abre a origem pelo `DatabaseManager`, de
-modo que a conexão participa do reader lock já usado pelo ciclo de vida da carteira, e usa a API de
-backup do SQLite para incluir páginas confirmadas do WAL sem produzir uma cópia parcial. A raiz de
-composição fornece um manager dedicado ao caminho já resolvido da carteira ativa; cada instância do
-serviço preserva esse caminho, mesmo que outra sessão altere o singleton compartilhado. Depois de
-fechar o arquivo, o serviço abre a cópia como SQLite imutável, sem criar sidecars WAL/SHM, exige
-`PRAGMA integrity_check = ok`, calcula o SHA-256 e grava metadados com identificadores da carteira,
-instalação e backup, criação em UTC, versões da aplicação e schema e estado da criptografia. O
-diretório temporário é renomeado somente quando banco e metadados estão completos; falhas removem o
-staging e não alteram a carteira ativa nem backups anteriores.
+O backup manual é publicado em `backups/local-backups/<backup_id>/`, sem incorporar os nomes dos
+arquivos das carteiras. A interface apresenta todas as carteiras válidas marcadas por padrão e
+permite selecionar um subconjunto. O conjunto contém `manifest.json` e, para cada carteira,
+`carteiras/<portfolio_id>/backup.sqlite3` e `metadata.json`. A raiz de composição injeta
+`SQLitePortfolioBackupSourceFactory` em `LocalBackupService`. O adaptador fixa o nome e a geração de
+cada seleção, prepara o schema existente e fornece uma conexão dedicada pelo `DatabaseManager`.
+Carteiras ainda não abertas nesta versão recebem as migrações já existentes antes da cópia,
+garantindo que possuam um identificador estável.
+
+O módulo usa a API de backup do SQLite para incluir páginas confirmadas do WAL sem produzir cópias
+parciais. Depois de fechar cada arquivo, abre a cópia como SQLite imutável, sem criar sidecars
+WAL/SHM, exige `PRAGMA integrity_check = ok`, calcula o SHA-256 e grava metadados com identificadores
+da carteira, instalação e backup, criação em UTC, versões da aplicação e schema e estado da
+criptografia. Todas as conexões selecionadas e seus reader locks permanecem abertos até a publicação
+do conjunto, impedindo exclusão ou substituição de uma carteira depois de sua cópia. Carteiras
+diferentes podem representar instantes ligeiramente distintos, mas cada SQLite é internamente
+consistente. O diretório temporário do conjunto é renomeado somente quando todas as carteiras e o
+manifesto estão completos; falhas removem todo o staging e não publicam nem substituem backups. As
+migrações normais eventualmente aplicadas às carteiras selecionadas permanecem como ocorreriam ao
+abri-las no aplicativo. Seleções removidas, substituídas, inválidas, bloqueadas ou com identificadores
+duplicados impedem a publicação do conjunto completo.
 
 Cada carteira mantém seu UUID estável na tabela `portfolio_metadata`, portanto a identidade
 acompanha uma futura restauração e não depende do nome do arquivo. A instalação mantém outro UUID
@@ -234,7 +243,7 @@ O código, seus identificadores, o SQL e os comentários técnicos estão em ing
 - **Ativos** coordena três subtelas: detalhes da carteira, monitoramento de mercado e valuation de Bazin (incluindo a consulta Raio-X de todo o catálogo) e operações manuais/importadas da B3. Na tela Mercado, `MarketView` apenas controla a navegação secundária; `MarketMonitoringView` e `AssetDeepDiveView` renderizam uma aba cada.
 - **Planejamento** possui as abas internas `Aposentadoria` e `Metas`. `PlanningView` controla os parâmetros e projeções da aposentadoria; `GoalsView` controla a seleção de metas. O usuário pode ativar independentemente o reinvestimento de dividendos e as metas de quantidade por ação. A tabela de metas aparece apenas quando habilitada, e peso 0% desativa o ativo sem um controle separado por linha.
 - **Metas no Dashboard** consolida o progresso das metas por ação em uma barra ponderada pelos pesos, com detalhes por ticker ao passar o cursor e em uma seção expansível. A barra usa azul até 100% e uma camada verde para o excedente.
-- **Backup local**, na barra lateral, cria sob demanda uma cópia íntegra da carteira ativa e informa ao usuário que o artefato ainda não é criptografado.
+- **Backup local**, na barra lateral, permite selecionar uma ou mais carteiras, com todas marcadas por padrão, e informa ao usuário que o conjunto ainda não é criptografado.
 - **`ChartThemeAdapter`** aplica aos gráficos do dashboard e do planejamento a paleta escura compartilhada do Plotly, tipografia, grade, legenda, margens, marcações monetárias e comportamento unificado ao passar o cursor. Cada componente de gráfico continua responsável por seus próprios dados e eixos específicos.
 
 ## Validação

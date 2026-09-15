@@ -42,6 +42,7 @@ A direção das dependências é `views` → `services` → contratos e adaptado
 - `SimulationService` controla as configurações de aposentadoria e os cálculos de anuidade antecipada. Os consumidores devem usar `get_current_simulation()` em vez de reimplementar o cálculo dos aportes.
 - `GoalService`, em `services/goals_service.py`, controla as metas gerais da carteira, incluindo o reinvestimento opcional de dividendos e o progresso dos aportes anuais. Ele consome os valores planejados de `SimulationService` por meio de `PlanningProviderPort`, sem duplicar os cálculos de aposentadoria.
 - `ShareQuantityGoalService`, em `services/share_quantity_goal_service.py`, controla a meta anual de quantidade de cotas por ticker. A base é a quantidade mantida em 1º de janeiro do ano corrente; o progresso mede as aquisições desde essa data, inclusive as que ainda têm custo pendente, excluindo entradas de custódia e ações corporativas. O serviço distribui os proventos planejados entre pesos iguais ou personalizados, considera peso zero como inatividade, calcula a meta de cotas a partir do histórico de proventos e informa o crescimento planejado da posição, permitindo progresso acima de 100%.
+- `LocalSnapshotService`, em `services/local_snapshot_service.py`, cria o backup local consistente da carteira ativa, valida sua integridade, calcula o hash, gera os metadados e publica o artefato de forma atômica. Sua interface não depende de provedor de nuvem.
 - `MarketAnalysisService` é o módulo profundo de análise de mercado. Sua interface pública retorna a análise final do ticker; internamente, ele combina o snapshot remoto independente da carteira com as correções anuais da carteira ativa e somente então aplica as regras de `ValuationService`.
 - `ValuationService` contém as regras puras do dividend yield alvo e do preço-teto de Bazin; não possui dependências do Streamlit, do banco de dados ou dos dados de mercado.
 
@@ -63,6 +64,22 @@ As raízes graváveis padrão são `%LOCALAPPDATA%\RendaPerene` no Windows e
 e seus recursos podem ser substituídos sem mover as carteiras. O caminho resolvido do catálogo
 integra a chave do cache de leitura, evitando reutilizar uma entrada caso a configuração do caminho
 mude durante a execução.
+
+O backup manual da carteira ativa é publicado em
+`backups/local-backups/<backup_id>/`, sem incorporar o nome do arquivo da carteira. O diretório contém
+`backup.sqlite3` e `metadata.json`. `LocalSnapshotService` abre a origem pelo `DatabaseManager`, de
+modo que a conexão participa do reader lock já usado pelo ciclo de vida da carteira, e usa a API de
+backup do SQLite para incluir páginas confirmadas do WAL sem produzir uma cópia parcial. Depois de
+fechar o arquivo, o serviço exige `PRAGMA integrity_check = ok`, calcula o SHA-256 e grava metadados
+com identificadores da carteira, instalação e backup, criação em UTC, versões da aplicação e schema
+e estado da criptografia. O diretório temporário é renomeado somente quando banco e metadados estão
+completos; falhas removem o staging e não alteram a carteira ativa nem backups anteriores.
+
+Cada carteira mantém seu UUID estável na tabela `portfolio_metadata`, portanto a identidade
+acompanha uma futura restauração e não depende do nome do arquivo. A instalação mantém outro UUID
+em `.installation-id`, na raiz de dados graváveis, criado atomicamente na primeira solicitação de
+backup. Os backups atuais não são criptografados, não possuem retenção automática, não são
+restaurados pela interface e não são enviados a provedores externos.
 
 O catálogo é o `assets.csv` incluído no pacote e nunca faz parte do armazenamento gravável. A
 aplicação lê esse recurso diretamente, sem copiar, migrar ou mesclar catálogos de versões
@@ -138,7 +155,9 @@ Substituir o banco ou um auxiliar, mesmo preservando tamanho e data de modifica�
 verificação.
 
 O `DatabaseManager` descobre os provedores de esquema em `core/daos/` e solicita que cada DAO
-registrado crie ou migre suas tabelas. Todas as tabelas ficam no banco SQLite da carteira ativa. O
+registrado crie ou migre suas tabelas. Ao terminar, ele atualiza `PRAGMA user_version` para a versão
+de schema conhecida pela aplicação sem rebaixar um valor futuro maior. Todas as tabelas ficam no
+banco SQLite da carteira ativa. O
 catálogo estático não é persistência do usuário: ele permanece no pacote, é acessado por uma porta
 somente leitura e pode ser substituído por uma nova versão sem migração.
 
@@ -152,6 +171,7 @@ somente leitura e pode ser substituído por uma nova versão sem migração.
 | `planning_configuration` | Configuração única (`id = 1`): data de nascimento, idade de aposentadoria, dados de renda, taxa de juros anual, salário mínimo, patrimônio inicial, modalidade de renda, parâmetros do modelo de Bazin e data opcional de início do planejamento. |
 | `asset_accumulation_goals` | Uma meta de quantidade por ticker: base anual persistida, quantidade-alvo e modalidade, percentual-alvo opcional, peso editável (incluindo zero), estado ativo, média de proventos de cinco anos e data de criação. A aplicação atualiza a base efetiva para 1º de janeiro no carregamento, sem depender de salvar novamente a cada virada de ano. |
 | `goal_settings` | Preferências únicas da carteira para reinvestimento de dividendos e metas de quantidade de ações. O reinvestimento é ativado por padrão; as metas por ação permanecem desativadas até serem habilitadas. |
+| `portfolio_metadata` | Identificador UUID estável da carteira, independente do nome do arquivo e preservado dentro de cada backup. Não contém nome da carteira nem dados financeiros. |
 | `assets.csv` (recurso do pacote) | Catálogo versionado e somente leitura com metadados descritivos de tickers conhecidos. Tickers da carteira ausentes desse recurso permanecem válidos e não o alteram. |
 
 O SQLite não declara chaves estrangeiras entre esses armazenamentos. Os serviços preservam programaticamente a consistência necessária.
@@ -211,6 +231,7 @@ O código, seus identificadores, o SQL e os comentários técnicos estão em ing
 - **Ativos** coordena três subtelas: detalhes da carteira, monitoramento de mercado e valuation de Bazin (incluindo a consulta Raio-X de todo o catálogo) e operações manuais/importadas da B3. Na tela Mercado, `MarketView` apenas controla a navegação secundária; `MarketMonitoringView` e `AssetDeepDiveView` renderizam uma aba cada.
 - **Planejamento** possui as abas internas `Aposentadoria` e `Metas`. `PlanningView` controla os parâmetros e projeções da aposentadoria; `GoalsView` controla a seleção de metas. O usuário pode ativar independentemente o reinvestimento de dividendos e as metas de quantidade por ação. A tabela de metas aparece apenas quando habilitada, e peso 0% desativa o ativo sem um controle separado por linha.
 - **Metas no Dashboard** consolida o progresso das metas por ação em uma barra ponderada pelos pesos, com detalhes por ticker ao passar o cursor e em uma seção expansível. A barra usa azul até 100% e uma camada verde para o excedente.
+- **Backup local**, na barra lateral, cria sob demanda uma cópia íntegra da carteira ativa e informa ao usuário que o artefato ainda não é criptografado.
 - **`ChartThemeAdapter`** aplica aos gráficos do dashboard e do planejamento a paleta escura compartilhada do Plotly, tipografia, grade, legenda, margens, marcações monetárias e comportamento unificado ao passar o cursor. Cada componente de gráfico continua responsável por seus próprios dados e eixos específicos.
 
 ## Validação

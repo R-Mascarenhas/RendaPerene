@@ -11,6 +11,7 @@ from core.daos.portfolio_dao import PortfolioDAO
 from core.database import DatabaseManager, db
 from core.utils import SessionManager, get_app_version
 from core.utils.market_data import MarketData
+from services.local_snapshot_service import LocalSnapshotService, SnapshotCreationError
 
 app_paths = ApplicationPaths.discover()
 app_paths.prepare()
@@ -279,8 +280,27 @@ def guard_portfolio_generation(database_path):
 
 db.connection_guard = guard_portfolio_generation
 db.init_personal_db()
+app_version = get_app_version()
 
-st.set_page_config(page_title=f"Renda Perene v{get_app_version()}", page_icon="💼", layout="wide")
+backup_service = LocalSnapshotService(db, app_paths, app_version)
+with st.sidebar.expander("💾 Backup local"):
+    st.warning(
+        "O backup contém todos os dados financeiros da carteira e ainda não é criptografado. "
+        "Guarde-o em um local seguro."
+    )
+    if st.button("Criar backup agora", use_container_width=True):
+        try:
+            backup_result = backup_service.create_snapshot()
+        except SnapshotCreationError as error:
+            st.error(str(error))
+        else:
+            st.success(
+                "Backup criado e validado com sucesso. "
+                f"Data UTC: {backup_result.metadata['created_at_utc']}. "
+                f"Local: {backup_result.directory}"
+            )
+
+st.set_page_config(page_title=f"Renda Perene v{app_version}", page_icon="💼", layout="wide")
 
 # Configure dependency injection adapters for Streamlit presentation environment
 from core.utils.b3_parser import B3ExcelParserAdapter
@@ -315,7 +335,7 @@ ShareQuantityGoalService.set_adapters(
 # Session state must be initialized before rendering any view
 SessionManager.initialize()
 
-st.title(f"💼 Renda Perene v{get_app_version()}")
+st.title(f"💼 Renda Perene v{app_version}")
 
 from core.strings import TAB_ASSETS, TAB_DASHBOARD, TAB_PLANNING
 from views.assets_view import AssetsView

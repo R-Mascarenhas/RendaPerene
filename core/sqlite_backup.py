@@ -189,10 +189,35 @@ class SQLitePortfolioBackupSourceFactory:
                 or self._paths.database_generation(guarded_path) != expected_generation
             ):
                 raise PortfolioBackupUnavailableError
-            if not self._paths.is_valid_sqlite(guarded_path):
+            if not self._is_valid_selected_database(guarded_path):
                 raise PortfolioBackupIntegrityError
 
         return SQLitePortfolioBackupSource(
             DatabaseManager(database, connection_guard=guard_selected_generation),
             backup_timeout_seconds=self._backup_timeout_seconds,
         )
+
+    @staticmethod
+    def _is_valid_selected_database(database: Path) -> bool:
+        try:
+            connection = sqlite3.connect(
+                f"{database.resolve().as_uri()}?mode=ro",
+                uri=True,
+                timeout=0,
+            )
+            try:
+                connection.execute("PRAGMA busy_timeout = 0")
+                return connection.execute("PRAGMA quick_check").fetchone() == ("ok",)
+            finally:
+                connection.close()
+        except sqlite3.OperationalError as error:
+            error_code = getattr(error, "sqlite_errorcode", None)
+            is_contention_error = (
+                error_code is not None
+                and error_code & 0xFF in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+            ) or any(token in str(error).lower() for token in ("locked", "busy"))
+            if is_contention_error:
+                raise TimeoutError("The selected SQLite database is in use.") from error
+            return False
+        except (OSError, sqlite3.DatabaseError):
+            return False

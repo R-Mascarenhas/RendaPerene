@@ -450,6 +450,32 @@ def test_backup_fails_within_deadline_when_source_remains_exclusively_locked(tmp
     assert list(paths.local_backups_dir.iterdir()) == []
 
 
+def test_backup_reports_production_validation_contention_as_portfolio_in_use(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = create_portfolio(paths, "portfolio.db", "MAIN3")
+    writer = sqlite3.connect(database)
+    writer.execute("PRAGMA journal_mode = DELETE")
+    writer.execute("BEGIN EXCLUSIVE")
+    service = LocalBackupService(
+        SQLitePortfolioBackupSourceFactory(paths, backup_timeout_seconds=0.2),
+        paths,
+        "1.2.3",
+    )
+    started_at = time.monotonic()
+
+    try:
+        with pytest.raises(BackupCreationError, match="carteiras está em uso"):
+            service.create_backup([select_portfolio(paths, database.name)])
+    finally:
+        writer.rollback()
+        writer.close()
+
+    assert time.monotonic() - started_at < 1
+    assert database.exists()
+    assert list(paths.local_backups_dir.iterdir()) == []
+
+
 def test_backup_initializes_existing_schema_metadata_for_an_unopened_portfolio(tmp_path):
     paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
     paths.prepare()

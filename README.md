@@ -195,6 +195,24 @@ Se o ambiente virtual estiver ativo, `streamlit run app.py` é equivalente. Na p
 a aplicação cria e inicializa `portfolio.db` no diretório de dados do usuário descrito acima caso
 o arquivo ainda não exista.
 
+### Logging
+
+A aplicação sempre envia logs para a saída padrão. O comportamento pode ser ajustado por variáveis
+de ambiente:
+
+- `APP_ENV=dev` habilita mensagens a partir de `DEBUG`;
+- `APP_ENV=prod` mantém mensagens a partir de `INFO`;
+- `LOG_TO_FILE=true` também grava em `logs/rendaperene.log`, dentro do diretório de dados local;
+- `LOG_TO_FILE=false` não cria arquivos de log.
+
+Valores ausentes ou desconhecidos usam os padrões seguros `APP_ENV=prod` e `LOG_TO_FILE=false`.
+Quando habilitado, o arquivo gira ao atingir 5 MiB e mantém até três backups. Uma falha ao abrir o
+arquivo não interrompe a aplicação: os registros continuam disponíveis na saída padrão. Nenhum log
+é enviado para serviços externos. Os destinos configurados pela aplicação aceitam somente eventos
+dos módulos do RendaPerene; detalhes internos de dependências, como `yfinance` e `peewee`, são
+descartados. Logs em `DEBUG` podem conter nomes de ativos e carteiras e, por isso, o arquivo deve ser
+tratado como dado local potencialmente sensível.
+
 ## Validação
 
 Execute os testes de regressão e as verificações de lint:

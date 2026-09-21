@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+env:
+  APP_ENV: prod
+  LOG_TO_FILE: "false"
+
 concurrency:
   group: package-${{ github.ref }}
   cancel-in-progress: false

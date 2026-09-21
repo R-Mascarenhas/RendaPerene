@@ -1,5 +1,6 @@
 import datetime
 import json
+import logging
 import math
 
 import pandas as pd
@@ -17,6 +18,8 @@ from core.strings import MODEL_IPCA_SPREAD, MODEL_SELIC
 from core.utils.market_data import MarketData
 from core.utils.ticker import normalize_b3_ticker
 from services.valuation_service import ValuationService
+
+logger = logging.getLogger(__name__)
 
 
 class AssetService:
@@ -97,14 +100,30 @@ class AssetService:
         success = self._portfolio_repo.insert_transaction(
             date, ticker, transaction_type, quantity, unit_price, fees
         )
+        if success:
+            logger.info("portfolio.transaction_saved")
+            logger.debug(
+                "portfolio.transaction_context ticker=%s quantity=%s type=%s",
+                ticker,
+                quantity,
+                transaction_type,
+            )
         if success and transaction_type == "SELL":
             try:
                 df_positions = self.calculate_positions()
                 if df_positions.empty or ticker not in df_positions["ticker"].values:
                     # Seamlessly transition a zeroed out owned stock to manual tracking so it stays on radar but is removable
                     self.add_tracked_market_asset(ticker)
-            except Exception:
-                pass
+            except Exception as error:
+                logger.warning(
+                    "portfolio.auto_tracking_failed error_type=%s",
+                    type(error).__name__,
+                )
+                logger.debug(
+                    "portfolio.auto_tracking_context ticker=%s quantity=%s",
+                    ticker,
+                    quantity,
+                )
         return success
 
     @hybridmethod
@@ -121,7 +140,15 @@ class AssetService:
         if self._portfolio_repo.find_dividend(date, ticker, dividend_type, total_value):
             return False
 
-        return self._portfolio_repo.insert_dividend(date, ticker, dividend_type, total_value)
+        success = self._portfolio_repo.insert_dividend(date, ticker, dividend_type, total_value)
+        if success:
+            logger.info("portfolio.dividend_saved")
+            logger.debug(
+                "portfolio.dividend_context ticker=%s type=%s",
+                ticker,
+                dividend_type,
+            )
+        return success
 
     @hybridmethod
     def process_b3_import(self, df: pd.DataFrame, progress_callback=None) -> tuple[int, int]:
@@ -204,6 +231,11 @@ class AssetService:
             if success:
                 processed_dividends += 1
 
+        logger.info(
+            "b3_import.completed transactions=%s dividends=%s",
+            processed_transactions,
+            processed_dividends,
+        )
         return processed_transactions, processed_dividends
 
     @staticmethod

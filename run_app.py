@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 
@@ -5,12 +6,14 @@ import sys
 import streamlit.web.cli as stcli
 
 from core.application_paths import ApplicationPaths
-from core.utils.session import configure_session_log
+from core.logging_config import configure_logging
+
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     app_paths = ApplicationPaths.discover()
-    app_paths.logs_dir.mkdir(parents=True, exist_ok=True)
-    configure_session_log(app_paths.logs_dir / "session_debug.log")
+    configure_logging(app_paths.logs_dir)
+    logger.info("application.launcher_started")
     script_path = app_paths.bundled_resource("app.py")
 
     # Configure command line arguments to run Streamlit in quiet offline mode.

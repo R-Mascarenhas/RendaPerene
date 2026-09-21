@@ -23,6 +23,7 @@ Thumbs.db
 
 # Temporary files
 out/
+logs/
 *.log
 .*.lock
 *.reader.*

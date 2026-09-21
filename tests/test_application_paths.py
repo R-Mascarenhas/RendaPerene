@@ -76,6 +76,16 @@ def test_prepare_does_not_copy_or_merge_asset_catalogs(tmp_path):
     assert {path: path.read_bytes() for path in before} == before
 
 
+def test_prepare_leaves_optional_logs_directory_uncreated(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+
+    paths.prepare()
+
+    assert paths.database_dir.is_dir()
+    assert paths.backups_dir.is_dir()
+    assert not paths.logs_dir.exists()
+
+
 def test_new_release_uses_its_own_bundled_catalog_without_migration(tmp_path):
     data_root = tmp_path / "user-data"
     first_release = tmp_path / "release-1"

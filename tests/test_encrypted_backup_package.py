@@ -153,5 +153,6 @@ def test_extracted_snapshot_uses_owner_only_permissions(tmp_path):
     packages.extract_with_password(package_file, destination, "senha")
 
     database = destination / "carteiras" / "f4b8d9bf-3295-4d80-93b1-846095d53c1f" / "backup.sqlite3"
+    assert stat.S_IMODE(package_file.stat().st_mode) == 0o600
     assert stat.S_IMODE(destination.stat().st_mode) == 0o700
     assert stat.S_IMODE(database.stat().st_mode) == 0o600

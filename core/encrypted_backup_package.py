@@ -136,7 +136,7 @@ class EncryptedBackupPackageService:
         temporary_file = package_file.with_name(f".{package_file.name}.{uuid.uuid4().hex}.tmp")
 
         try:
-            with temporary_file.open("xb") as destination:
+            with self._open_owner_only_file(temporary_file) as destination:
                 destination.write(PACKAGE_MAGIC)
                 destination.write(len(header_bytes).to_bytes(4, "big"))
                 destination.write(header_bytes)

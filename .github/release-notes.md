@@ -1,7 +1,15 @@
-## Novidades em 0.8.1
+## Novidades em 0.9.0
 
-- A exclusão de carteiras agora é recuperável.
-- Melhorias na migração de carteiras de versões anteriores.
+- Novo backup local consistente para uma ou mais carteiras, com validação SQLite, hashes
+  SHA-256 e metadados do conjunto criado.
+- O catálogo de ativos incluído no aplicativo agora é somente leitura; ativos da carteira que
+  não constem nele continuam preservados e podem ser informados manualmente com validação do
+  ticker B3.
+- Correção do cache das análises de mercado para respeitar a carteira ativa e suas correções
+  anuais de proventos.
+- O aplicativo passa a ser exclusivamente local, sem o antigo modo de demonstração no
+  Streamlit Cloud.
+- Suporte oficial ao Python 3.10 até o Python 3.14.
 
 ## Sistemas suportados
 
@@ -23,6 +31,8 @@ As carteiras ficam fora da pasta do aplicativo:
 
 Antes de substituir uma versão instalada, preserve uma cópia da pasta de dados. A aplicação
 detecta bancos legados e oferece a migração para o layout atual na primeira execução.
+
+O backup criado pela interface ainda não é criptografado e a restauração permanece manual.
 
 ## Limitações conhecidas
 

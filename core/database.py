@@ -7,6 +7,8 @@ from core.application_paths import (
     portfolio_deletion_marker,
 )
 
+CURRENT_SCHEMA_VERSION = 1
+
 
 class _LockedCursor(sqlite3.Cursor):
     """Acquire the portfolio lock before executing a potentially writing statement."""
@@ -105,16 +107,16 @@ class DatabaseManager:
         try:
             for schema_provider in self._registry:
                 schema_provider.initialize_tables(conn)
+            schema_version = conn.execute("PRAGMA user_version").fetchone()[0]
+            if schema_version < CURRENT_SCHEMA_VERSION:
+                conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
             conn.commit()
         finally:
             conn.close()
 
     def get_personal_connection(self):
         """Returns a new connection to the configured personal transactional database."""
-        from pathlib import Path
-
-        configured_database = self.personal_db() if callable(self.personal_db) else self.personal_db
-        db_file = Path(configured_database)
+        db_file = self.get_personal_database_path()
         db_file.parent.mkdir(parents=True, exist_ok=True)
         lock_context = portfolio_database_reader_lock(db_file)
         lock_context.__enter__()
@@ -129,6 +131,13 @@ class DatabaseManager:
         except BaseException:
             lock_context.__exit__(*sys.exc_info())
             raise
+
+    def get_personal_database_path(self):
+        """Resolve the configured portfolio path without opening or creating it."""
+        from pathlib import Path
+
+        configured_database = self.personal_db() if callable(self.personal_db) else self.personal_db
+        return Path(configured_database)
 
 
 # Global Singleton instance for the app

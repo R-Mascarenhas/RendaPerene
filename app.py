@@ -1,3 +1,5 @@
+import hashlib
+
 import streamlit as st
 
 from core.application_paths import ApplicationPaths
@@ -9,8 +11,14 @@ from core.constants import (
 )
 from core.daos.portfolio_dao import PortfolioDAO
 from core.database import DatabaseManager, db
+from core.sqlite_backup import SQLitePortfolioBackupSourceFactory
 from core.utils import SessionManager, get_app_version
 from core.utils.market_data import MarketData
+from services.local_backup_service import (
+    BackupCreationError,
+    LocalBackupService,
+    PortfolioBackupSelection,
+)
 
 app_paths = ApplicationPaths.discover()
 app_paths.prepare()
@@ -279,8 +287,58 @@ def guard_portfolio_generation(database_path):
 
 db.connection_guard = guard_portfolio_generation
 db.init_personal_db()
+app_version = get_app_version()
 
-st.set_page_config(page_title=f"Renda Perene v{get_app_version()}", page_icon="💼", layout="wide")
+backup_service = LocalBackupService(
+    SQLitePortfolioBackupSourceFactory(app_paths),
+    app_paths,
+    app_version,
+)
+with st.sidebar.expander("💾 Backup local"):
+    st.warning(
+        "O backup contém todos os dados financeiros das carteiras selecionadas e ainda não é "
+        "criptografado. Guarde-o em um local seguro."
+    )
+    backup_widget_version = hashlib.sha256("\0".join(db_files).encode()).hexdigest()[:12]
+    selected_backup_portfolios = st.multiselect(
+        "Carteiras para incluir",
+        options=db_files,
+        default=db_files,
+        format_func=lambda filename: (
+            f"{labels.get(filename, filename)} (ativa)"
+            if filename == current_active_db
+            else labels.get(filename, filename)
+        ),
+        key=f"local_backup_portfolios_{backup_widget_version}",
+    )
+    selected_count = len(selected_backup_portfolios)
+    portfolio_word = "carteira" if selected_count == 1 else "carteiras"
+    if st.button(
+        f"Criar backup de {selected_count} {portfolio_word}",
+        disabled=not selected_backup_portfolios,
+        use_container_width=True,
+    ):
+        backup_selections = [
+            PortfolioBackupSelection(
+                filename,
+                app_paths.database_generation(app_paths.portfolio_database(filename)),
+                labels.get(filename, filename),
+            )
+            for filename in selected_backup_portfolios
+        ]
+        try:
+            backup_result = backup_service.create_backup(backup_selections)
+        except BackupCreationError as error:
+            st.error(str(error))
+        else:
+            st.success(
+                f"Backup de {backup_result.portfolio_count} {portfolio_word} criado e validado "
+                "com sucesso. "
+                f"Data UTC: {backup_result.manifest['created_at_utc']}. "
+                f"Local: {backup_result.directory}"
+            )
+
+st.set_page_config(page_title=f"Renda Perene v{app_version}", page_icon="💼", layout="wide")
 
 # Configure dependency injection adapters for Streamlit presentation environment
 from core.utils.b3_parser import B3ExcelParserAdapter
@@ -315,7 +373,7 @@ ShareQuantityGoalService.set_adapters(
 # Session state must be initialized before rendering any view
 SessionManager.initialize()
 
-st.title(f"💼 Renda Perene v{get_app_version()}")
+st.title(f"💼 Renda Perene v{app_version}")
 
 from core.strings import TAB_ASSETS, TAB_DASHBOARD, TAB_PLANNING
 from views.assets_view import AssetsView

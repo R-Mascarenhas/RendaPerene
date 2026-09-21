@@ -1,8 +1,40 @@
+import logging
+
 import pandas as pd
 import pytest
 
 from core.utils.b3_parser import B3ExcelParserAdapter
 from services.assets_service import AssetService
+
+
+def test_b3_import_logs_only_aggregate_counts_at_info(caplog):
+    statement = pd.DataFrame(
+        [
+            {
+                "Movimentação": "Compra",
+                "Data": "30/04/2021",
+                "Produto": "MOCK4",
+                "Instituição": "Corretora Teste",
+                "Quantidade": 100,
+                "Preço unitário": 20.0,
+                "Valor da Operação": 2000.0,
+                "Entrada/Saída": "Crédito",
+            }
+        ]
+    )
+
+    with caplog.at_level(logging.INFO, logger="services.assets_service"):
+        assert AssetService.process_b3_import(statement) == (1, 0)
+
+    message = next(
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.INFO and "b3_import.completed" in record.getMessage()
+    )
+    assert "transactions=1" in message
+    assert "dividends=0" in message
+    assert "MOCK4" not in message
+    assert "quantity=100" not in message
 
 
 def test_manual_transaction_for_uncatalogued_ticker_keeps_catalog_immutable(mock_db):

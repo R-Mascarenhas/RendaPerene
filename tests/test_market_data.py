@@ -1,4 +1,5 @@
 import datetime
+import logging
 
 import pandas as pd
 import pytest
@@ -9,6 +10,76 @@ from core.strings import DISPLAY_COMPANY, MODEL_CLASSIC, MODEL_IPCA_SPREAD, MODE
 from core.utils.market_data import MarketData
 from services.assets_service import AssetService
 from services.market_analysis_service import MarketAnalysisService
+
+
+def test_market_data_failure_logs_safe_warning_without_ticker(monkeypatch, caplog):
+    def fail_ticker(_ticker):
+        raise RuntimeError("sensitive BBAS3 provider response")
+
+    monkeypatch.setattr(yf, "Ticker", fail_ticker)
+
+    with caplog.at_level(logging.DEBUG, logger="core.utils.market_data"):
+        assert MarketData.get_last_price("BBAS3") == 0.0
+
+    warning = next(
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and "market_data.request_failed" in record.getMessage()
+    )
+    assert "provider=yahoo" in warning
+    assert "error_type=RuntimeError" in warning
+    assert "BBAS3" not in warning
+    assert "sensitive" not in warning
+    assert all("BBAS3" not in record.getMessage() for record in caplog.records)
+
+
+def test_bcb_failure_logs_fallback_without_exception_message(monkeypatch, caplog):
+    import requests
+
+    def fail_request(*_args, **_kwargs):
+        raise TimeoutError("sensitive request details")
+
+    monkeypatch.setattr(requests, "get", fail_request)
+
+    with caplog.at_level(logging.WARNING, logger="core.utils.market_data"):
+        assert MarketData.get_current_selic() == 10.50
+
+    warning = next(
+        record.getMessage()
+        for record in caplog.records
+        if "market_data.fallback" in record.getMessage()
+    )
+    assert "provider=bcb" in warning
+    assert "indicator=selic" in warning
+    assert "error_type=TimeoutError" in warning
+    assert "sensitive request details" not in warning
+
+
+def test_batch_quote_logging_aggregates_failures_without_tickers(monkeypatch, caplog):
+    class MockTicker:
+        def __init__(self, ticker):
+            if ticker == "FAIL4.SA":
+                raise ConnectionError("sensitive FAIL4 response")
+            self.fast_info = {"lastPrice": 10.0}
+
+    monkeypatch.setattr(yf, "Ticker", MockTicker)
+
+    with caplog.at_level(logging.DEBUG, logger="core.utils.market_data"):
+        assert MarketData.get_batch_quotes(["GOOD3", "FAIL4"]) == {
+            "GOOD3": 10.0,
+            "FAIL4": 0.0,
+        }
+
+    warning = next(
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING and "market_data.batch_partial" in record.getMessage()
+    )
+    assert "failed=1" in warning
+    assert "total=2" in warning
+    assert "FAIL4" not in warning
+    assert all("FAIL4" not in record.getMessage() for record in caplog.records)
 
 
 def get_market_analysis(ticker: str, target_yield_pct: float = 6.0) -> dict:

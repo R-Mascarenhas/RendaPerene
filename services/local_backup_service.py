@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 import shutil
 import uuid
@@ -23,6 +24,8 @@ from core.ports import (
 BACKUP_FORMAT_VERSION = 2
 OWNER_ONLY_DIRECTORY_MODE = 0o700
 OWNER_ONLY_FILE_MODE = 0o600
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -75,7 +78,15 @@ class LocalBackupService:
     ) -> BackupResult:
         """Create and atomically publish a backup of every selected portfolio."""
         pinned_selections = tuple(selections)
-        self._validate_selections(pinned_selections)
+        try:
+            self._validate_selections(pinned_selections)
+        except BackupCreationError as error:
+            logger.warning(
+                "backup.failed reason=validation error_type=%s",
+                type(error).__name__,
+            )
+            raise
+        logger.info("backup.started portfolios=%s", len(pinned_selections))
 
         backup_id = str(uuid.uuid4())
         created_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -134,41 +145,75 @@ class LocalBackupService:
                 }
                 self._write_json(manifest_file, manifest)
                 os.replace(temporary_dir, published_dir)
-                return BackupResult(
+                result = BackupResult(
                     directory=published_dir,
                     manifest_file=published_dir / manifest_file.name,
                     manifest=manifest,
                     portfolio_count=len(portfolio_entries),
                 )
-        except BackupCreationError:
+                logger.info("backup.completed portfolios=%s", result.portfolio_count)
+                return result
+        except BackupCreationError as error:
+            logger.warning(
+                "backup.failed reason=operation error_type=%s",
+                type(error).__name__,
+            )
             raise
-        except PortfolioBackupSelectionError:
+        except PortfolioBackupSelectionError as error:
+            logger.warning(
+                "backup.failed reason=selection error_type=%s",
+                type(error).__name__,
+            )
             raise BackupCreationError(
                 "A seleção contém uma carteira local inválida. Revise a seleção e tente novamente."
             ) from None
-        except PortfolioBackupUnavailableError:
+        except PortfolioBackupUnavailableError as error:
+            logger.warning(
+                "backup.failed reason=unavailable error_type=%s",
+                type(error).__name__,
+            )
             raise BackupCreationError(
                 "Uma carteira selecionada foi removida ou substituída. "
                 "Revise a seleção e tente novamente."
             ) from None
-        except PortfolioBackupIntegrityError:
+        except PortfolioBackupIntegrityError as error:
+            logger.warning(
+                "backup.failed reason=integrity error_type=%s",
+                type(error).__name__,
+            )
             raise BackupCreationError(
                 "Uma carteira selecionada não passou na verificação de integridade. "
                 "O backup não foi criado."
             ) from None
-        except PortfolioBackupIdentityError:
+        except PortfolioBackupIdentityError as error:
+            logger.warning(
+                "backup.failed reason=identity error_type=%s",
+                type(error).__name__,
+            )
             raise BackupCreationError(
                 "Uma carteira copiada possui identificação inválida."
             ) from None
-        except TimeoutError:
+        except TimeoutError as error:
+            logger.warning(
+                "backup.failed reason=timeout error_type=%s",
+                type(error).__name__,
+            )
             raise BackupCreationError(
                 "Uma das carteiras está em uso por outra operação. Tente criar o backup novamente."
             ) from None
-        except PortfolioBackupSourceError:
+        except PortfolioBackupSourceError as error:
+            logger.warning(
+                "backup.failed reason=source error_type=%s",
+                type(error).__name__,
+            )
             raise BackupCreationError(
                 "Não foi possível criar um backup SQLite consistente das carteiras selecionadas."
             ) from None
-        except (OSError, UnicodeError, ValueError):
+        except (OSError, UnicodeError, ValueError) as error:
+            logger.warning(
+                "backup.failed reason=storage error_type=%s",
+                type(error).__name__,
+            )
             raise BackupCreationError(
                 "Não foi possível salvar o backup no armazenamento local."
             ) from None

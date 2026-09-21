@@ -1,16 +1,18 @@
-import pytest
 import datetime
-import sqlite3
-import streamlit as st
-import time
-import sys
+import logging
 import os
-from core.database import db
+import sqlite3
+import sys
+import time
+
+import pytest
+import streamlit as st
+
 from core.application_paths import ApplicationPaths
+from core.database import db
 from core.utils.formatter import Formatter
 from core.utils.session import (
     SessionManager,
-    configure_session_log,
     get_app_version,
     monitor_active_sessions,
 )
@@ -104,20 +106,17 @@ def test_get_app_version_sanity(monkeypatch, tmp_path):
     assert get_app_version() == "2.3.4.5"
 
 
-def test_get_app_version_uses_configured_log_path(monkeypatch, tmp_path):
-    log_path = tmp_path / "logs" / "session_debug.log"
+def test_get_app_version_logs_warning_when_version_file_is_missing(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "missing-bundle"), raising=False)
-    configure_session_log(log_path)
 
-    try:
+    with caplog.at_level(logging.WARNING, logger="core.utils.session"):
         assert get_app_version() == "0.0.0"
-    finally:
-        configure_session_log("session_debug.log")
 
-    assert "version.txt not found" in log_path.read_text(encoding="utf-8")
+    assert "application.version_unavailable error_type=FileNotFoundError" in caplog.text
+    assert str(tmp_path) not in caplog.text
 
 
-def test_monitor_active_sessions_stop_trigger(monkeypatch):
+def test_monitor_active_sessions_stop_trigger(monkeypatch, caplog):
     """
     Verifies that monitor_active_sessions() cleanly stops the Streamlit runtime
     when the active session count drops from positive to zero.
@@ -155,9 +154,11 @@ def test_monitor_active_sessions_stop_trigger(monkeypatch):
     monkeypatch.setattr("streamlit.runtime.get_instance", lambda: mock_runtime)
 
     # Run the monitor loop (it will terminate because runtime.stop() is called, breaking the loop)
+    caplog.set_level("DEBUG", logger="core.utils.session")
     monitor_active_sessions()
 
     assert mock_runtime.stopped is True
+    assert "session_1" not in caplog.text
 
 
 def test_session_manager_initialization_on_empty_database(mock_db, monkeypatch):
@@ -302,7 +303,7 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
     assert cache_clear_calls == []
 
 
-def test_session_manager_switches_to_valid_fallback_and_resets_loaded_state(monkeypatch):
+def test_session_manager_switches_to_valid_fallback_and_resets_loaded_state(monkeypatch, caplog):
     from core.constants import SESSION_ACTIVE_DATABASE_GENERATION, SESSION_BIRTH_DATE
 
     mock_session = {
@@ -314,6 +315,7 @@ def test_session_manager_switches_to_valid_fallback_and_resets_loaded_state(monk
     monkeypatch.setattr(st, "session_state", mock_session)
     fallback = ApplicationPaths.choose_portfolio(mock_session["active_db"], ["portfolio_family.db"])
 
+    caplog.set_level("DEBUG", logger="core.utils.session")
     changed = SessionManager.switch_portfolio(fallback)
 
     assert changed is True
@@ -321,6 +323,10 @@ def test_session_manager_switches_to_valid_fallback_and_resets_loaded_state(monk
     assert "db_loaded" not in mock_session
     assert SESSION_ACTIVE_DATABASE_GENERATION not in mock_session
     assert SESSION_BIRTH_DATE not in mock_session
+    info_messages = [record.getMessage() for record in caplog.records if record.levelname == "INFO"]
+    assert info_messages == ["portfolio.switched"]
+    assert all("portfolio_missing.db" not in record.getMessage() for record in caplog.records)
+    assert all("portfolio_family.db" not in record.getMessage() for record in caplog.records)
 
 
 def test_session_manager_invalidates_state_when_portfolio_generation_changes(monkeypatch):

@@ -289,10 +289,9 @@ class ApplicationPaths:
         return self.resource_root / relative
 
     def prepare(self) -> None:
-        """Create writable application-data directories."""
+        """Create writable application-data directories required for every run."""
         for directory in (
             self.database_dir,
-            self.logs_dir,
             self.backups_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)

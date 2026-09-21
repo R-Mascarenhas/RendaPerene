@@ -1,7 +1,56 @@
-import pytest
 import datetime
+import logging
+
 import pandas as pd
+import pytest
+
 from services.assets_service import AssetService
+
+
+def test_transaction_logging_excludes_portfolio_holdings(caplog):
+    with caplog.at_level(logging.DEBUG, logger="services.assets_service"):
+        assert AssetService.add_transaction("BBAS3", "2026-09-21", "BUY", 7, 20.0)
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "portfolio.transaction_saved" in messages
+    assert "portfolio.transaction_context type=BUY" in messages
+    assert all("BBAS3" not in message for message in messages)
+    assert all("quantity=7" not in message for message in messages)
+    assert all("20.0" not in message for message in messages)
+
+
+def test_dividend_logging_keeps_value_out_of_all_messages(caplog):
+    with caplog.at_level(logging.DEBUG, logger="services.assets_service"):
+        assert AssetService.add_dividend("BBAS3", "2026-09-21", "DIVIDEND", 123.45)
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "portfolio.dividend_saved" in messages
+    assert "portfolio.dividend_context type=DIVIDEND" in messages
+    assert all("BBAS3" not in message for message in messages)
+    assert all("123.45" not in message for message in messages)
+
+
+def test_recoverable_post_sale_failure_is_logged_without_changing_result(monkeypatch, caplog):
+    service = AssetService.get_default()
+
+    def fail_positions():
+        raise RuntimeError("sensitive portfolio details")
+
+    monkeypatch.setattr(service, "calculate_positions", fail_positions)
+
+    with caplog.at_level(logging.DEBUG, logger="services.assets_service"):
+        assert AssetService.add_transaction("BBAS3", "2026-09-21", "SELL", 3, 20.0)
+
+    warning = next(
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and "portfolio.auto_tracking_failed" in record.getMessage()
+    )
+    assert "error_type=RuntimeError" in warning
+    assert "BBAS3" not in warning
+    assert "sensitive portfolio details" not in warning
+    assert all("quantity=3" not in record.getMessage() for record in caplog.records)
 
 
 def test_uncatalogued_ticker_persists_with_neutral_metadata_after_service_restart():

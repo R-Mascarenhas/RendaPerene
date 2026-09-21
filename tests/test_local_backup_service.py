@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 import shutil
 import sqlite3
@@ -45,6 +46,44 @@ def select_portfolio(paths: ApplicationPaths, filename: str) -> PortfolioBackupS
 
 def build_backup_service(paths: ApplicationPaths) -> LocalBackupService:
     return LocalBackupService(SQLitePortfolioBackupSourceFactory(paths), paths, "1.2.3")
+
+
+def test_backup_logging_excludes_portfolio_names(tmp_path, caplog):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = create_portfolio(paths, "portfolio_familia.db", "FAMILY4")
+
+    with caplog.at_level(logging.DEBUG, logger="services.local_backup_service"):
+        result = build_backup_service(paths).create_backup(
+            [select_portfolio(paths, database.name)]
+        )
+
+    assert result.portfolio_count == 1
+    info_messages = [
+        record.getMessage() for record in caplog.records if record.levelno == logging.INFO
+    ]
+    assert "backup.started portfolios=1" in info_messages
+    assert "backup.completed portfolios=1" in info_messages
+    assert all("portfolio_familia.db" not in record.getMessage() for record in caplog.records)
+
+
+def test_backup_validation_failure_is_logged_without_user_message(tmp_path, caplog):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+
+    with (
+        caplog.at_level(logging.WARNING, logger="services.local_backup_service"),
+        pytest.raises(BackupCreationError, match="Selecione pelo menos uma carteira"),
+    ):
+        build_backup_service(paths).create_backup([])
+
+    warning = next(
+        record.getMessage()
+        for record in caplog.records
+        if "backup.failed" in record.getMessage()
+    )
+    assert warning == "backup.failed reason=validation error_type=BackupCreationError"
+    assert "Selecione" not in warning
 
 
 def test_backup_preserves_the_user_visible_portfolio_name(tmp_path):

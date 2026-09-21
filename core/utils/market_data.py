@@ -1,10 +1,13 @@
 import datetime
+import logging
 import math
 
 import pandas as pd
 import yfinance as yf
 
 from core.utils.market_history import get_annual_closing_prices, get_latest_valid_close
+
+logger = logging.getLogger(__name__)
 
 
 class MarketData:
@@ -42,6 +45,7 @@ class MarketData:
     def get_batch_quotes(tickers: list) -> dict:
         """Fetches batch quotes from Yahoo Finance with a 10-minute cache."""
         quotes = {}
+        failed_tickers = []
         for t in tickers:
             try:
                 ticker_sa = f"{t.strip().upper()}.SA"
@@ -49,6 +53,13 @@ class MarketData:
                 quotes[t] = info["lastPrice"]
             except Exception:
                 quotes[t] = 0.0
+                failed_tickers.append(t.strip().upper())
+        if failed_tickers:
+            logger.warning(
+                "market_data.batch_partial provider=yahoo failed=%s total=%s",
+                len(failed_tickers),
+                len(tickers),
+            )
         return quotes
 
     @staticmethod
@@ -58,7 +69,11 @@ class MarketData:
             ticker_sa = f"{ticker.strip().upper()}.SA"
             info = yf.Ticker(ticker_sa).fast_info
             return float(info["lastPrice"])
-        except Exception:
+        except Exception as error:
+            logger.warning(
+                "market_data.request_failed provider=yahoo operation=last_price error_type=%s",
+                type(error).__name__,
+            )
             return 0.0
 
     @staticmethod
@@ -296,8 +311,15 @@ class MarketData:
             data = response.json()
             if data and len(data) > 0 and "valor" in data[0]:
                 return float(data[0]["valor"])
-        except Exception:
-            pass
+        except Exception as error:
+            logger.warning(
+                "market_data.fallback provider=bcb indicator=ipca error_type=%s",
+                type(error).__name__,
+            )
+        else:
+            logger.warning(
+                "market_data.fallback provider=bcb indicator=ipca error_type=InvalidResponse"
+            )
         return 4.50  # Highly realistic Brazilian fallback IPCA proxy if the BCB API is temporarily down
 
     @staticmethod
@@ -311,8 +333,15 @@ class MarketData:
             data = response.json()
             if data and len(data) > 0 and "valor" in data[0]:
                 return float(data[0]["valor"])
-        except Exception:
-            pass
+        except Exception as error:
+            logger.warning(
+                "market_data.fallback provider=bcb indicator=selic error_type=%s",
+                type(error).__name__,
+            )
+        else:
+            logger.warning(
+                "market_data.fallback provider=bcb indicator=selic error_type=InvalidResponse"
+            )
         return 10.50  # Highly realistic Brazilian fallback SELIC proxy if the BCB API is temporarily down
 
     @staticmethod
@@ -326,8 +355,16 @@ class MarketData:
             data = response.json()
             if data and len(data) > 0 and "valor" in data[0]:
                 return float(data[0]["valor"])
-        except Exception:
-            pass
+        except Exception as error:
+            logger.warning(
+                "market_data.fallback provider=bcb indicator=minimum_wage error_type=%s",
+                type(error).__name__,
+            )
+        else:
+            logger.warning(
+                "market_data.fallback provider=bcb indicator=minimum_wage "
+                "error_type=InvalidResponse"
+            )
         return 1621.0
 
 

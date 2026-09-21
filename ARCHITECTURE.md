@@ -26,6 +26,28 @@ Execute a aplicação com:
 venv/bin/streamlit run app.py
 ```
 
+### Logging
+
+O módulo `core/logging_config.py` concentra a configuração de logging atrás da interface
+`configure_logging(logs_dir)`. `run_app.py` a executa antes de iniciar o Streamlit e `app.py` a
+reaplica no início de cada execução do script. A configuração substitui somente os handlers que ela
+própria instalou, evitando duplicação nos reruns sem remover handlers internos do Streamlit.
+
+`APP_ENV=dev` seleciona `DEBUG`; qualquer outro valor seleciona `INFO`. `LOG_TO_FILE=true`, sem
+distinção entre maiúsculas e minúsculas, mantém `stdout` e adiciona um `RotatingFileHandler` em
+`logs/rendaperene.log`, sob a raiz de dados local, com 5 MiB por arquivo e três backups. Outros
+valores não criam o diretório nem o arquivo de log. Falhas de criação preservam a saída padrão e não
+impedem a inicialização. Os padrões são `prod` e `false`, inclusive no workflow de distribuição.
+Os módulos consumidores obtêm seus loggers com `logging.getLogger(__name__)`; os diagnósticos de
+sessão não possuem um gravador paralelo nem registram dados financeiros. Um filtro nos handlers da
+aplicação aceita apenas os namespaces `app`, `run_app`, `core`, `services`, `views` e `__main__`.
+Assim, internals de dependências como `yfinance` e `peewee` não são copiados para `stdout` nem para o
+arquivo, inclusive em `DEBUG`; falhas relevantes dessas integrações são convertidas pelos adapters
+em eventos sanitizados da aplicação. Nomes de carteiras, tickers, quantidades, valores financeiros,
+caminhos absolutos, identificadores de sessão e conteúdo tabular não são registrados em nenhum
+nível. Em sistemas POSIX, o diretório de logs é restrito a `0700`; o arquivo ativo e os backups
+rotacionados usam `0600` e têm essa permissão reaplicada durante a rotação.
+
 ## Camadas e dependências
 
 O repositório possui três camadas principais:
@@ -55,9 +77,10 @@ O arquivo `core/ports.py` define as fronteiras para persistência da carteira, o
 `ApplicationPaths`, em `core/application_paths.py`, é o módulo profundo que separa os recursos
 descartáveis do pacote dos dados graváveis. Sua interface resolve os recursos incluídos no pacote,
 a raiz de dados, o diretório das carteiras, o catálogo somente leitura, os logs e os backups. Também
-prepara o layout gravável, inventaria apenas bancos SQLite válidos e concentra a migração das
-carteiras antigas. A raiz de composição `app.py` conecta esses caminhos ao `DatabaseManager`, ao
-catálogo e aos adaptadores; as views não calculam caminhos do sistema operacional.
+prepara os diretórios obrigatórios do layout gravável, inventaria apenas bancos SQLite válidos e
+concentra a migração das carteiras antigas. A raiz de composição `app.py` conecta esses caminhos ao
+`DatabaseManager`, ao catálogo e aos adaptadores; as views não calculam caminhos do sistema
+operacional.
 
 As raízes graváveis padrão são `%LOCALAPPDATA%\RendaPerene` no Windows e
 `$XDG_DATA_HOME/RendaPerene` no Linux, com fallback para `~/.local/share/RendaPerene`. O executável

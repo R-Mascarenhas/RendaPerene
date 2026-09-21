@@ -11,6 +11,7 @@ from core.constants import (
 )
 from core.daos.portfolio_dao import PortfolioDAO
 from core.database import DatabaseManager, db
+from core.logging_config import configure_logging
 from core.sqlite_backup import SQLitePortfolioBackupSourceFactory
 from core.utils import SessionManager, get_app_version
 from core.utils.market_data import MarketData
@@ -21,6 +22,7 @@ from services.local_backup_service import (
 )
 
 app_paths = ApplicationPaths.discover()
+configure_logging(app_paths.logs_dir)
 app_paths.prepare()
 
 for message_type, message in st.session_state.pop(SESSION_LEGACY_PREFERENCE_MESSAGES, []):

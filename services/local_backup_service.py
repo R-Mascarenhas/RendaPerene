@@ -87,10 +87,6 @@ class LocalBackupService:
             )
             raise
         logger.info("backup.started portfolios=%s", len(pinned_selections))
-        logger.debug(
-            "backup.context portfolios=%s",
-            ",".join(selection.filename for selection in pinned_selections),
-        )
 
         backup_id = str(uuid.uuid4())
         created_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")

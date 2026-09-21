@@ -7,25 +7,16 @@ import pytest
 from services.assets_service import AssetService
 
 
-def test_transaction_logging_separates_safe_event_from_debug_context(caplog):
+def test_transaction_logging_excludes_portfolio_holdings(caplog):
     with caplog.at_level(logging.DEBUG, logger="services.assets_service"):
         assert AssetService.add_transaction("BBAS3", "2026-09-21", "BUY", 7, 20.0)
 
-    info_message = next(
-        record.getMessage()
-        for record in caplog.records
-        if record.levelno == logging.INFO and "portfolio.transaction_saved" in record.getMessage()
-    )
-    debug_message = next(
-        record.getMessage()
-        for record in caplog.records
-        if record.levelno == logging.DEBUG
-        and "portfolio.transaction_context" in record.getMessage()
-    )
-    assert "BBAS3" not in info_message
-    assert "quantity=7" not in info_message
-    assert "ticker=BBAS3" in debug_message
-    assert "quantity=7" in debug_message
+    messages = [record.getMessage() for record in caplog.records]
+    assert "portfolio.transaction_saved" in messages
+    assert "portfolio.transaction_context type=BUY" in messages
+    assert all("BBAS3" not in message for message in messages)
+    assert all("quantity=7" not in message for message in messages)
+    assert all("20.0" not in message for message in messages)
 
 
 def test_dividend_logging_keeps_value_out_of_all_messages(caplog):
@@ -34,7 +25,8 @@ def test_dividend_logging_keeps_value_out_of_all_messages(caplog):
 
     messages = [record.getMessage() for record in caplog.records]
     assert "portfolio.dividend_saved" in messages
-    assert any("portfolio.dividend_context ticker=BBAS3" in message for message in messages)
+    assert "portfolio.dividend_context type=DIVIDEND" in messages
+    assert all("BBAS3" not in message for message in messages)
     assert all("123.45" not in message for message in messages)
 
 
@@ -58,11 +50,7 @@ def test_recoverable_post_sale_failure_is_logged_without_changing_result(monkeyp
     assert "error_type=RuntimeError" in warning
     assert "BBAS3" not in warning
     assert "sensitive portfolio details" not in warning
-    assert any(
-        "portfolio.auto_tracking_context ticker=BBAS3 quantity=3" in record.getMessage()
-        for record in caplog.records
-        if record.levelno == logging.DEBUG
-    )
+    assert all("quantity=3" not in record.getMessage() for record in caplog.records)
 
 
 def test_uncatalogued_ticker_persists_with_neutral_metadata_after_service_restart():

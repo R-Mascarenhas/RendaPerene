@@ -210,8 +210,9 @@ Quando habilitado, o arquivo gira ao atingir 5 MiB e mantém até três backups.
 arquivo não interrompe a aplicação: os registros continuam disponíveis na saída padrão. Nenhum log
 é enviado para serviços externos. Os destinos configurados pela aplicação aceitam somente eventos
 dos módulos do RendaPerene; detalhes internos de dependências, como `yfinance` e `peewee`, são
-descartados. Logs em `DEBUG` podem conter nomes de ativos e carteiras e, por isso, o arquivo deve ser
-tratado como dado local potencialmente sensível.
+descartados. Tickers, quantidades, valores financeiros, nomes de carteiras, caminhos absolutos e
+identificadores de sessão não são registrados, inclusive em `DEBUG`. Em sistemas POSIX, o diretório
+de logs usa permissão `0700` e os arquivos ativos e rotacionados usam `0600`.
 
 ## Validação
 

@@ -43,9 +43,10 @@ sessão não possuem um gravador paralelo nem registram dados financeiros. Um fi
 aplicação aceita apenas os namespaces `app`, `run_app`, `core`, `services`, `views` e `__main__`.
 Assim, internals de dependências como `yfinance` e `peewee` não são copiados para `stdout` nem para o
 arquivo, inclusive em `DEBUG`; falhas relevantes dessas integrações são convertidas pelos adapters
-em eventos sanitizados da aplicação. Eventos `INFO` não incluem nomes de carteiras, tickers ou
-quantidades; esse contexto pode aparecer em `DEBUG`, mas valores financeiros, caminhos absolutos,
-identificadores de sessão e conteúdo tabular não são registrados.
+em eventos sanitizados da aplicação. Nomes de carteiras, tickers, quantidades, valores financeiros,
+caminhos absolutos, identificadores de sessão e conteúdo tabular não são registrados em nenhum
+nível. Em sistemas POSIX, o diretório de logs é restrito a `0700`; o arquivo ativo e os backups
+rotacionados usam `0600` e têm essa permissão reaplicada durante a rotação.
 
 ## Camadas e dependências
 

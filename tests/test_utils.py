@@ -324,11 +324,9 @@ def test_session_manager_switches_to_valid_fallback_and_resets_loaded_state(monk
     assert SESSION_ACTIVE_DATABASE_GENERATION not in mock_session
     assert SESSION_BIRTH_DATE not in mock_session
     info_messages = [record.getMessage() for record in caplog.records if record.levelname == "INFO"]
-    debug_messages = [
-        record.getMessage() for record in caplog.records if record.levelname == "DEBUG"
-    ]
     assert info_messages == ["portfolio.switched"]
-    assert any("portfolio_family.db" in message for message in debug_messages)
+    assert all("portfolio_missing.db" not in record.getMessage() for record in caplog.records)
+    assert all("portfolio_family.db" not in record.getMessage() for record in caplog.records)
 
 
 def test_session_manager_invalidates_state_when_portfolio_generation_changes(monkeypatch):

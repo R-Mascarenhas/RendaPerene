@@ -12,7 +12,7 @@ from services.assets_service import AssetService
 from services.market_analysis_service import MarketAnalysisService
 
 
-def test_market_data_failure_logs_safe_warning_and_debug_ticker(monkeypatch, caplog):
+def test_market_data_failure_logs_safe_warning_without_ticker(monkeypatch, caplog):
     def fail_ticker(_ticker):
         raise RuntimeError("sensitive BBAS3 provider response")
 
@@ -31,12 +31,7 @@ def test_market_data_failure_logs_safe_warning_and_debug_ticker(monkeypatch, cap
     assert "error_type=RuntimeError" in warning
     assert "BBAS3" not in warning
     assert "sensitive" not in warning
-    assert any(
-        "market_data.request_context ticker=BBAS3 operation=last_price"
-        in record.getMessage()
-        for record in caplog.records
-        if record.levelno == logging.DEBUG
-    )
+    assert all("BBAS3" not in record.getMessage() for record in caplog.records)
 
 
 def test_bcb_failure_logs_fallback_without_exception_message(monkeypatch, caplog):
@@ -61,9 +56,7 @@ def test_bcb_failure_logs_fallback_without_exception_message(monkeypatch, caplog
     assert "sensitive request details" not in warning
 
 
-def test_batch_quote_logging_aggregates_failures_and_keeps_tickers_in_debug(
-    monkeypatch, caplog
-):
+def test_batch_quote_logging_aggregates_failures_without_tickers(monkeypatch, caplog):
     class MockTicker:
         def __init__(self, ticker):
             if ticker == "FAIL4.SA":
@@ -86,11 +79,7 @@ def test_batch_quote_logging_aggregates_failures_and_keeps_tickers_in_debug(
     assert "failed=1" in warning
     assert "total=2" in warning
     assert "FAIL4" not in warning
-    assert any(
-        "market_data.batch_failure_context tickers=FAIL4" in record.getMessage()
-        for record in caplog.records
-        if record.levelno == logging.DEBUG
-    )
+    assert all("FAIL4" not in record.getMessage() for record in caplog.records)
 
 
 def get_market_analysis(ticker: str, target_yield_pct: float = 6.0) -> dict:

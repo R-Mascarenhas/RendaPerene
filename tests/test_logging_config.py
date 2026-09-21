@@ -1,4 +1,6 @@
 import logging
+import os
+import stat
 
 import pytest
 
@@ -70,7 +72,7 @@ def test_file_logging_failure_falls_back_to_stdout(monkeypatch, tmp_path, capsys
     def fail_file_handler(*_args, **_kwargs):
         raise OSError("permission denied")
 
-    monkeypatch.setattr(logging_config, "RotatingFileHandler", fail_file_handler)
+    monkeypatch.setattr(logging_config, "_OwnerOnlyRotatingFileHandler", fail_file_handler)
 
     configure_logging(tmp_path / "logs")
     logging.getLogger("core.example").info("application still running")
@@ -123,6 +125,28 @@ def test_file_logging_rotates_and_limits_backups(monkeypatch, tmp_path):
 
     log_files = tuple(logs_dir.glob("rendaperene.log*"))
     assert 1 < len(log_files) <= 4
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes are not available")
+def test_file_logging_restricts_existing_and_rotated_files_to_owner(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOG_TO_FILE", "true")
+    monkeypatch.setattr(logging_config, "LOG_MAX_BYTES", 200)
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir(mode=0o755)
+    log_file = logs_dir / "rendaperene.log"
+    log_file.write_text("existing log\n", encoding="utf-8")
+    log_file.chmod(0o644)
+
+    configure_logging(logs_dir)
+    logger = logging.getLogger("core.rotation")
+    for index in range(20):
+        logger.info("rotation message %s with enough content to fill the file", index)
+
+    assert stat.S_IMODE(logs_dir.stat().st_mode) == 0o700
+    assert all(
+        stat.S_IMODE(path.stat().st_mode) == 0o600
+        for path in logs_dir.glob("rendaperene.log*")
+    )
 
 
 def test_debug_logging_excludes_dependency_internals(monkeypatch, tmp_path, capsys):

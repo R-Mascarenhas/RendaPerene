@@ -48,7 +48,7 @@ def build_backup_service(paths: ApplicationPaths) -> LocalBackupService:
     return LocalBackupService(SQLitePortfolioBackupSourceFactory(paths), paths, "1.2.3")
 
 
-def test_backup_logging_keeps_portfolio_names_in_debug_only(tmp_path, caplog):
+def test_backup_logging_excludes_portfolio_names(tmp_path, caplog):
     paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
     paths.prepare()
     database = create_portfolio(paths, "portfolio_familia.db", "FAMILY4")
@@ -64,12 +64,7 @@ def test_backup_logging_keeps_portfolio_names_in_debug_only(tmp_path, caplog):
     ]
     assert "backup.started portfolios=1" in info_messages
     assert "backup.completed portfolios=1" in info_messages
-    assert all("portfolio_familia.db" not in message for message in info_messages)
-    assert any(
-        "backup.context portfolios=portfolio_familia.db" in record.getMessage()
-        for record in caplog.records
-        if record.levelno == logging.DEBUG
-    )
+    assert all("portfolio_familia.db" not in record.getMessage() for record in caplog.records)
 
 
 def test_backup_validation_failure_is_logged_without_user_message(tmp_path, caplog):

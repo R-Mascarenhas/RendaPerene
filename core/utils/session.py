@@ -68,17 +68,11 @@ class SessionManager:
     @staticmethod
     def switch_portfolio(filename: str) -> bool:
         """Activate another portfolio and invalidate state loaded from the previous one."""
-        previous_filename = st.session_state.get("active_db")
-        if previous_filename == filename:
+        if st.session_state.get("active_db") == filename:
             return False
         st.session_state["active_db"] = filename
         SessionManager.reset_portfolio_state()
         logger.info("portfolio.switched")
-        logger.debug(
-            "portfolio.switch_context previous=%s current=%s",
-            previous_filename,
-            filename,
-        )
         return True
 
     @staticmethod

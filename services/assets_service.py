@@ -103,9 +103,7 @@ class AssetService:
         if success:
             logger.info("portfolio.transaction_saved")
             logger.debug(
-                "portfolio.transaction_context ticker=%s quantity=%s type=%s",
-                ticker,
-                quantity,
+                "portfolio.transaction_context type=%s",
                 transaction_type,
             )
         if success and transaction_type == "SELL":
@@ -118,11 +116,6 @@ class AssetService:
                 logger.warning(
                     "portfolio.auto_tracking_failed error_type=%s",
                     type(error).__name__,
-                )
-                logger.debug(
-                    "portfolio.auto_tracking_context ticker=%s quantity=%s",
-                    ticker,
-                    quantity,
                 )
         return success
 
@@ -144,8 +137,7 @@ class AssetService:
         if success:
             logger.info("portfolio.dividend_saved")
             logger.debug(
-                "portfolio.dividend_context ticker=%s type=%s",
-                ticker,
+                "portfolio.dividend_context type=%s",
                 dividend_type,
             )
         return success

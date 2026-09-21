@@ -60,10 +60,6 @@ class MarketData:
                 len(failed_tickers),
                 len(tickers),
             )
-            logger.debug(
-                "market_data.batch_failure_context tickers=%s",
-                ",".join(failed_tickers),
-            )
         return quotes
 
     @staticmethod
@@ -77,10 +73,6 @@ class MarketData:
             logger.warning(
                 "market_data.request_failed provider=yahoo operation=last_price error_type=%s",
                 type(error).__name__,
-            )
-            logger.debug(
-                "market_data.request_context ticker=%s operation=last_price",
-                ticker.strip().upper(),
             )
             return 0.0
 

@@ -4,7 +4,7 @@
 
 **Acompanhamento local de carteira e planejamento de aposentadoria para investidores brasileiros**
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10–3.14](https://img.shields.io/badge/python-3.10--3.14-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat&logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white)](https://sqlite.org/)
 [![Pytest](https://img.shields.io/badge/Tested_with-Pytest-0A9EDC?style=flat&logo=pytest&logoColor=white)](https://docs.pytest.org/)
@@ -154,7 +154,7 @@ reclassificam automaticamente transferências já processadas.
 
 ## Requisitos
 
-- Python 3.10 ou mais recente
+- Python 3.10 a 3.14
 - `pip`
 - Acesso à rede apenas para consultar dados atualizados do Yahoo Finance ou do BCB
 
@@ -207,8 +207,8 @@ venv/bin/ruff format --check .
 
 O Ruff usa Python 3.10 como versão-alvo, limita as linhas a 100 caracteres e exclui intencionalmente
 `tests/` do escopo configurado. O GitHub Actions executa lint e formatação no Ubuntu e a suíte de
-testes no Ubuntu e no Windows, tanto em pull requests destinados à `main` quanto em pushes para a
-`main`.
+testes com Python 3.10 e 3.14 no Ubuntu e no Windows, tanto em pull requests destinados à `main`
+quanto em pushes para a `main`.
 
 ## Distribuição nativa
 

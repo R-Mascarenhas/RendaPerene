@@ -27,15 +27,27 @@ jobs:
         include:
           - name: Ruff lint
             os: ubuntu-latest
+            python-version: "3.10"
             command: ruff check .
           - name: Ruff format
             os: ubuntu-latest
+            python-version: "3.10"
             command: ruff format --check .
-          - name: Tests (Ubuntu)
+          - name: Tests (Ubuntu, Python 3.10)
             os: ubuntu-latest
+            python-version: "3.10"
             command: pytest
-          - name: Tests (Windows)
+          - name: Tests (Ubuntu, Python 3.14)
+            os: ubuntu-latest
+            python-version: "3.14"
+            command: pytest
+          - name: Tests (Windows, Python 3.10)
             os: windows-latest
+            python-version: "3.10"
+            command: pytest
+          - name: Tests (Windows, Python 3.14)
+            os: windows-latest
+            python-version: "3.14"
             command: pytest
 
     steps:
@@ -45,14 +57,14 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      - name: Install development dependencies
+      - name: Install development and packaging dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          python -m pip install -e ".[dev,packaging]"
 
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}

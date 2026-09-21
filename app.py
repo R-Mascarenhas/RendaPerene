@@ -298,8 +298,8 @@ backup_service = LocalBackupService(
 )
 with st.sidebar.expander("💾 Backup local"):
     st.warning(
-        "O backup contém todos os dados financeiros das carteiras selecionadas e ainda não é "
-        "criptografado. Guarde-o em um local seguro."
+        "O backup será criptografado por senha. Guarde a senha e, se desejar, a chave de "
+        "recuperação em local separado do arquivo de backup."
     )
     backup_widget_version = hashlib.sha256("\0".join(db_files).encode()).hexdigest()[:12]
     selected_backup_portfolios = st.multiselect(
@@ -315,9 +315,21 @@ with st.sidebar.expander("💾 Backup local"):
     )
     selected_count = len(selected_backup_portfolios)
     portfolio_word = "carteira" if selected_count == 1 else "carteiras"
+    backup_password = st.text_input(
+        "Senha do backup", type="password", key="encrypted_backup_password"
+    )
+    backup_password_confirmation = st.text_input(
+        "Confirme a senha do backup", type="password", key="encrypted_backup_password_confirmation"
+    )
+    if backup_password and len(backup_password) < 12:
+        st.info("Recomendamos uma senha com pelo menos 12 caracteres.")
     if st.button(
         f"Criar backup de {selected_count} {portfolio_word}",
-        disabled=not selected_backup_portfolios,
+        disabled=(
+            not selected_backup_portfolios
+            or len(backup_password) < 4
+            or backup_password != backup_password_confirmation
+        ),
         use_container_width=True,
     ):
         backup_selections = [
@@ -329,7 +341,9 @@ with st.sidebar.expander("💾 Backup local"):
             for filename in selected_backup_portfolios
         ]
         try:
-            backup_result = backup_service.create_backup(backup_selections)
+            backup_result = backup_service.create_encrypted_backup(
+                backup_selections, backup_password
+            )
         except BackupCreationError as error:
             st.error(str(error))
         else:
@@ -337,8 +351,23 @@ with st.sidebar.expander("💾 Backup local"):
                 f"Backup de {backup_result.portfolio_count} {portfolio_word} criado e validado "
                 "com sucesso. "
                 f"Data UTC: {backup_result.manifest['created_at_utc']}. "
-                f"Local: {backup_result.directory}"
+                f"Local: {backup_result.package_file}"
             )
+            st.session_state["encrypted_backup_recovery_key"] = (
+                backup_result.recovery_key_file_content
+            )
+            st.session_state["encrypted_backup_recovery_key_name"] = (
+                backup_result.recovery_key_file_name
+            )
+
+    if recovery_key := st.session_state.get("encrypted_backup_recovery_key"):
+        st.download_button(
+            "Baixar chave de recuperação (.key)",
+            data=recovery_key,
+            file_name=st.session_state["encrypted_backup_recovery_key_name"],
+            mime="application/json",
+            use_container_width=True,
+        )
 
 st.set_page_config(page_title=f"Renda Perene v{app_version}", page_icon="💼", layout="wide")
 

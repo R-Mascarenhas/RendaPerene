@@ -88,12 +88,9 @@ e seus recursos podem ser substituídos sem mover as carteiras. O caminho resolv
 integra a chave do cache de leitura, evitando reutilizar uma entrada caso a configuração do caminho
 mude durante a execução.
 
-O backup manual é publicado em `backups/local-backups/<backup_id>/`, sem incorporar os nomes das
-carteiras nos caminhos. A interface apresenta todas as carteiras válidas marcadas por padrão e
-permite selecionar um subconjunto. O conjunto contém `manifest.json` e, para cada carteira,
-`carteiras/<portfolio_id>/backup.sqlite3` e `metadata.json`. O manifesto e os metadados individuais
-incluem o nome exibido na interface para que uma pessoa identifique o conteúdo sem depender da
-carteira original. A raiz de composição injeta `SQLitePortfolioBackupSourceFactory` em
+O backup manual é publicado em `backups/local-backups/<backup_id>.rpb`, sem incorporar nomes de
+carteiras no caminho. A interface apresenta todas as carteiras válidas marcadas por padrão e permite
+selecionar um subconjunto. A raiz de composição injeta `SQLitePortfolioBackupSourceFactory` em
 `LocalBackupService`. A seleção fixa o nome exibido, o arquivo e sua geração; o adaptador prepara o
 schema existente e fornece uma conexão dedicada pelo `DatabaseManager`.
 Carteiras ainda não abertas nesta versão recebem as migrações já existentes antes da cópia,
@@ -101,27 +98,29 @@ garantindo que possuam um identificador estável.
 
 O módulo usa a API de backup do SQLite para incluir páginas confirmadas do WAL sem produzir cópias
 parciais. Depois de fechar cada arquivo, abre a cópia como SQLite imutável, sem criar sidecars
-WAL/SHM, exige `PRAGMA integrity_check = ok`, calcula o SHA-256 e grava metadados com o nome exibido,
-identificadores da carteira, instalação e backup, criação em UTC, versões da aplicação e schema e
-estado da criptografia. Todas as conexões selecionadas e seus reader locks permanecem abertos até a
-publicação do conjunto, impedindo exclusão ou substituição de uma carteira depois de sua cópia.
+WAL/SHM, exige `PRAGMA integrity_check = ok`, calcula o SHA-256 e gera metadados internos com o nome
+exibido, identificadores da carteira, instalação e backup, criação em UTC, versões da aplicação e
+schema. Todas as conexões selecionadas e seus reader locks permanecem abertos até a publicação do
+pacote, impedindo exclusão ou substituição de uma carteira depois de sua cópia.
 Cada cópia possui prazo total de 60 segundos e divide a operação em lotes; tentativas bloqueadas usam
 um `busy_timeout` curto para que o callback de progresso possa cancelar a operação dentro desse
 limite. Em sistemas POSIX, os diretórios de staging e publicados usam modo `0700`, e os SQLite e
 JSON nascem com modo `0600`; diretórios de backup existentes também são restringidos antes da nova
 operação. O cancelamento é tratado como carteira em uso e remove todo o diretório temporário.
 Carteiras diferentes podem representar instantes ligeiramente distintos, mas cada SQLite é
-internamente consistente. O diretório temporário do conjunto é renomeado somente quando todas as
-carteiras e o manifesto estão completos; falhas removem todo o staging e não publicam nem substituem
-backups. As migrações normais eventualmente aplicadas às carteiras selecionadas permanecem como
+internamente consistente. O staging é cifrado como RPB v1 e publicado somente quando todas as
+carteiras e o manifesto estão completos; falhas removem o staging e não publicam backups. As
+migrações normais eventualmente aplicadas às carteiras selecionadas permanecem como
 ocorreriam ao abri-las no aplicativo. Seleções removidas, substituídas, inválidas, bloqueadas ou com
 identificadores duplicados impedem a publicação do conjunto completo.
 
 Cada carteira mantém seu UUID estável na tabela `portfolio_metadata`, portanto a identidade
 acompanha uma futura restauração e não depende do nome do arquivo. A instalação mantém outro UUID
 em `.installation-id`, na raiz de dados graváveis, criado atomicamente na primeira solicitação de
-backup. Os backups atuais não são criptografados, não possuem retenção automática, não são
-restaurados pela interface e não são enviados a provedores externos.
+backup. Os novos backups são publicados como pacotes RPB v1 criptografados, sem retenção automática,
+não são restaurados pela interface e não são enviados a provedores externos. O RPB usa AES-256-GCM,
+autentica o cabeçalho e o conteúdo e deriva a chave da senha com Argon2id. A chave de recuperação
+`.key` fica fora do pacote e nunca é persistida pela aplicação.
 
 O catálogo é o `assets.csv` incluído no pacote e nunca faz parte do armazenamento gravável. A
 aplicação lê esse recurso diretamente, sem copiar, migrar ou mesclar catálogos de versões
@@ -273,7 +272,7 @@ O código, seus identificadores, o SQL e os comentários técnicos estão em ing
 - **Ativos** coordena três subtelas: detalhes da carteira, monitoramento de mercado e valuation de Bazin (incluindo a consulta Raio-X de todo o catálogo) e operações manuais/importadas da B3. Na tela Mercado, `MarketView` apenas controla a navegação secundária; `MarketMonitoringView` e `AssetDeepDiveView` renderizam uma aba cada.
 - **Planejamento** possui as abas internas `Aposentadoria` e `Metas`. `PlanningView` controla os parâmetros e projeções da aposentadoria; `GoalsView` controla a seleção de metas. O usuário pode ativar independentemente o reinvestimento de dividendos e as metas de quantidade por ação. A tabela de metas aparece apenas quando habilitada, e peso 0% desativa o ativo sem um controle separado por linha.
 - **Metas no Dashboard** consolida o progresso das metas por ação em uma barra ponderada pelos pesos, com detalhes por ticker ao passar o cursor e em uma seção expansível. A barra usa azul até 100% e uma camada verde para o excedente.
-- **Backup local**, na barra lateral, permite selecionar uma ou mais carteiras, com todas marcadas por padrão, e informa ao usuário que o conjunto ainda não é criptografado.
+- **Backup local**, na barra lateral, permite selecionar uma ou mais carteiras, com todas marcadas por padrão, solicitar senha e baixar opcionalmente uma chave de recuperação separada.
 - **`ChartThemeAdapter`** aplica aos gráficos do dashboard e do planejamento a paleta escura compartilhada do Plotly, tipografia, grade, legenda, margens, marcações monetárias e comportamento unificado ao passar o cursor. Cada componente de gráfico continua responsável por seus próprios dados e eixos específicos.
 
 ## Validação

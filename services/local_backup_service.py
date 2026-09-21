@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from core.application_paths import ApplicationPaths
+from core.encrypted_backup_package import BackupPackageError, EncryptedBackupPackageService
 from core.ports import (
     PortfolioBackupIdentityError,
     PortfolioBackupIntegrityError,
@@ -47,6 +48,15 @@ class BackupResult:
     portfolio_count: int
 
 
+@dataclass(frozen=True)
+class EncryptedBackupResult:
+    package_file: Path
+    manifest: dict
+    portfolio_count: int
+    recovery_key_file_name: str
+    recovery_key_file_content: bytes
+
+
 class BackupCreationError(RuntimeError):
     """Reports a safe user-facing failure to create a local backup set."""
 
@@ -57,6 +67,7 @@ class _BackupSetContext:
     created_at_utc: str
     installation_id: str
     portfolios_directory: Path
+    encryption_state: str = "unencrypted"
 
 
 class LocalBackupService:
@@ -209,7 +220,7 @@ class LocalBackupService:
             raise BackupCreationError(
                 "Não foi possível criar um backup SQLite consistente das carteiras selecionadas."
             ) from None
-        except (OSError, UnicodeError, ValueError) as error:
+        except (BackupPackageError, OSError, UnicodeError, ValueError) as error:
             logger.warning(
                 "backup.failed reason=storage error_type=%s",
                 type(error).__name__,
@@ -217,6 +228,83 @@ class LocalBackupService:
             raise BackupCreationError(
                 "Não foi possível salvar o backup no armazenamento local."
             ) from None
+        finally:
+            if temporary_dir.exists():
+                shutil.rmtree(temporary_dir)
+
+    def create_encrypted_backup(
+        self, selections: Sequence[PortfolioBackupSelection], password: str
+    ) -> EncryptedBackupResult:
+        """Create snapshots only in staging, then publish one encrypted package."""
+        pinned_selections = tuple(selections)
+        self._validate_selections(pinned_selections)
+        backup_id = str(uuid.uuid4())
+        created_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        backups_dir = self._paths.local_backups_dir
+        temporary_dir = backups_dir / f".{backup_id}.tmp"
+        package_file = backups_dir / f"{backup_id}.rpb"
+        try:
+            sources = [
+                self._source_factory.create(s.filename, s.expected_generation)
+                for s in pinned_selections
+            ]
+            self._create_owner_only_directory(self._paths.backups_dir, parents=True)
+            self._create_owner_only_directory(backups_dir, parents=True)
+            self._create_owner_only_directory(temporary_dir, parents=False, exist_ok=False)
+            portfolios_dir = temporary_dir / "carteiras"
+            self._create_owner_only_directory(portfolios_dir, parents=False, exist_ok=False)
+            context = _BackupSetContext(
+                backup_id,
+                created_at_utc,
+                self._paths.get_or_create_installation_id(),
+                portfolios_dir,
+                "encrypted",
+            )
+            for source in sources:
+                source.prepare()
+            entries = []
+            with ExitStack() as source_stack:
+                readers = [source_stack.enter_context(source.open_reader()) for source in sources]
+                for index, (selection, reader) in enumerate(
+                    zip(pinned_selections, readers, strict=True)
+                ):
+                    entries.append(
+                        self._create_portfolio_snapshot(
+                            reader,
+                            portfolios_dir / f".{index}.tmp",
+                            context,
+                            selection.display_name,
+                        )
+                    )
+                manifest = {
+                    "format_version": BACKUP_FORMAT_VERSION,
+                    "backup_id": backup_id,
+                    "created_at_utc": created_at_utc,
+                    "app_version": self._app_version,
+                    "installation_id": context.installation_id,
+                    "encryption_state": "encrypted",
+                    "portfolio_count": len(entries),
+                    "portfolios": entries,
+                }
+                self._write_json(temporary_dir / "manifest.json", manifest)
+                encrypted = EncryptedBackupPackageService().create(
+                    temporary_dir, package_file, password, backup_id=backup_id
+                )
+            return EncryptedBackupResult(
+                encrypted.package_file,
+                manifest,
+                len(entries),
+                encrypted.recovery_key_file_name,
+                encrypted.recovery_key_file_content,
+            )
+        except (PortfolioBackupSourceError, TimeoutError) as error:
+            raise BackupCreationError(
+                "Não foi possível criar um snapshot SQLite consistente das carteiras selecionadas."
+            ) from error
+        except (BackupPackageError, OSError, UnicodeError, ValueError) as error:
+            raise BackupCreationError(
+                "Não foi possível criar o pacote de backup criptografado."
+            ) from error
         finally:
             if temporary_dir.exists():
                 shutil.rmtree(temporary_dir)
@@ -245,7 +333,7 @@ class LocalBackupService:
             "schema_version": schema_version,
             "installation_id": context.installation_id,
             "sha256": checksum,
-            "encryption_state": "unencrypted",
+            "encryption_state": context.encryption_state,
         }
         self._write_json(metadata_file, metadata)
 

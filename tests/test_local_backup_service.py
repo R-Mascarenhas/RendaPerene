@@ -14,6 +14,7 @@ import pytest
 
 from core.application_paths import ApplicationPaths, portfolio_database_lock
 from core.database import CURRENT_SCHEMA_VERSION, DatabaseManager
+from core.encrypted_backup_package import EncryptedBackupPackageService
 from core.ports import PortfolioSnapshotIdentity
 from core.sqlite_backup import SQLitePortfolioBackupReader, SQLitePortfolioBackupSourceFactory
 from services.local_backup_service import (
@@ -54,9 +55,7 @@ def test_backup_logging_excludes_portfolio_names(tmp_path, caplog):
     database = create_portfolio(paths, "portfolio_familia.db", "FAMILY4")
 
     with caplog.at_level(logging.DEBUG, logger="services.local_backup_service"):
-        result = build_backup_service(paths).create_backup(
-            [select_portfolio(paths, database.name)]
-        )
+        result = build_backup_service(paths).create_backup([select_portfolio(paths, database.name)])
 
     assert result.portfolio_count == 1
     info_messages = [
@@ -78,9 +77,7 @@ def test_backup_validation_failure_is_logged_without_user_message(tmp_path, capl
         build_backup_service(paths).create_backup([])
 
     warning = next(
-        record.getMessage()
-        for record in caplog.records
-        if "backup.failed" in record.getMessage()
+        record.getMessage() for record in caplog.records if "backup.failed" in record.getMessage()
     )
     assert warning == "backup.failed reason=validation error_type=BackupCreationError"
     assert "Selecione" not in warning
@@ -204,6 +201,30 @@ def test_backup_contains_only_the_selected_portfolios(tmp_path):
     )
     assert "portfolio.db" not in serialized_artifacts
     assert "portfolio_family.db" not in serialized_artifacts
+
+
+def test_encrypted_backup_publishes_only_the_package_and_preserves_the_snapshot(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = create_portfolio(paths, "portfolio.db", "MAIN3")
+    service = build_backup_service(paths)
+
+    result = service.create_encrypted_backup([select_portfolio(paths, database.name)], "senha")
+
+    assert result.package_file.suffix == ".rpb"
+    assert list(paths.local_backups_dir.iterdir()) == [result.package_file]
+    assert b"SQLite format 3\x00" not in result.package_file.read_bytes()
+
+    extracted = tmp_path / "opened"
+    EncryptedBackupPackageService().extract_with_recovery_key_file(
+        result.package_file,
+        extracted,
+        result.recovery_key_file_content,
+    )
+    assert (extracted / "manifest.json").exists()
+    assert result.manifest["encryption_state"] == "encrypted"
+    recovery_key = json.loads(result.recovery_key_file_content)
+    assert recovery_key["backup_id"] == result.manifest["backup_id"]
 
 
 def test_backup_contains_every_selected_portfolio_in_one_set(tmp_path):

@@ -321,8 +321,12 @@ with st.sidebar.expander("💾 Backup local"):
     backup_password_confirmation = st.text_input(
         "Confirme a senha do backup", type="password", key="encrypted_backup_password_confirmation"
     )
-    if backup_password and len(backup_password) < 12:
+    if backup_password and len(backup_password) < 4:
+        st.error("A senha do backup deve ter pelo menos 4 caracteres.")
+    elif backup_password and len(backup_password) < 12:
         st.info("Recomendamos uma senha com pelo menos 12 caracteres.")
+    if backup_password_confirmation and backup_password != backup_password_confirmation:
+        st.error("A confirmação da senha do backup não confere.")
     if st.button(
         f"Criar backup de {selected_count} {portfolio_word}",
         disabled=(

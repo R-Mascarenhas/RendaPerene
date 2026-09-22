@@ -9,8 +9,13 @@ from pathlib import Path
 
 import pytest
 
+import core.application_paths as application_paths_module
 from core.application_paths import (
     ApplicationPaths,
+    PortfolioRestoreBusyError,
+    PortfolioRestoreConflictError,
+    PortfolioRestoreManualRecoveryError,
+    PortfolioRestorePublicationError,
     portfolio_database_lock,
     portfolio_database_reader_lock,
     portfolio_deletion_marker,
@@ -36,6 +41,44 @@ def read_database_marker(path: Path) -> str:
     connection = sqlite3.connect(path)
     try:
         return connection.execute("SELECT value FROM marker").fetchone()[0]
+    finally:
+        connection.close()
+
+
+def create_portfolio_database(path: Path) -> str:
+    DatabaseManager(path).init_personal_db()
+    connection = sqlite3.connect(path)
+    try:
+        return connection.execute(
+            "SELECT portfolio_id FROM portfolio_metadata WHERE id = 1"
+        ).fetchone()[0]
+    finally:
+        connection.close()
+
+
+def create_restored_portfolio(path: Path, portfolio_id: str, ticker: str) -> None:
+    DatabaseManager(path).init_personal_db()
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute(
+            "UPDATE portfolio_metadata SET portfolio_id = ? WHERE id = 1",
+            (portfolio_id,),
+        )
+        connection.execute("INSERT INTO tracked_market_assets VALUES (?)", (ticker,))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def read_tracked_tickers(path: Path) -> list[str]:
+    connection = sqlite3.connect(path)
+    try:
+        return [
+            row[0]
+            for row in connection.execute(
+                "SELECT ticker FROM tracked_market_assets ORDER BY ticker"
+            ).fetchall()
+        ]
     finally:
         connection.close()
 
@@ -1499,6 +1542,336 @@ def test_failed_deletion_rollback_keeps_tombstone_blocking_partial_portfolio(
     assert not family.exists()
     assert result.backup_dir is not None
     assert (result.backup_dir / family.name).exists()
+
+
+def test_restore_target_matches_local_portfolio_identity_and_reports_latest_file_change(
+    tmp_path,
+):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = paths.portfolio_database("portfolio_family.db")
+    portfolio_id = create_portfolio_database(database)
+    Path(f"{database}.generation").write_text("current-generation", encoding="ascii")
+    database_timestamp = 1_700_000_000
+    wal_timestamp = database_timestamp + 60
+    os.utime(database, (database_timestamp, database_timestamp))
+    wal = Path(f"{database}-wal")
+    writer = sqlite3.connect(database)
+    try:
+        writer.execute("PRAGMA journal_mode = WAL")
+        writer.execute(
+            "UPDATE goal_settings SET reinvest_dividends_enabled = 0 WHERE id = 1"
+        )
+        writer.commit()
+        os.utime(database, (database_timestamp, database_timestamp))
+        os.utime(wal, (wal_timestamp, wal_timestamp))
+
+        target = paths.plan_portfolio_restore(portfolio_id)
+    finally:
+        writer.close()
+
+    assert target.filename == database.name
+    assert target.expected_generation == "current-generation"
+    assert target.replaces_existing is True
+    assert target.last_modified_at_utc == "2023-11-14T22:14:20Z"
+    assert target.state_token
+
+
+def test_restore_target_uses_a_new_safe_filename_for_an_unknown_identity(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    portfolio_id = "f4b8d9bf-3295-4d80-93b1-846095d53c1f"
+
+    target = paths.plan_portfolio_restore(portfolio_id)
+
+    assert target.filename == "portfolio_restored_f4b8d9bf.db"
+    assert target.expected_generation is None
+    assert target.replaces_existing is False
+    assert target.last_modified_at_utc is None
+    assert target.state_token
+
+
+def test_restore_target_uses_a_chosen_name_for_a_new_portfolio_identity(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    principal = paths.portfolio_database("portfolio.db")
+    create_portfolio_database(principal)
+    colleague_id = "f4b8d9bf-3295-4d80-93b1-846095d53c1f"
+
+    target = paths.plan_portfolio_restore(colleague_id, requested_name="João")
+
+    assert target.filename == "portfolio_joão.db"
+    assert target.replaces_existing is False
+    assert principal.exists()
+
+
+@pytest.mark.parametrize(
+    "name", ["", "  ", "../Outra", "João/Outra", "João: Outra", "recovery", "A" * 61]
+)
+def test_restore_target_rejects_invalid_new_portfolio_names(tmp_path, name):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    colleague_id = "f4b8d9bf-3295-4d80-93b1-846095d53c1f"
+
+    with pytest.raises(ValueError):
+        paths.plan_portfolio_restore(colleague_id, requested_name=name)
+
+
+@pytest.mark.parametrize(
+    "occupied_name",
+    (
+        "portfolio_joão.db",
+        "PORTFOLIO_JOÃO.DB",
+        "portfolio_joão.db-wal",
+        ".portfolio_joão.db.deleted",
+    ),
+)
+def test_restore_target_refuses_a_chosen_name_already_used_locally(tmp_path, occupied_name):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    (paths.database_dir / occupied_name).write_bytes(b"existing local data")
+    colleague_id = "f4b8d9bf-3295-4d80-93b1-846095d53c1f"
+
+    with pytest.raises(PortfolioRestoreConflictError):
+        paths.plan_portfolio_restore(colleague_id, requested_name="João")
+
+
+def test_restore_publication_refuses_a_chosen_name_taken_after_preview(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    colleague_id = "f4b8d9bf-3295-4d80-93b1-846095d53c1f"
+    target = paths.plan_portfolio_restore(colleague_id, requested_name="João")
+    occupied = paths.database_dir / "PORTFOLIO_JOÃO.DB"
+    occupied.write_bytes(b"existing local data")
+    snapshot = paths.backups_dir / ".restore-staging" / "restored.sqlite3"
+    snapshot.parent.mkdir()
+    create_restored_portfolio(snapshot, colleague_id, "COLL3")
+
+    with pytest.raises(PortfolioRestoreConflictError):
+        paths.publish_portfolio_restore(snapshot, target)
+
+    assert occupied.read_bytes() == b"existing local data"
+    assert not paths.portfolio_database(target.filename).exists()
+    assert snapshot.exists()
+
+
+def test_restore_publication_replaces_matching_identity_and_preserves_previous_portfolio(
+    tmp_path,
+):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = paths.portfolio_database("portfolio_family.db")
+    portfolio_id = create_portfolio_database(database)
+    current = sqlite3.connect(database)
+    current.execute("INSERT INTO tracked_market_assets VALUES ('OLD3')")
+    current.commit()
+    current.close()
+    Path(f"{database}.generation").write_text("old-generation", encoding="ascii")
+    snapshot = paths.backups_dir / ".restore-staging" / "restored.sqlite3"
+    snapshot.parent.mkdir()
+    create_restored_portfolio(snapshot, portfolio_id, "NEW4")
+    target = paths.plan_portfolio_restore(portfolio_id)
+
+    result = paths.publish_portfolio_restore(snapshot, target)
+
+    assert result.database == database
+    assert result.generation != "old-generation"
+    assert paths.database_generation(database) == result.generation
+    assert read_tracked_tickers(database) == ["NEW4"]
+    assert result.recovery_directory is not None
+    recovered = result.recovery_directory / database.name
+    assert read_tracked_tickers(recovered) == ["OLD3"]
+    assert (result.recovery_directory / f"{database.name}.generation").read_text(
+        encoding="ascii"
+    ) == "old-generation"
+
+
+def test_restore_publication_refuses_a_portfolio_changed_after_preview(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = paths.portfolio_database("portfolio_family.db")
+    portfolio_id = create_portfolio_database(database)
+    target = paths.plan_portfolio_restore(portfolio_id)
+    snapshot = paths.backups_dir / ".restore-staging" / "restored.sqlite3"
+    snapshot.parent.mkdir()
+    create_restored_portfolio(snapshot, portfolio_id, "REST3")
+    connection = sqlite3.connect(database)
+    connection.execute("INSERT INTO tracked_market_assets VALUES ('LATE4')")
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(PortfolioRestoreConflictError):
+        paths.publish_portfolio_restore(snapshot, target)
+
+    assert read_tracked_tickers(database) == ["LATE4"]
+    assert snapshot.exists()
+    assert not (paths.backups_dir / "pre-restore").exists()
+
+
+def test_restore_publication_refuses_a_new_duplicate_identity_after_preview(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    portfolio_id = "f4b8d9bf-3295-4d80-93b1-846095d53c1f"
+    target = paths.plan_portfolio_restore(portfolio_id)
+    duplicate = paths.portfolio_database("portfolio_other.db")
+    create_restored_portfolio(duplicate, portfolio_id, "OTHER3")
+    snapshot = paths.backups_dir / ".restore-staging" / "restored.sqlite3"
+    snapshot.parent.mkdir()
+    create_restored_portfolio(snapshot, portfolio_id, "REST3")
+
+    with pytest.raises(PortfolioRestoreConflictError):
+        paths.publish_portfolio_restore(snapshot, target)
+
+    assert not paths.portfolio_database(target.filename).exists()
+    assert read_tracked_tickers(duplicate) == ["OTHER3"]
+
+
+def test_restore_publication_adds_an_unknown_identity_without_replacing_a_portfolio(
+    tmp_path,
+):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    principal = paths.portfolio_database("portfolio.db")
+    principal_id = create_portfolio_database(principal)
+    restored_id = "f4b8d9bf-3295-4d80-93b1-846095d53c1f"
+    assert restored_id != principal_id
+    snapshot = paths.backups_dir / ".restore-staging" / "restored.sqlite3"
+    snapshot.parent.mkdir()
+    create_restored_portfolio(snapshot, restored_id, "REST3")
+    target = paths.plan_portfolio_restore(restored_id)
+
+    result = paths.publish_portfolio_restore(snapshot, target)
+
+    assert result.database.name == "portfolio_restored_f4b8d9bf.db"
+    assert result.recovery_directory is None
+    assert read_tracked_tickers(result.database) == ["REST3"]
+    assert principal.exists()
+    assert paths.database_generation(result.database) == result.generation
+
+
+def test_restore_publication_waits_for_open_portfolio_readers(tmp_path, monkeypatch):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = paths.portfolio_database("portfolio.db")
+    portfolio_id = create_portfolio_database(database)
+    target = paths.plan_portfolio_restore(portfolio_id)
+    snapshot = paths.backups_dir / ".restore-staging" / "restored.sqlite3"
+    snapshot.parent.mkdir()
+    create_restored_portfolio(snapshot, portfolio_id, "REST3")
+    connection = DatabaseManager(database).get_personal_connection()
+    monkeypatch.setattr("core.application_paths.FILE_LOCK_TIMEOUT_SECONDS", 0.05)
+
+    try:
+        with pytest.raises(PortfolioRestoreBusyError):
+            paths.publish_portfolio_restore(snapshot, target)
+    finally:
+        connection.close()
+
+    assert database.exists()
+    assert snapshot.exists()
+    assert not (paths.backups_dir / "pre-restore").exists()
+
+
+def test_restore_publication_rolls_back_when_generation_publication_fails(
+    tmp_path, monkeypatch
+):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = paths.portfolio_database("portfolio.db")
+    portfolio_id = create_portfolio_database(database)
+    connection = sqlite3.connect(database)
+    connection.execute("INSERT INTO tracked_market_assets VALUES ('OLD3')")
+    connection.commit()
+    connection.close()
+    Path(f"{database}.generation").write_text("old-generation", encoding="ascii")
+    target = paths.plan_portfolio_restore(portfolio_id)
+    snapshot = paths.backups_dir / ".restore-staging" / "restored.sqlite3"
+    snapshot.parent.mkdir()
+    create_restored_portfolio(snapshot, portfolio_id, "NEW4")
+
+    def fail_generation(_database):
+        raise OSError("simulated generation failure")
+
+    lock_held = False
+    real_lock = portfolio_database_lock
+    real_replace = os.replace
+    rollback_checked = False
+
+    @contextmanager
+    def observed_lock(locked_database):
+        nonlocal lock_held
+        with real_lock(locked_database):
+            lock_held = True
+            try:
+                yield
+            finally:
+                lock_held = False
+
+    def observed_replace(source, destination):
+        nonlocal rollback_checked
+        if Path(source).parent.parent == paths.backups_dir / "pre-restore":
+            rollback_checked = True
+            assert lock_held
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(
+        ApplicationPaths,
+        "_write_database_generation",
+        staticmethod(fail_generation),
+    )
+    monkeypatch.setattr(application_paths_module, "portfolio_database_lock", observed_lock)
+    monkeypatch.setattr(application_paths_module.os, "replace", observed_replace)
+
+    with pytest.raises(PortfolioRestorePublicationError):
+        paths.publish_portfolio_restore(snapshot, target)
+
+    assert read_tracked_tickers(database) == ["OLD3"]
+    assert rollback_checked
+    assert paths.database_generation(database) == "old-generation"
+    assert not portfolio_deletion_marker(database).exists()
+    assert tuple((paths.backups_dir / "pre-restore").glob("*")) == ()
+
+
+def test_restore_publication_keeps_recovery_copy_when_rollback_fails(
+    tmp_path, monkeypatch
+):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = paths.portfolio_database("portfolio.db")
+    portfolio_id = create_portfolio_database(database)
+    connection = sqlite3.connect(database)
+    connection.execute("INSERT INTO tracked_market_assets VALUES ('OLD3')")
+    connection.commit()
+    connection.close()
+    target = paths.plan_portfolio_restore(portfolio_id)
+    snapshot = paths.backups_dir / ".restore-staging" / "restored.sqlite3"
+    snapshot.parent.mkdir()
+    create_restored_portfolio(snapshot, portfolio_id, "NEW4")
+    real_replace = os.replace
+
+    def fail_generation(_database):
+        raise OSError("simulated generation failure")
+
+    def fail_database_rollback(source, destination):
+        source = Path(source)
+        destination = Path(destination)
+        if source.parent.parent == paths.backups_dir / "pre-restore" and destination == database:
+            raise OSError("simulated rollback failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(
+        ApplicationPaths,
+        "_write_database_generation",
+        staticmethod(fail_generation),
+    )
+    monkeypatch.setattr("core.application_paths.os.replace", fail_database_rollback)
+
+    with pytest.raises(PortfolioRestoreManualRecoveryError) as raised:
+        paths.publish_portfolio_restore(snapshot, target)
+
+    assert not database.exists()
+    assert portfolio_deletion_marker(database).exists()
+    assert read_tracked_tickers(raised.value.backup_dir / database.name) == ["OLD3"]
 
 
 def test_concurrent_deletions_cannot_remove_both_remaining_portfolios(tmp_path):

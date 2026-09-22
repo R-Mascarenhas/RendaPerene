@@ -65,6 +65,7 @@ A direção das dependências é `views` → `services` → contratos e adaptado
 - `GoalService`, em `services/goals_service.py`, controla as metas gerais da carteira, incluindo o reinvestimento opcional de dividendos e o progresso dos aportes anuais. Ele consome os valores planejados de `SimulationService` por meio de `PlanningProviderPort`, sem duplicar os cálculos de aposentadoria.
 - `ShareQuantityGoalService`, em `services/share_quantity_goal_service.py`, controla a meta anual de quantidade de cotas por ticker. A base é a quantidade mantida em 1º de janeiro do ano corrente; o progresso mede as aquisições desde essa data, inclusive as que ainda têm custo pendente, excluindo entradas de custódia e ações corporativas. O serviço distribui os proventos planejados entre pesos iguais ou personalizados, considera peso zero como inatividade, calcula a meta de cotas a partir do histórico de proventos e informa o crescimento planejado da posição, permitindo progresso acima de 100%.
 - `LocalBackupService`, em `services/local_backup_service.py`, cria um conjunto de backup local para as carteiras selecionadas, valida cada cópia, calcula os hashes, gera os metadados e publica o conjunto de forma atômica. Sua interface não depende de provedor de nuvem.
+- `LocalRestoreService`, em `services/local_restore_service.py`, autentica e inspeciona pacotes locais, valida manifesto, hashes, SQLite, identidade e compatibilidade, e orquestra a publicação de uma carteira por vez sem expor credenciais à apresentação.
 - `MarketAnalysisService` é o módulo profundo de análise de mercado. Sua interface pública retorna a análise final do ticker; internamente, ele combina o snapshot remoto independente da carteira com as correções anuais da carteira ativa e somente então aplica as regras de `ValuationService`.
 - `ValuationService` contém as regras puras do dividend yield alvo e do preço-teto de Bazin; não possui dependências do Streamlit, do banco de dados ou dos dados de mercado.
 
@@ -88,8 +89,10 @@ e seus recursos podem ser substituídos sem mover as carteiras. O caminho resolv
 integra a chave do cache de leitura, evitando reutilizar uma entrada caso a configuração do caminho
 mude durante a execução.
 
-O backup manual é publicado em `backups/local-backups/<backup_id>.rpb`, sem incorporar nomes de
-carteiras no caminho. A interface apresenta todas as carteiras válidas marcadas por padrão e permite
+O backup manual é publicado em
+`backups/local-backups/<data>_<hora>_<microssegundos>_UTC_rendaperene_<backup_id>.rpb`, sem incorporar
+nomes de carteiras no caminho. O identificador mantém a unicidade; a restauração também aceita os
+nomes UUID anteriores. A interface apresenta todas as carteiras válidas marcadas por padrão e permite
 selecionar um subconjunto. A raiz de composição injeta `SQLitePortfolioBackupSourceFactory` em
 `LocalBackupService`. A seleção fixa o nome exibido, o arquivo e sua geração; o adaptador prepara o
 schema existente e fornece uma conexão dedicada pelo `DatabaseManager`.
@@ -117,10 +120,48 @@ identificadores duplicados impedem a publicação do conjunto completo.
 Cada carteira mantém seu UUID estável na tabela `portfolio_metadata`, portanto a identidade
 acompanha uma futura restauração e não depende do nome do arquivo. A instalação mantém outro UUID
 em `.installation-id`, na raiz de dados graváveis, criado atomicamente na primeira solicitação de
-backup. Os novos backups são publicados como pacotes RPB v1 criptografados, sem retenção automática,
-não são restaurados pela interface e não são enviados a provedores externos. O RPB usa AES-256-GCM,
+backup. Os novos backups são publicados como pacotes RPB v1 criptografados, sem retenção automática
+e sem envio a provedores externos. O RPB usa AES-256-GCM,
 autentica o cabeçalho e o conteúdo e deriva a chave da senha com Argon2id. A chave de recuperação
-`.key` fica fora do pacote e nunca é persistida pela aplicação.
+`.key` fica fora do pacote e nunca é persistida pela aplicação. O download usa o mesmo nome-base do
+`.rpb`, mas a associação segura depende do `backup_id` autenticado, não do nome dos arquivos.
+
+`LocalRestoreService` recebe o conteúdo criptografado e uma senha ou chave apenas em memória. Cada
+execução lista os `.rpb` regulares em `backups/local-backups/` por modificação local decrescente;
+o conteúdo selecionado é lido pelo serviço, sem aceitar caminhos externos ou links simbólicos.
+Pacotes enviados pelo navegador continuam disponíveis para restauração entre instalações. Cada
+inspeção materializa o `.rpb` em um diretório privado temporário, autentica o envelope, confere seu
+`backup_id` contra o manifesto e valida contagem, caminhos, metadados, SHA-256,
+`PRAGMA integrity_check`, identidade e schema de cada carteira. O temporário descriptografado é
+sempre removido. A prévia retorna somente metadados autenticados e um destino fixado pela identidade:
+uma carteira já conhecida mantém seu arquivo local; uma identidade nova requer um nome local escolhido
+pelo usuário e validado por `ApplicationPaths`. A validação recusa nomes vazios, inválidos ou ocupados,
+inclusive por arquivos inválidos, auxiliares e marcadores de exclusão. A disponibilidade é conferida
+novamente antes da publicação sob os locks existentes, sem substituir outra carteira. Chamadores
+sem nome explícito ainda podem usar o destino legado `portfolio_restored_<id>.db`. Pacotes com várias
+carteiras são restaurados individualmente.
+Na prévia, a interface converte a data UTC autenticada para a hora local e apresenta o nome da
+carteira de destino usado na navegação, sem exibir identificadores de instalação, schema ou nomes de
+arquivos de carteiras ao usuário. A carteira selecionada já aparece no seletor e não é repetida no
+resumo do destino; para uma identidade nova, o nome escolhido integra a confirmação.
+
+Schemas superiores a `CURRENT_SCHEMA_VERSION` são recusados; versões anteriores suportadas são
+migradas em uma cópia temporária e verificadas novamente antes da publicação. A confirmação inclui
+o hash do pacote, a identidade, a geração e uma assinatura física do banco, WAL, SHM e marcadores.
+Assim, uma alteração posterior à prévia cancela a operação. A interface compara ainda a data UTC
+autenticada do backup com a modificação mais recente do banco ou WAL e mostra um alerta informativo
+quando o backup parece mais antigo. Datas nunca autorizam nem bloqueiam a restauração, porque os
+relógios de dispositivos podem divergir.
+
+A publicação final fica em `ApplicationPaths`: o lock de gerenciamento serializa mudanças de
+inventário e o lock exclusivo da carteira aguarda todas as conexões leitoras. Em uma substituição,
+o banco, WAL, SHM e geração anteriores são movidos para uma pasta UUID em
+`backups/pre-restore/`; o SQLite preparado é publicado com `os.replace`, recebe uma nova geração e
+invalida os caches locais de validação. Falhas restauram os arquivos anteriores. Se o próprio
+rollback falhar, a cópia recuperável permanece, um tombstone impede a recriação silenciosa do banco
+e a interface informa o caminho para recuperação manual. A sessão executora ativa a carteira
+restaurada e limpa seu estado derivado; outras sessões detectam a nova geração antes do próximo
+acesso.
 
 O catálogo é o `assets.csv` incluído no pacote e nunca faz parte do armazenamento gravável. A
 aplicação lê esse recurso diretamente, sem copiar, migrar ou mesclar catálogos de versões
@@ -272,7 +313,7 @@ O código, seus identificadores, o SQL e os comentários técnicos estão em ing
 - **Ativos** coordena três subtelas: detalhes da carteira, monitoramento de mercado e valuation de Bazin (incluindo a consulta Raio-X de todo o catálogo) e operações manuais/importadas da B3. Na tela Mercado, `MarketView` apenas controla a navegação secundária; `MarketMonitoringView` e `AssetDeepDiveView` renderizam uma aba cada.
 - **Planejamento** possui as abas internas `Aposentadoria` e `Metas`. `PlanningView` controla os parâmetros e projeções da aposentadoria; `GoalsView` controla a seleção de metas. O usuário pode ativar independentemente o reinvestimento de dividendos e as metas de quantidade por ação. A tabela de metas aparece apenas quando habilitada, e peso 0% desativa o ativo sem um controle separado por linha.
 - **Metas no Dashboard** consolida o progresso das metas por ação em uma barra ponderada pelos pesos, com detalhes por ticker ao passar o cursor e em uma seção expansível. A barra usa azul até 100% e uma camada verde para o excedente.
-- **Backup local**, na barra lateral, permite selecionar uma ou mais carteiras, com todas marcadas por padrão, solicitar senha e baixar opcionalmente uma chave de recuperação separada.
+- **Backup local**, na barra lateral, permite selecionar uma ou mais carteiras, com todas marcadas por padrão, solicitar senha e baixar opcionalmente uma chave de recuperação separada. A mesma seção lista os pacotes locais mais recentes primeiro, permite enviar um `.rpb` externo, valida por senha ou `.key`, apresenta seus metadados, permite escolher uma carteira e exige confirmação explícita antes da restauração.
 - **`ChartThemeAdapter`** aplica aos gráficos do dashboard e do planejamento a paleta escura compartilhada do Plotly, tipografia, grade, legenda, margens, marcações monetárias e comportamento unificado ao passar o cursor. Cada componente de gráfico continua responsável por seus próprios dados e eixos específicos.
 
 ## Validação

@@ -50,6 +50,20 @@ def test_package_round_trips_snapshot_with_password_without_exposing_sqlite(tmp_
     ).read_bytes() == (b"SQLite format 3\x00private portfolio data")
 
 
+def test_opened_package_reports_the_authenticated_backup_identity(tmp_path):
+    source = tmp_path / "snapshot"
+    _write_snapshot(source)
+    package_file = tmp_path / "backup.rpb"
+    destination = tmp_path / "opened"
+    backup_id = "f4b8d9bf-3295-4d80-93b1-846095d53c1f"
+    packages = EncryptedBackupPackageService()
+    packages.create(source, package_file, "senha", backup_id=backup_id)
+
+    opened = packages.extract_with_password(package_file, destination, "senha")
+
+    assert opened.backup_id == backup_id
+
+
 def test_package_round_trips_snapshot_with_separate_recovery_key_file(tmp_path):
     source = tmp_path / "snapshot"
     _write_snapshot(source)
@@ -64,7 +78,7 @@ def test_package_round_trips_snapshot_with_separate_recovery_key_file(tmp_path):
         result.recovery_key_file_content,
     )
 
-    assert result.recovery_key_file_name.endswith(".key")
+    assert result.recovery_key_file_name == package_file.with_suffix(".key").name
     assert b"senha" not in result.recovery_key_file_content
     assert (destination / "manifest.json").exists()
 

@@ -59,6 +59,13 @@ class EncryptedBackupPackageResult:
     recovery_key_file_content: bytes
 
 
+@dataclass(frozen=True)
+class OpenedBackupPackage:
+    """Authenticated identity of a completely extracted backup package."""
+
+    backup_id: str
+
+
 class _EncryptingWriter(io.RawIOBase):
     def __init__(self, destination, encryptor):
         self._destination = destination
@@ -165,11 +172,13 @@ class EncryptedBackupPackageService:
 
         return EncryptedBackupPackageResult(
             package_file=package_file,
-            recovery_key_file_name=f"rendaperene-backup-{backup_id}.key",
+            recovery_key_file_name=package_file.with_suffix(".key").name,
             recovery_key_file_content=self._serialize_recovery_key(backup_id, recovery_key),
         )
 
-    def extract_with_password(self, package_file: Path, destination: Path, password: str) -> None:
+    def extract_with_password(
+        self, package_file: Path, destination: Path, password: str
+    ) -> OpenedBackupPackage:
         """Open one package using its password without publishing partial contents."""
         password_bytes = self._validated_password(password)
         header, payload_offset, encrypted_size, tag = self._read_header(package_file)
@@ -180,13 +189,14 @@ class EncryptedBackupPackageService:
         self._extract(
             package_file, destination, header, payload_offset, encrypted_size, tag, data_key
         )
+        return OpenedBackupPackage(backup_id=header["backup_id"])
 
     def extract_with_recovery_key_file(
         self,
         package_file: Path,
         destination: Path,
         recovery_key_file_content: bytes,
-    ) -> None:
+    ) -> OpenedBackupPackage:
         """Open one package using a separately stored recovery key file."""
         backup_id, recovery_key = self._parse_recovery_key(recovery_key_file_content)
         header, payload_offset, encrypted_size, tag = self._read_header(package_file)
@@ -206,6 +216,7 @@ class EncryptedBackupPackageService:
             tag,
             data_key,
         )
+        return OpenedBackupPackage(backup_id=header["backup_id"])
 
     @staticmethod
     def _validated_password(password: str) -> bytes:

@@ -11,6 +11,7 @@ import time
 import uuid
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 
@@ -232,6 +233,52 @@ class PortfolioDeletionResult:
     message: str
 
 
+class PortfolioRestoreError(RuntimeError):
+    """Base error for lifecycle-safe portfolio restoration."""
+
+
+class PortfolioRestoreConflictError(PortfolioRestoreError):
+    """The local restore destination is ambiguous or changed after preview."""
+
+
+class PortfolioRestoreBusyError(PortfolioRestoreError):
+    """The local restore destination still has active readers."""
+
+
+class PortfolioRestorePublicationError(PortfolioRestoreError):
+    """The restored portfolio could not be published safely."""
+
+
+class PortfolioRestoreManualRecoveryError(PortfolioRestorePublicationError):
+    """Publication and automatic rollback failed; manual recovery is required."""
+
+    def __init__(self, backup_dir: Path):
+        super().__init__("Portfolio restoration requires manual recovery.")
+        self.backup_dir = backup_dir
+
+
+@dataclass(frozen=True)
+class PortfolioRestoreTarget:
+    """Pinned local destination shown before a portfolio restore is confirmed."""
+
+    portfolio_id: str
+    filename: str
+    expected_generation: str | None
+    replaces_existing: bool
+    last_modified_at_utc: str | None
+    state_token: str
+    requested_name: str | None = None
+
+
+@dataclass(frozen=True)
+class PortfolioRestorePublicationResult:
+    """Observable result of one safely published restored portfolio."""
+
+    database: Path
+    generation: str
+    recovery_directory: Path | None
+
+
 @dataclass(frozen=True)
 class ApplicationPaths:
     """Resolves application resources and owns writable-data preparation and migration."""
@@ -312,6 +359,309 @@ class ApplicationPaths:
         if Path(filename).name != filename or not filename.endswith(".db"):
             raise ValueError("Portfolio databases must use a safe '.db' filename.")
         return self.database_dir / filename
+
+    def plan_portfolio_restore(
+        self, portfolio_id: str, requested_name: str | None = None
+    ) -> PortfolioRestoreTarget:
+        """Resolve one stable portfolio identity to a pinned local destination."""
+        portfolio_id = self._canonical_portfolio_id(portfolio_id)
+        matches = []
+        for database in self.inspect_portfolios().valid:
+            if self._read_portfolio_id(database) == portfolio_id:
+                matches.append(database)
+        if len(matches) > 1:
+            raise PortfolioRestoreConflictError(
+                "More than one local portfolio has the requested identity."
+            )
+        if matches:
+            if requested_name is not None:
+                raise PortfolioRestoreConflictError(
+                    "An existing portfolio identity cannot be renamed during restoration."
+                )
+            database = matches[0]
+            return PortfolioRestoreTarget(
+                portfolio_id=portfolio_id,
+                filename=database.name,
+                expected_generation=self.database_generation(database),
+                replaces_existing=True,
+                last_modified_at_utc=self._portfolio_last_modified_at_utc(database),
+                state_token=self._portfolio_state_token(database),
+            )
+
+        if requested_name is not None:
+            if not isinstance(requested_name, str):
+                raise ValueError("The new portfolio name is invalid.")
+            requested_name = requested_name.strip()
+            if (
+                not requested_name
+                or len(requested_name) > 60
+                or requested_name.casefold().startswith("recovery")
+                or not any(char.isalnum() for char in requested_name)
+                or not all(char.isalnum() or char in " _-" for char in requested_name)
+            ):
+                raise ValueError("The new portfolio name is invalid.")
+        filename = (
+            f"portfolio_{requested_name.lower()}.db"
+            if requested_name is not None
+            else f"portfolio_restored_{portfolio_id[:8]}.db"
+        )
+        database = self.portfolio_database(filename)
+        if requested_name is not None and self._restore_destination_is_occupied(database):
+            raise PortfolioRestoreConflictError("The requested portfolio name is already in use.")
+        suffix = 2
+        while requested_name is None:
+            family = (
+                database,
+                Path(f"{database}-wal"),
+                Path(f"{database}-shm"),
+                Path(f"{database}.generation"),
+                portfolio_deletion_marker(database),
+            )
+            if not any(path.exists() for path in family):
+                break
+            filename = f"portfolio_restored_{portfolio_id[:8]}_{suffix}.db"
+            database = self.portfolio_database(filename)
+            suffix += 1
+        return PortfolioRestoreTarget(
+            portfolio_id=portfolio_id,
+            filename=filename,
+            expected_generation=None,
+            replaces_existing=False,
+            last_modified_at_utc=None,
+            state_token=self._portfolio_state_token(database),
+            requested_name=requested_name,
+        )
+
+    @classmethod
+    def _restore_destination_is_occupied(cls, database: Path) -> bool:
+        reserved = {
+            path.name.casefold()
+            for path in (*cls._portfolio_family(database), portfolio_deletion_marker(database))
+        }
+        try:
+            return any(path.name.casefold() in reserved for path in database.parent.iterdir())
+        except FileNotFoundError:
+            return False
+        except OSError as error:
+            raise PortfolioRestoreConflictError(
+                "The requested portfolio destination cannot be inspected."
+            ) from error
+
+    def publish_portfolio_restore(
+        self,
+        snapshot: Path,
+        target: PortfolioRestoreTarget,
+    ) -> PortfolioRestorePublicationResult:
+        """Publish one validated snapshot while preserving or restoring local state."""
+        snapshot = Path(snapshot)
+        portfolio_id = self._canonical_portfolio_id(target.portfolio_id)
+        if not self.is_valid_sqlite(snapshot) or self._read_portfolio_id(snapshot) != portfolio_id:
+            raise PortfolioRestorePublicationError(
+                "The restored snapshot is invalid or has a different identity."
+            )
+        database = self.portfolio_database(target.filename)
+        management_lock = self.database_dir / ".portfolio-management.lock"
+        recovery_directory = None
+        moved_files: list[tuple[Path, Path]] = []
+        marker = portfolio_deletion_marker(database)
+        marker_existed = marker.exists()
+        published = False
+        rollback_failed = False
+        try:
+            with _exclusive_file_lock(management_lock), portfolio_database_lock(database):
+                self._assert_restore_target_unchanged(database, target)
+                try:
+                    if target.replaces_existing:
+                        recovery_root = self.backups_dir / "pre-restore"
+                        recovery_root.mkdir(parents=True, exist_ok=True)
+                        recovery_directory = recovery_root / uuid.uuid4().hex
+                        recovery_directory.mkdir(parents=False, exist_ok=False)
+                        if os.name == "posix":
+                            recovery_root.chmod(0o700)
+                            recovery_directory.chmod(0o700)
+
+                    self._write_portfolio_deletion_marker(database)
+                    if target.replaces_existing:
+                        for source in self._portfolio_family(database):
+                            if not source.exists():
+                                continue
+                            destination = recovery_directory / source.name
+                            os.replace(source, destination)
+                            moved_files.append((source, destination))
+
+                    os.replace(snapshot, database)
+                    published = True
+                    if os.name == "posix":
+                        database.chmod(0o600)
+                    self._write_database_generation(database)
+                    generation = self.database_generation(database)
+                    if not generation:
+                        raise OSError("The restored portfolio generation was not published.")
+                    marker.unlink(missing_ok=True)
+                    self._clear_sqlite_caches()
+                    return PortfolioRestorePublicationResult(
+                        database=database,
+                        generation=generation,
+                        recovery_directory=recovery_directory,
+                    )
+                except (OSError, sqlite3.DatabaseError, ValueError) as error:
+                    if published:
+                        try:
+                            self._remove_sqlite_sidecars(database)
+                            database.unlink(missing_ok=True)
+                            Path(f"{database}.generation").unlink(missing_ok=True)
+                        except OSError:
+                            rollback_failed = True
+                    for source, destination in reversed(moved_files):
+                        try:
+                            os.replace(destination, source)
+                        except OSError:
+                            rollback_failed = True
+                    if not marker_existed and not rollback_failed:
+                        marker.unlink(missing_ok=True)
+                    self._clear_sqlite_caches()
+                    if rollback_failed and recovery_directory is not None:
+                        raise PortfolioRestoreManualRecoveryError(recovery_directory) from error
+                    if recovery_directory is not None:
+                        with suppress(OSError):
+                            recovery_directory.rmdir()
+                    raise PortfolioRestorePublicationError(
+                        "The restored portfolio could not be published."
+                    ) from error
+        except PortfolioRestoreConflictError:
+            raise
+        except TimeoutError as error:
+            raise PortfolioRestoreBusyError(
+                "The portfolio is in use by another session."
+            ) from error
+        except (OSError, sqlite3.DatabaseError, ValueError) as error:
+            raise PortfolioRestorePublicationError(
+                "The restored portfolio could not be published."
+            ) from error
+
+    def _assert_restore_target_unchanged(
+        self,
+        database: Path,
+        target: PortfolioRestoreTarget,
+    ) -> None:
+        if self.database_generation(database) != target.expected_generation:
+            raise PortfolioRestoreConflictError(
+                "The local portfolio generation changed after preview."
+            )
+        if self._portfolio_state_token(database) != target.state_token:
+            raise PortfolioRestoreConflictError("The local portfolio files changed after preview.")
+        if target.requested_name is not None and self._restore_destination_is_occupied(database):
+            raise PortfolioRestoreConflictError(
+                "The requested portfolio name became occupied after preview."
+            )
+        identity_matches = {
+            candidate.resolve()
+            for candidate in self.inspect_portfolios().valid
+            if self._read_portfolio_id(candidate) == target.portfolio_id
+        }
+        expected_matches = {database.resolve()} if target.replaces_existing else set()
+        if identity_matches != expected_matches:
+            raise PortfolioRestoreConflictError(
+                "The local portfolio identity mapping changed after preview."
+            )
+        if target.replaces_existing:
+            if not self.is_valid_sqlite(database):
+                raise PortfolioRestoreConflictError(
+                    "The local portfolio is no longer a valid SQLite database."
+                )
+            if self._read_portfolio_id(database) != target.portfolio_id:
+                raise PortfolioRestoreConflictError(
+                    "The local portfolio identity changed after preview."
+                )
+        elif database.exists() or portfolio_deletion_marker(database).exists():
+            raise PortfolioRestoreConflictError(
+                "The planned restore destination is no longer available."
+            )
+
+    @staticmethod
+    def _portfolio_family(database: Path) -> tuple[Path, ...]:
+        return (
+            database,
+            Path(f"{database}-wal"),
+            Path(f"{database}-shm"),
+            Path(f"{database}.generation"),
+        )
+
+    @staticmethod
+    def _clear_sqlite_caches() -> None:
+        ApplicationPaths._is_valid_sqlite_snapshot.cache_clear()
+        ApplicationPaths._sqlite_content_digest_snapshot.cache_clear()
+
+    @staticmethod
+    def _canonical_portfolio_id(portfolio_id: str) -> str:
+        try:
+            parsed = uuid.UUID(portfolio_id)
+        except (AttributeError, TypeError, ValueError) as error:
+            raise PortfolioRestoreConflictError("The portfolio identity is invalid.") from error
+        if str(parsed) != portfolio_id:
+            raise PortfolioRestoreConflictError("The portfolio identity is invalid.")
+        return portfolio_id
+
+    @staticmethod
+    def _read_portfolio_id(database: Path) -> str | None:
+        try:
+            connection = sqlite3.connect(
+                f"{database.resolve().as_uri()}?mode=ro&immutable=1", uri=True
+            )
+            try:
+                row = connection.execute(
+                    "SELECT portfolio_id FROM portfolio_metadata WHERE id = 1"
+                ).fetchone()
+            finally:
+                connection.close()
+        except (OSError, sqlite3.DatabaseError):
+            return None
+        if row is None:
+            return None
+        try:
+            return ApplicationPaths._canonical_portfolio_id(row[0])
+        except PortfolioRestoreConflictError:
+            return None
+
+    @staticmethod
+    def _portfolio_last_modified_at_utc(database: Path) -> str | None:
+        timestamps = []
+        for path in (database, Path(f"{database}-wal")):
+            try:
+                timestamps.append(path.stat().st_mtime)
+            except FileNotFoundError:
+                continue
+        if not timestamps:
+            return None
+        return (
+            datetime.fromtimestamp(max(timestamps), timezone.utc).isoformat().replace("+00:00", "Z")
+        )
+
+    @staticmethod
+    def _portfolio_state_token(database: Path) -> str:
+        state = []
+        for path in (
+            database,
+            Path(f"{database}-wal"),
+            Path(f"{database}-shm"),
+            Path(f"{database}.generation"),
+            portfolio_deletion_marker(database),
+        ):
+            try:
+                metadata = path.stat()
+                state.append(
+                    (
+                        path.name,
+                        metadata.st_dev,
+                        metadata.st_ino,
+                        metadata.st_size,
+                        metadata.st_mtime_ns,
+                        metadata.st_ctime_ns,
+                    )
+                )
+            except FileNotFoundError:
+                state.append((path.name, None))
+        return hashlib.sha256(repr(state).encode("utf-8")).hexdigest()
 
     @staticmethod
     def _write_database_generation(database: Path) -> None:

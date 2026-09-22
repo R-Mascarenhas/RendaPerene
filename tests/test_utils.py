@@ -243,6 +243,7 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
         WIDGET_INTEREST_RATE,
         WIDGET_PLANNING_START_DATE,
         WIDGET_PLANNING_START_DATE_ENABLED,
+        WIDGET_PORTFOLIO_RESTORE_NEW_NAME_PREFIX,
         WIDGET_RETIREMENT_AGE,
     )
 
@@ -258,6 +259,7 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
         "initial_equity_widget_250000.0",
         "mw_value_input_1518.0",
         "processed_files",
+        f"{WIDGET_PORTFOLIO_RESTORE_NEW_NAME_PREFIX}package:portfolio",
         SESSION_BIRTH_DATE,
         SESSION_RETIREMENT_AGE,
         SESSION_DESIRED_INCOME_MW,

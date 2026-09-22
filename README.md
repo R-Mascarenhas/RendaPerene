@@ -54,13 +54,42 @@ marcadas por padrão. O backup é publicado como um único pacote `.rpb` somente
 snapshots consistentes, hashes e metadados internos serem criados e cifrados. Cada carteira representa
 um estado SQLite consistente, mas carteiras diferentes do mesmo pacote podem corresponder a instantes
 ligeiramente distintos. Falhas, carteiras inválidas ou bloqueadas não publicam pacote parcial.
+O nome do arquivo começa com a data e hora UTC da criação, por exemplo
+`2026-09-22_14-30-45_123456_UTC_rendaperene_<identificador>.rpb`. O identificador final evita
+sobrescrever outro backup, e os pacotes antigos com nome apenas UUID continuam restauráveis.
 
 Os backups são pacotes `.rpb` criptografados por senha. A senha deve ter ao menos quatro
 caracteres; senhas longas são recomendadas. Após a criação, a aplicação também oferece uma chave de
 recuperação `.key`, que deve ser guardada separadamente do pacote e de futuros uploads. Perder a
 senha e a chave impede recuperar aquele backup, mas não afeta a carteira SQLite ativa, que continua
-sem criptografia nesta versão. A restauração pela interface ainda não está disponível; não substitua
-manualmente uma carteira enquanto a aplicação estiver aberta.
+sem criptografia nesta versão.
+Ao baixar a chave, ela recebe o mesmo nome-base do pacote `.rpb`, com extensão `.key`, para facilitar
+a identificação do par. A correspondência é verificada pelo identificador interno, não pelo nome.
+
+Na mesma seção, **Restaurar backup** lista os pacotes `.rpb` salvos nesta instalação, com os mais
+recentes primeiro. Também é possível enviar um pacote de outra instalação. O seletor de arquivos do
+navegador não permite abrir automaticamente na pasta de backups; para pacotes locais, escolha um item
+da lista. A restauração exige a senha ou chave `.key`. Depois de autenticar o pacote, a aplicação
+mostra a data e hora do backup no fuso local, a carteira do pacote e qual carteira local será
+substituída ou adicionada, sem expor dados financeiros. Pacotes com várias carteiras são restaurados
+uma carteira por vez. Quando a identidade já existe nesta instalação, a carteira correspondente é
+substituída. Para uma identidade nova, o usuário escolhe um nome local de até 60 caracteres, usando
+letras, números, espaços, hífen ou sublinhado; nomes já ocupados são recusados e nenhuma outra
+carteira é sobrescrita. O nome escolhido aparece na lista de carteiras, sem alterar o pacote
+original. A restauração recusa hash, SQLite, identidade, metadados ou schema incompatíveis antes de
+alterar `database/`.
+
+Quando a data autenticada do backup é anterior à modificação mais recente do SQLite ou WAL local, a
+interface avisa que mudanças mais novas podem ser perdidas. Esse aviso não decide qual versão é a
+correta, pois relógios de dispositivos diferentes podem divergir. Se a carteira mudar depois da
+prévia, a confirmação perde a validade. Antes de uma substituição bem-sucedida, o banco, seus
+auxiliares e sua geração anteriores ficam preservados em **backups/pre-restore/**.
+
+Para recuperação manual, feche todas as janelas da aplicação, localize a pasta correspondente em
+**backups/pre-restore/**, mova a versão atual para outro local e copie de volta o banco, o WAL/SHM e
+o arquivo `.generation` preservados. Se existir o marcador oculto
+**.nome-da-carteira.db.deleted**, remova-o somente depois de confirmar que a cópia recuperada é um
+SQLite válido. A restauração não mescla registros nem escolhe automaticamente entre versões.
 
 Bancos inválidos são ignorados na seleção. Se a carteira ativa for removida ou deixar de ser um
 SQLite válido, a aplicação seleciona outra carteira disponível e recarrega suas configurações sem

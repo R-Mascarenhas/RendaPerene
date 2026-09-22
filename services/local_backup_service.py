@@ -247,10 +247,13 @@ class LocalBackupService:
             raise
         logger.info("encrypted_backup.started portfolios=%s", len(pinned_selections))
         backup_id = str(uuid.uuid4())
-        created_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        created_at = datetime.now(timezone.utc)
+        created_at_utc = created_at.isoformat().replace("+00:00", "Z")
         backups_dir = self._paths.local_backups_dir
         temporary_dir = backups_dir / f".{backup_id}.tmp"
-        package_file = backups_dir / f"{backup_id}.rpb"
+        package_file = backups_dir / (
+            f"{created_at:%Y-%m-%d_%H-%M-%S_%f}_UTC_rendaperene_{backup_id}.rpb"
+        )
         try:
             sources = [
                 self._source_factory.create(s.filename, s.expected_generation)

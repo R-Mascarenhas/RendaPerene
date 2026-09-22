@@ -14,6 +14,7 @@ import pytest
 
 from core.application_paths import ApplicationPaths, portfolio_database_lock
 from core.database import CURRENT_SCHEMA_VERSION, DatabaseManager
+import core.encrypted_backup_package as encrypted_backup_package
 from core.encrypted_backup_package import EncryptedBackupPackageService
 from core.ports import PortfolioSnapshotIdentity
 from core.sqlite_backup import SQLitePortfolioBackupReader, SQLitePortfolioBackupSourceFactory
@@ -63,6 +64,32 @@ def test_backup_logging_excludes_portfolio_names(tmp_path, caplog):
     ]
     assert "backup.started portfolios=1" in info_messages
     assert "backup.completed portfolios=1" in info_messages
+    assert all("portfolio_familia.db" not in record.getMessage() for record in caplog.records)
+
+
+def test_encrypted_backup_logs_lifecycle_without_credentials_or_portfolio_names(
+    tmp_path, caplog, monkeypatch
+):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = create_portfolio(paths, "portfolio_familia.db", "FAMILY4")
+    password = "segredo de teste"
+    monkeypatch.setattr(encrypted_backup_package, "ARGON2_MEMORY_COST_KIB", 8)
+    monkeypatch.setattr(encrypted_backup_package, "ARGON2_ITERATIONS", 1)
+    monkeypatch.setattr(encrypted_backup_package, "ARGON2_LANES", 1)
+
+    with caplog.at_level(logging.DEBUG, logger="services.local_backup_service"):
+        result = build_backup_service(paths).create_encrypted_backup(
+            [select_portfolio(paths, database.name)], password
+        )
+
+    assert result.portfolio_count == 1
+    info_messages = [
+        record.getMessage() for record in caplog.records if record.levelno == logging.INFO
+    ]
+    assert "encrypted_backup.started portfolios=1" in info_messages
+    assert "encrypted_backup.completed portfolios=1" in info_messages
+    assert all(password not in record.getMessage() for record in caplog.records)
     assert all("portfolio_familia.db" not in record.getMessage() for record in caplog.records)
 
 

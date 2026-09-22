@@ -237,7 +237,15 @@ class LocalBackupService:
     ) -> EncryptedBackupResult:
         """Create snapshots only in staging, then publish one encrypted package."""
         pinned_selections = tuple(selections)
-        self._validate_selections(pinned_selections)
+        try:
+            self._validate_selections(pinned_selections)
+        except BackupCreationError as error:
+            logger.warning(
+                "encrypted_backup.failed reason=validation error_type=%s",
+                type(error).__name__,
+            )
+            raise
+        logger.info("encrypted_backup.started portfolios=%s", len(pinned_selections))
         backup_id = str(uuid.uuid4())
         created_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         backups_dir = self._paths.local_backups_dir
@@ -290,18 +298,28 @@ class LocalBackupService:
                 encrypted = EncryptedBackupPackageService().create(
                     temporary_dir, package_file, password, backup_id=backup_id
                 )
-            return EncryptedBackupResult(
+            result = EncryptedBackupResult(
                 encrypted.package_file,
                 manifest,
                 len(entries),
                 encrypted.recovery_key_file_name,
                 encrypted.recovery_key_file_content,
             )
+            logger.info("encrypted_backup.completed portfolios=%s", result.portfolio_count)
+            return result
         except (PortfolioBackupSourceError, TimeoutError) as error:
+            logger.warning(
+                "encrypted_backup.failed reason=snapshot error_type=%s",
+                type(error).__name__,
+            )
             raise BackupCreationError(
                 "Não foi possível criar um snapshot SQLite consistente das carteiras selecionadas."
             ) from error
         except (BackupPackageError, OSError, UnicodeError, ValueError) as error:
+            logger.warning(
+                "encrypted_backup.failed reason=package error_type=%s",
+                type(error).__name__,
+            )
             raise BackupCreationError(
                 "Não foi possível criar o pacote de backup criptografado."
             ) from error

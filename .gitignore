@@ -11,6 +11,8 @@ __pycache__/
 # Databases (Sensitive / Local)
 *.db
 *.db.*
+*.key
+*.rpb
 
 # Spreadsheets (Sensitive)
 *.ods

@@ -15,6 +15,7 @@ dependencies = [
     "openpyxl>=3.1.2",
     "plotly>=5.19.0",
     "platformdirs>=4.0.0",
+    "cryptography>=44.0.0",
 ]
 
 [project.optional-dependencies]

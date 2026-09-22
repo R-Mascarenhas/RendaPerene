@@ -50,27 +50,17 @@ incluído na aplicação, não um dado da carteira. A aplicação não utiliza b
 contas de usuário ou telemetria, nem realiza scraping do portal da B3.
 
 A seção **Backup local** da barra lateral permite selecionar uma ou mais carteiras; todas aparecem
-marcadas por padrão. O conjunto é publicado em `backups/local-backups/<identificador>/` somente se
-todas as carteiras selecionadas forem copiadas e validadas. `manifest.json` descreve o conjunto e
-cada subdiretório `carteiras/<identificador-da-carteira>/` contém `backup.sqlite3` e
-`metadata.json`. Os metadados registram identificadores aleatórios da carteira, da instalação e do
-backup, o nome da carteira exibido na interface, data UTC, versões da aplicação e do schema, SHA-256
-e o estado da criptografia. O nome também aparece na entrada correspondente do manifesto para que o
-usuário identifique o conteúdo; os diretórios continuam usando apenas identificadores aleatórios. O
-hash permite detectar alterações acidentais, mas não autentica o arquivo contra adulteração.
+marcadas por padrão. O backup é publicado como um único pacote `.rpb` somente depois de todos os
+snapshots consistentes, hashes e metadados internos serem criados e cifrados. Cada carteira representa
+um estado SQLite consistente, mas carteiras diferentes do mesmo pacote podem corresponder a instantes
+ligeiramente distintos. Falhas, carteiras inválidas ou bloqueadas não publicam pacote parcial.
 
-Cada carteira representa um estado SQLite consistente, mas carteiras diferentes do mesmo conjunto
-podem corresponder a instantes ligeiramente diferentes. Se uma carteira for removida, substituída,
-invalidada ou estiver bloqueada durante a operação, nenhum conjunto parcial será apresentado como
-válido. Uma carteira que permaneça ocupada faz a tentativa ser cancelada após aproximadamente 60
-segundos, em vez de deixar a interface aguardando indefinidamente.
-
-Os backups desta versão **não são criptografados**, não expiram e não são enviados para serviços
-externos. Eles contêm o nome exibido e todos os dados financeiros do banco original, portanto devem
-ser guardados em local seguro. Em sistemas POSIX, os diretórios e arquivos desse conjunto são
-criados com acesso restrito ao proprietário; essa proteção não substitui a criptografia. A
-restauração pela interface ainda não está disponível; não substitua manualmente uma carteira enquanto
-a aplicação estiver aberta.
+Os backups são pacotes `.rpb` criptografados por senha. A senha deve ter ao menos quatro
+caracteres; senhas longas são recomendadas. Após a criação, a aplicação também oferece uma chave de
+recuperação `.key`, que deve ser guardada separadamente do pacote e de futuros uploads. Perder a
+senha e a chave impede recuperar aquele backup, mas não afeta a carteira SQLite ativa, que continua
+sem criptografia nesta versão. A restauração pela interface ainda não está disponível; não substitua
+manualmente uma carteira enquanto a aplicação estiver aberta.
 
 Bancos inválidos são ignorados na seleção. Se a carteira ativa for removida ou deixar de ser um
 SQLite válido, a aplicação seleciona outra carteira disponível e recarrega suas configurações sem

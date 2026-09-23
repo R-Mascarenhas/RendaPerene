@@ -418,8 +418,9 @@ class LocalRestoreService:
                 try:
                     shutil.rmtree(restore_root)
                 except OSError:
-                    logger.warning(
-                        "restore.cleanup.failed directory=%s", restore_root, exc_info=True
+                    logger.warning("restore.cleanup.failed")
+                    logger.debug(
+                        "restore.cleanup.details directory=%s", restore_root, exc_info=True
                     )
                     if cleanup_failures is not None:
                         cleanup_failures.append(restore_root)

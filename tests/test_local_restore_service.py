@@ -153,6 +153,7 @@ def test_cleanup_failure_does_not_hide_a_committed_restore(tmp_path, monkeypatch
         raise OSError("simulated cleanup failure")
 
     monkeypatch.setattr("services.local_restore_service.shutil.rmtree", fail_cleanup)
+    caplog.set_level(logging.DEBUG, logger="services.local_restore_service")
 
     result = restores.restore_package(package_content, credential, preview.portfolios[0])
 
@@ -160,7 +161,17 @@ def test_cleanup_failure_does_not_hide_a_committed_restore(tmp_path, monkeypatch
     assert tracked_tickers(database) == ["BACK3"]
     assert result.cleanup_warning_path is not None
     assert result.cleanup_warning_path.name.startswith(".restore-")
-    assert "restore.cleanup.failed" in caplog.text
+    warning = next(
+        record for record in caplog.records if record.message == "restore.cleanup.failed"
+    )
+    assert warning.levelno == logging.WARNING
+    assert warning.exc_info is None
+    assert str(result.cleanup_warning_path) not in warning.getMessage()
+    assert any(
+        record.levelno == logging.DEBUG
+        and str(result.cleanup_warning_path) in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_inspection_cleanup_failure_reports_temporary_directory(tmp_path, monkeypatch):

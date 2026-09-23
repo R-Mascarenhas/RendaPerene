@@ -44,9 +44,12 @@ aplicação aceita apenas os namespaces `app`, `run_app`, `core`, `services`, `v
 Assim, internals de dependências como `yfinance` e `peewee` não são copiados para `stdout` nem para o
 arquivo, inclusive em `DEBUG`; falhas relevantes dessas integrações são convertidas pelos adapters
 em eventos sanitizados da aplicação. Nomes de carteiras, tickers, quantidades, valores financeiros,
-caminhos absolutos, identificadores de sessão e conteúdo tabular não são registrados em nenhum
-nível. Em sistemas POSIX, o diretório de logs é restrito a `0700`; o arquivo ativo e os backups
-rotacionados usam `0600` e têm essa permissão reaplicada durante a rotação.
+identificadores de sessão e conteúdo tabular não são registrados em nenhum nível. Caminhos absolutos
+não são registrados em `INFO` ou níveis superiores. A única exceção em `DEBUG`, destinada ao
+desenvolvimento com `APP_ENV=dev`, é o caminho do temporário cuja limpeza falhou e seu traceback;
+o evento correspondente em `WARNING` não contém caminho. Em sistemas POSIX, o diretório de logs é
+restrito a `0700`; o arquivo ativo e os backups rotacionados usam `0600` e têm essa permissão
+reaplicada durante a rotação.
 
 ## Camadas e dependências
 

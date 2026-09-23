@@ -25,6 +25,32 @@ BACKUP_RETRY_SLEEP_SECONDS = 0.01
 OWNER_ONLY_FILE_MODE = 0o600
 
 
+def validate_portfolio_snapshot(database_file: Path) -> PortfolioSnapshotIdentity:
+    """Validate one immutable SQLite snapshot and return its stable identity."""
+    connection = sqlite3.connect(
+        f"{database_file.resolve().as_uri()}?mode=ro&immutable=1", uri=True
+    )
+    try:
+        if connection.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+            raise PortfolioBackupIntegrityError
+        portfolio_row = connection.execute(
+            "SELECT portfolio_id FROM portfolio_metadata WHERE id = 1"
+        ).fetchone()
+        if portfolio_row is None:
+            raise PortfolioBackupIdentityError
+        portfolio_id = portfolio_row[0]
+        try:
+            parsed_portfolio_id = uuid.UUID(portfolio_id)
+        except (AttributeError, TypeError, ValueError):
+            raise PortfolioBackupIdentityError from None
+        if str(parsed_portfolio_id) != portfolio_id:
+            raise PortfolioBackupIdentityError
+        schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
+        return PortfolioSnapshotIdentity(portfolio_id, schema_version)
+    finally:
+        connection.close()
+
+
 class SQLitePortfolioBackupReader:
     """Copy and validate one SQLite portfolio while its reader lock remains held."""
 
@@ -77,28 +103,7 @@ class SQLitePortfolioBackupReader:
 
     @staticmethod
     def _validate_and_read_identity(database_file: Path) -> PortfolioSnapshotIdentity:
-        connection = sqlite3.connect(
-            f"{database_file.resolve().as_uri()}?mode=ro&immutable=1", uri=True
-        )
-        try:
-            if connection.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
-                raise PortfolioBackupIntegrityError
-            portfolio_row = connection.execute(
-                "SELECT portfolio_id FROM portfolio_metadata WHERE id = 1"
-            ).fetchone()
-            if portfolio_row is None:
-                raise PortfolioBackupIdentityError
-            portfolio_id = portfolio_row[0]
-            try:
-                parsed_portfolio_id = uuid.UUID(portfolio_id)
-            except (AttributeError, TypeError, ValueError):
-                raise PortfolioBackupIdentityError from None
-            if str(parsed_portfolio_id) != portfolio_id:
-                raise PortfolioBackupIdentityError
-            schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
-            return PortfolioSnapshotIdentity(portfolio_id, schema_version)
-        finally:
-            connection.close()
+        return validate_portfolio_snapshot(database_file)
 
 
 class SQLitePortfolioBackupSource:

@@ -239,6 +239,12 @@ def test_encrypted_backup_publishes_only_the_package_and_preserves_the_snapshot(
     result = service.create_encrypted_backup([select_portfolio(paths, database.name)], "senha")
 
     assert result.package_file.suffix == ".rpb"
+    created_at = datetime.fromisoformat(result.manifest["created_at_utc"].replace("Z", "+00:00"))
+    assert result.package_file.name == (
+        f"{created_at:%Y-%m-%d_%H-%M-%S_%f}_UTC_rendaperene_"
+        f"{result.manifest['backup_id']}.rpb"
+    )
+    assert result.recovery_key_file_name == result.package_file.with_suffix(".key").name
     assert list(paths.local_backups_dir.iterdir()) == [result.package_file]
     assert b"SQLite format 3\x00" not in result.package_file.read_bytes()
 

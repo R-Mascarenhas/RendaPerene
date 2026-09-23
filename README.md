@@ -70,10 +70,11 @@ Na mesma seção, **Restaurar backup** lista os pacotes `.rpb` salvos nesta inst
 recentes primeiro. Também é possível enviar um pacote de outra instalação. O seletor de arquivos do
 navegador não permite abrir automaticamente na pasta de backups; para pacotes locais, escolha um item
 da lista. A restauração exige a senha ou chave `.key`. Depois de autenticar o pacote, a aplicação
-mostra a data e hora do backup no fuso local, a carteira do pacote e qual carteira local será
-substituída ou adicionada, sem expor dados financeiros. Pacotes com várias carteiras são restaurados
-uma carteira por vez. Quando a identidade já existe nesta instalação, a carteira correspondente é
-substituída. Para uma identidade nova, o usuário escolhe um nome local de até 60 caracteres, usando
+mostra a data e hora do backup no fuso local (ou em UTC se a conversão não for representável), a
+carteira do pacote e qual carteira local será substituída ou adicionada, sem expor dados financeiros.
+Pacotes com várias carteiras são restaurados uma carteira por vez. Quando a identidade já existe nesta
+instalação, a carteira correspondente é substituída. Para uma identidade nova, o usuário escolhe um
+nome local de até 60 caracteres, usando
 letras, números, espaços, hífen ou sublinhado; nomes já ocupados são recusados e nenhuma outra
 carteira é sobrescrita. Caracteres que usam vários bytes podem exigir um nome menor devido ao limite
 do sistema de arquivos. O nome escolhido aparece na lista de carteiras, sem alterar o pacote

@@ -19,6 +19,15 @@ def test_backup_datetime_is_shown_in_brazilian_format_with_local_offset():
     )
 
 
+def test_backup_datetime_falls_back_to_utc_outside_local_timezone_range():
+    assert _format_local_datetime(
+        "0001-01-01T00:00:00Z", timezone(timedelta(hours=-3))
+    ) == "01/01/0001 às 00:00:00 (UTC+00:00)"
+    assert _format_local_datetime(
+        "9999-12-31T23:59:59Z", timezone(timedelta(hours=3))
+    ) == "31/12/9999 às 23:59:59 (UTC+00:00)"
+
+
 def test_restore_destination_uses_current_portfolio_label_instead_of_database_filename():
     target = SimpleNamespace(filename="portfolio_family.db", replaces_existing=True)
 

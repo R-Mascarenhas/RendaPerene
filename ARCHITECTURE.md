@@ -149,10 +149,13 @@ nome do banco e os nomes auxiliares gerados contra o limite do sistema de arquiv
 novamente antes da publicação sob os locks existentes, sem substituir outra carteira. Chamadores
 sem nome explícito ainda podem usar o destino legado `portfolio_restored_<id>.db`. Pacotes com várias
 carteiras são restaurados individualmente.
-Na prévia, a interface converte a data UTC autenticada para a hora local e apresenta o nome da
-carteira de destino usado na navegação, sem exibir identificadores de instalação, schema ou nomes de
-arquivos de carteiras ao usuário. A carteira selecionada já aparece no seletor e não é repetida no
-resumo do destino; para uma identidade nova, o nome escolhido integra a confirmação.
+
+Na prévia, a interface converte a data UTC autenticada para a hora local quando representável;
+datas nos limites de `datetime` permanecem em UTC se a conversão local exceder esse intervalo.
+A interface apresenta o nome da carteira de destino usado na navegação, sem exibir identificadores
+de instalação, schema ou nomes de arquivos de carteiras ao usuário. A carteira selecionada já aparece
+no seletor e não é repetida no resumo do destino; para uma identidade nova, o nome escolhido integra
+a confirmação.
 
 Schemas superiores a `CURRENT_SCHEMA_VERSION` são recusados; versões anteriores suportadas são
 migradas em uma cópia temporária e verificadas novamente antes da publicação. A confirmação inclui

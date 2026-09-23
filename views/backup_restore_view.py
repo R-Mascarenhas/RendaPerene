@@ -1,6 +1,6 @@
 import hashlib
 from collections.abc import Mapping
-from datetime import datetime, tzinfo
+from datetime import datetime, timezone, tzinfo
 
 import streamlit as st
 
@@ -196,9 +196,16 @@ def render_local_restore(local_restore: LocalRestoreService, destination_labels:
 
 
 def _format_local_datetime(value: str, local_timezone: tzinfo | None = None) -> str:
-    local = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(local_timezone)
+    backup_time = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    try:
+        local = backup_time.astimezone(local_timezone)
+    except OverflowError:
+        local = backup_time.astimezone(timezone.utc)
     offset = local.strftime("%z")
-    return f"{local:%d/%m/%Y às %H:%M:%S} (UTC{offset[:3]}:{offset[3:]})"
+    return (
+        f"{local.day:02d}/{local.month:02d}/{local.year:04d} às {local:%H:%M:%S} "
+        f"(UTC{offset[:3]}:{offset[3:]})"
+    )
 
 
 def _destination_description(

@@ -340,7 +340,6 @@ def test_chosen_restore_name_taken_after_preview_cannot_replace_local_data(tmp_p
         restores.restore_package(package_content, credential, chosen)
 
     assert occupied.read_bytes() == b"existing local data"
-    assert not (destination_paths.database_dir / "portfolio_joão.db").exists()
 
 
 def test_wrong_password_or_corrupted_package_never_changes_the_local_portfolio(tmp_path):

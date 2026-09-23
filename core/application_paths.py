@@ -90,6 +90,19 @@ def _create_owned_file(path: Path, owner_token: str) -> None:
             temporary.unlink()
 
 
+def _unlink_reader_marker(reader: Path) -> bool:
+    """Leave a marker for the writer to retry if Windows still has it open."""
+    try:
+        reader.unlink()
+    except FileNotFoundError:
+        return True
+    except PermissionError as error:
+        if getattr(error, "winerror", None) == 32:
+            return False
+        raise
+    return True
+
+
 @contextmanager
 def _exclusive_file_lock(lock: Path, wait_for_readers: bool = True):
     lock = Path(lock)
@@ -115,8 +128,8 @@ def _exclusive_file_lock(lock: Path, wait_for_readers: bool = True):
                 if _try_lock_descriptor(reader_descriptor):
                     _unlock_descriptor(reader_descriptor)
                     os.close(reader_descriptor)
-                    with suppress(FileNotFoundError):
-                        reader.unlink()
+                    if not _unlink_reader_marker(reader):
+                        active_readers.append(reader)
                 else:
                     os.close(reader_descriptor)
                     active_readers.append(reader)
@@ -190,8 +203,7 @@ def portfolio_database_reader_lock(database: Path):
         if descriptor is not None:
             _unlock_descriptor(descriptor)
             os.close(descriptor)
-        with suppress(FileNotFoundError):
-            reader.unlink()
+        _unlink_reader_marker(reader)
 
 
 @dataclass(frozen=True)

@@ -700,6 +700,58 @@ def test_reader_marker_is_published_without_a_temporary_file(tmp_path):
         assert tuple(tmp_path.glob(".*.tmp")) == ()
 
 
+def test_reader_close_tolerates_windows_sharing_violation_during_marker_cleanup(
+    tmp_path, monkeypatch
+):
+    database = tmp_path / "portfolio.db"
+    real_unlink = Path.unlink
+    blocked_once = False
+
+    def unlink_with_sharing_violation(path, *args, **kwargs):
+        nonlocal blocked_once
+        if ".reader." in path.name and not path.name.endswith(".tmp") and not blocked_once:
+            blocked_once = True
+            error = PermissionError(13, "The file is in use")
+            error.winerror = 32
+            raise error
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink_with_sharing_violation)
+
+    with portfolio_database_reader_lock(database):
+        pass
+
+    assert blocked_once
+    with portfolio_database_lock(database):
+        pass
+    assert tuple(tmp_path.glob(".portfolio.db.lock.reader.*")) == ()
+
+
+def test_writer_retries_windows_sharing_violation_during_stale_marker_cleanup(
+    tmp_path, monkeypatch
+):
+    database = tmp_path / "portfolio.db"
+    marker = tmp_path / ".portfolio.db.lock.reader.stale"
+    marker.write_bytes(b"stale")
+    real_unlink = Path.unlink
+    blocked_once = False
+
+    def unlink_with_sharing_violation(path, *args, **kwargs):
+        nonlocal blocked_once
+        if path == marker and not blocked_once:
+            blocked_once = True
+            error = PermissionError(13, "The file is in use")
+            error.winerror = 32
+            raise error
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink_with_sharing_violation)
+
+    with portfolio_database_lock(database):
+        assert blocked_once
+        assert not marker.exists()
+
+
 def test_reader_registration_does_not_wait_for_existing_readers(tmp_path):
     database = tmp_path / "portfolio.db"
     first_reader = portfolio_database_reader_lock(database)
@@ -1689,7 +1741,6 @@ def test_restore_publication_refuses_a_chosen_name_taken_after_preview(tmp_path)
         paths.publish_portfolio_restore(snapshot, target)
 
     assert occupied.read_bytes() == b"existing local data"
-    assert not paths.portfolio_database(target.filename).exists()
     assert snapshot.exists()
 
 

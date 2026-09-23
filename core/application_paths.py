@@ -277,6 +277,7 @@ class PortfolioRestorePublicationResult:
     database: Path
     generation: str
     recovery_directory: Path | None
+    cleanup_warning_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -385,7 +386,7 @@ class ApplicationPaths:
                 expected_generation=self.database_generation(database),
                 replaces_existing=True,
                 last_modified_at_utc=self._portfolio_last_modified_at_utc(database),
-                state_token=self._portfolio_state_token(database),
+                state_token=self._portfolio_content_token(database),
             )
 
         if requested_name is not None:
@@ -548,7 +549,12 @@ class ApplicationPaths:
             raise PortfolioRestoreConflictError(
                 "The local portfolio generation changed after preview."
             )
-        if self._portfolio_state_token(database) != target.state_token:
+        state_token = (
+            self._portfolio_content_token(database)
+            if target.replaces_existing
+            else self._portfolio_state_token(database)
+        )
+        if state_token != target.state_token:
             raise PortfolioRestoreConflictError("The local portfolio files changed after preview.")
         if target.requested_name is not None and self._restore_destination_is_occupied(database):
             raise PortfolioRestoreConflictError(
@@ -636,6 +642,13 @@ class ApplicationPaths:
         return (
             datetime.fromtimestamp(max(timestamps), timezone.utc).isoformat().replace("+00:00", "Z")
         )
+
+    @staticmethod
+    def _portfolio_content_token(database: Path) -> str:
+        """Fingerprint committed SQLite contents, ignoring volatile WAL/SHM file metadata."""
+        content_digest = ApplicationPaths._sqlite_content_digest(database)
+        marker_exists = portfolio_deletion_marker(database).exists()
+        return hashlib.sha256(f"{content_digest}:{marker_exists}".encode("ascii")).hexdigest()
 
     @staticmethod
     def _portfolio_state_token(database: Path) -> str:

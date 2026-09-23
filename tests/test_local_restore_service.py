@@ -135,6 +135,58 @@ def test_user_can_preview_and_restore_a_matching_portfolio_with_an_older_backup(
     assert not tuple(paths.backups_dir.glob(".restore-*"))
 
 
+def test_cleanup_failure_does_not_hide_a_committed_restore(tmp_path, monkeypatch, caplog):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database, _portfolio_id = create_portfolio(paths, "portfolio_family.db", "BACK3")
+    backup = create_package(paths, database)
+    connection = sqlite3.connect(database)
+    connection.execute("INSERT INTO tracked_market_assets VALUES ('LOCAL4')")
+    connection.commit()
+    connection.close()
+    package_content = backup.package_file.read_bytes()
+    restores = LocalRestoreService(paths)
+    credential = RestoreCredential.with_password("senha segura")
+    preview = restores.inspect_package(package_content, credential)
+
+    def fail_cleanup(_path):
+        raise OSError("simulated cleanup failure")
+
+    monkeypatch.setattr("services.local_restore_service.shutil.rmtree", fail_cleanup)
+
+    result = restores.restore_package(package_content, credential, preview.portfolios[0])
+
+    assert result.database == database
+    assert tracked_tickers(database) == ["BACK3"]
+    assert result.cleanup_warning_path is not None
+    assert result.cleanup_warning_path.name.startswith(".restore-")
+    assert "restore.cleanup.failed" in caplog.text
+
+
+def test_restore_accepts_wal_sidecar_churn_without_local_content_change(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database, _portfolio_id = create_portfolio(paths, "portfolio_family.db", "BACK3")
+    backup = create_package(paths, database)
+    package_content = backup.package_file.read_bytes()
+    restores = LocalRestoreService(paths)
+    credential = RestoreCredential.with_password("senha segura")
+    writer = sqlite3.connect(database)
+    try:
+        assert writer.execute("PRAGMA journal_mode = WAL").fetchone() == ("wal",)
+        preview = restores.inspect_package(package_content, credential)
+        shm = Path(f"{database}-shm")
+        assert shm.exists()
+        os.utime(shm, ns=(shm.stat().st_atime_ns, shm.stat().st_mtime_ns + 1_000_000))
+    finally:
+        writer.close()
+
+    result = restores.restore_package(package_content, credential, preview.portfolios[0])
+
+    assert result.database == database
+    assert tracked_tickers(database) == ["BACK3"]
+
+
 def test_user_can_restore_an_unknown_portfolio_with_the_recovery_key(tmp_path):
     source_paths = ApplicationPaths(
         tmp_path / "bundle", tmp_path / "source-data", tmp_path / "legacy"

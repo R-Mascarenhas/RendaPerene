@@ -137,6 +137,7 @@ SESSION_PLANNING_START_DATE_ENABLED = "planning_start_date_enabled"
 SESSION_PORTFOLIO_DELETION_SUCCESS = "portfolio_deletion_success"
 SESSION_PORTFOLIO_RESTORE_PREVIEW = "portfolio_restore_preview"
 SESSION_PORTFOLIO_RESTORE_SUCCESS = "portfolio_restore_success"
+SESSION_PORTFOLIO_RESTORE_CLEANUP_WARNING = "portfolio_restore_cleanup_warning"
 SESSION_ACTIVE_DATABASE_GENERATION = "active_database_generation"
 SESSION_LEGACY_PREFERENCE_MESSAGES = "legacy_preference_messages"
 

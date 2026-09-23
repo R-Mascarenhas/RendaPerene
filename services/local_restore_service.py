@@ -205,8 +205,11 @@ class LocalRestoreService:
     ) -> PortfolioRestorePublicationResult:
         """Revalidate and publish exactly the portfolio confirmed in a prior preview."""
         logger.info("restore.publish.started")
+        cleanup_failures: list[Path] = []
         try:
-            with self._open_validated_package(package_content, credential) as package:
+            with self._open_validated_package(
+                package_content, credential, cleanup_failures=cleanup_failures
+            ) as package:
                 preview = self._build_preview(package)
                 current = next(
                     (
@@ -226,7 +229,7 @@ class LocalRestoreService:
                             "O destino da carteira mudou desde a confirmação. "
                             "Revise o nome e confirme novamente."
                         ) from error
-                if current is None or current != selected:
+                if current is None or not self._matches_confirmed_portfolio(current, selected):
                     raise BackupRestoreConflictError(
                         "O pacote ou a carteira local mudou desde a confirmação. "
                         "Valide o backup novamente."
@@ -241,6 +244,8 @@ class LocalRestoreService:
                     artifact.database,
                     current.target,
                 )
+            if cleanup_failures:
+                result = replace(result, cleanup_warning_path=cleanup_failures[0])
             logger.info("restore.publish.completed")
             return result
         except BackupRestoreError as error:
@@ -262,6 +267,24 @@ class LocalRestoreService:
             raise BackupRestoreError(
                 "Não foi possível publicar a restauração; a carteira anterior foi preservada."
             ) from error
+
+    @staticmethod
+    def _matches_confirmed_portfolio(
+        current: RestorePortfolioPreview, selected: RestorePortfolioPreview
+    ) -> bool:
+        """Ignore informational timestamps while preserving destination and content checks."""
+        return (
+            current.package_sha256 == selected.package_sha256
+            and current.backup_id == selected.backup_id
+            and current.portfolio_id == selected.portfolio_id
+            and current.display_name == selected.display_name
+            and current.schema_version == selected.schema_version
+            and current.target.filename == selected.target.filename
+            and current.target.expected_generation == selected.target.expected_generation
+            and current.target.replaces_existing == selected.target.replaces_existing
+            and current.target.state_token == selected.target.state_token
+            and current.target.requested_name == selected.target.requested_name
+        )
 
     def _build_preview(self, package: _ValidatedPackage) -> RestorePreview:
         portfolios = []
@@ -296,7 +319,12 @@ class LocalRestoreService:
         )
 
     @contextmanager
-    def _open_validated_package(self, package_content: bytes, credential: RestoreCredential):
+    def _open_validated_package(
+        self,
+        package_content: bytes,
+        credential: RestoreCredential,
+        cleanup_failures: list[Path] | None = None,
+    ):
         if not isinstance(package_content, bytes) or not package_content:
             raise BackupRestoreCorruptedError("Selecione um pacote de backup válido.")
         restore_root = self._paths.backups_dir / f".restore-{uuid.uuid4().hex}"
@@ -346,7 +374,14 @@ class LocalRestoreService:
             ) from error
         finally:
             if restore_root.exists():
-                shutil.rmtree(restore_root)
+                try:
+                    shutil.rmtree(restore_root)
+                except OSError:
+                    logger.warning(
+                        "restore.cleanup.failed directory=%s", restore_root, exc_info=True
+                    )
+                    if cleanup_failures is not None:
+                        cleanup_failures.append(restore_root)
 
     def _extract(
         self,

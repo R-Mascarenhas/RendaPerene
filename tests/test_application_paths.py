@@ -1577,6 +1577,32 @@ def test_restore_target_matches_local_portfolio_identity_and_reports_latest_file
     assert target.state_token
 
 
+def test_restore_target_token_ignores_shm_metadata_but_detects_new_wal_data(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database = paths.portfolio_database("portfolio_family.db")
+    portfolio_id = create_portfolio_database(database)
+    writer = sqlite3.connect(database)
+    try:
+        assert writer.execute("PRAGMA journal_mode = WAL").fetchone() == ("wal",)
+        writer.execute("INSERT INTO tracked_market_assets VALUES ('FIRST3')")
+        writer.commit()
+        first = paths.plan_portfolio_restore(portfolio_id)
+        shm = Path(f"{database}-shm")
+        assert shm.exists()
+        os.utime(shm, ns=(shm.stat().st_atime_ns, shm.stat().st_mtime_ns + 1_000_000))
+
+        after_shm_metadata_change = paths.plan_portfolio_restore(portfolio_id)
+
+        assert after_shm_metadata_change.state_token == first.state_token
+        writer.execute("INSERT INTO tracked_market_assets VALUES ('SECOND4')")
+        writer.commit()
+        after_data_change = paths.plan_portfolio_restore(portfolio_id)
+        assert after_data_change.state_token != first.state_token
+    finally:
+        writer.close()
+
+
 def test_restore_target_uses_a_new_safe_filename_for_an_unknown_identity(tmp_path):
     paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
     paths.prepare()

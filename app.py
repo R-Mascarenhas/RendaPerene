@@ -6,6 +6,7 @@ from core.application_paths import ApplicationPaths
 from core.constants import (
     SESSION_LEGACY_PREFERENCE_MESSAGES,
     SESSION_PORTFOLIO_DELETION_SUCCESS,
+    SESSION_PORTFOLIO_RESTORE_CLEANUP_WARNING,
     SESSION_PORTFOLIO_RESTORE_SUCCESS,
     WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX,
     WIDGET_PORTFOLIO_DELETION_TARGET,
@@ -172,6 +173,9 @@ if deletion_success:
 restore_success = st.session_state.pop(SESSION_PORTFOLIO_RESTORE_SUCCESS, None)
 if restore_success:
     st.sidebar.success(restore_success)
+restore_cleanup_warning = st.session_state.pop(SESSION_PORTFOLIO_RESTORE_CLEANUP_WARNING, None)
+if restore_cleanup_warning:
+    st.sidebar.warning(restore_cleanup_warning)
 
 requested_db = st.session_state.get("active_db", "portfolio.db")
 active_db = app_paths.choose_portfolio(requested_db, db_files)
@@ -392,6 +396,11 @@ if restore_result is not None:
     st.session_state[SESSION_PORTFOLIO_RESTORE_SUCCESS] = (
         f"Carteira restaurada com sucesso.{recovery_note}"
     )
+    if restore_result.cleanup_warning_path is not None:
+        st.session_state[SESSION_PORTFOLIO_RESTORE_CLEANUP_WARNING] = (
+            "A restauração foi concluída, mas a limpeza dos arquivos temporários falhou. "
+            f"Feche o aplicativo e remova manualmente {restore_result.cleanup_warning_path}."
+        )
     st.rerun()
 
 st.set_page_config(page_title=f"Renda Perene v{app_version}", page_icon="💼", layout="wide")

@@ -84,6 +84,9 @@ interface avisa que mudanças mais novas podem ser perdidas. Esse aviso não dec
 correta, pois relógios de dispositivos diferentes podem divergir. Se a carteira mudar depois da
 prévia, a confirmação perde a validade. Antes de uma substituição bem-sucedida, o banco, seus
 auxiliares e sua geração anteriores ficam preservados em **backups/pre-restore/**.
+Se a carteira for restaurada mas a limpeza dos arquivos temporários falhar, a aplicação mostrará
+o caminho da pasta privada `.restore-*` remanescente. Feche o aplicativo e remova essa pasta
+manualmente depois de confirmar que a carteira restaurada está acessível.
 
 Para recuperação manual, feche todas as janelas da aplicação, localize a pasta correspondente em
 **backups/pre-restore/**, mova a versão atual para outro local e copie de volta o banco, o WAL/SHM e

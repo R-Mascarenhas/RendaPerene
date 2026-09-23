@@ -133,7 +133,9 @@ Pacotes enviados pelo navegador continuam disponíveis para restauração entre 
 inspeção materializa o `.rpb` em um diretório privado temporário, autentica o envelope, confere seu
 `backup_id` contra o manifesto e valida contagem, caminhos, metadados, SHA-256,
 `PRAGMA integrity_check`, identidade e schema de cada carteira. O temporário descriptografado é
-sempre removido. A prévia retorna somente metadados autenticados e um destino fixado pela identidade:
+removido ao fim da operação; se a limpeza falhar após uma publicação bem-sucedida, o resultado é
+mantido e a interface avisa onde verificar e remover manualmente os arquivos remanescentes. A prévia
+retorna somente metadados autenticados e um destino fixado pela identidade:
 uma carteira já conhecida mantém seu arquivo local; uma identidade nova requer um nome local escolhido
 pelo usuário e validado por `ApplicationPaths`. A validação recusa nomes vazios, inválidos ou ocupados,
 inclusive por arquivos inválidos, auxiliares e marcadores de exclusão. A disponibilidade é conferida
@@ -147,9 +149,11 @@ resumo do destino; para uma identidade nova, o nome escolhido integra a confirma
 
 Schemas superiores a `CURRENT_SCHEMA_VERSION` são recusados; versões anteriores suportadas são
 migradas em uma cópia temporária e verificadas novamente antes da publicação. A confirmação inclui
-o hash do pacote, a identidade, a geração e uma assinatura física do banco, WAL, SHM e marcadores.
-Assim, uma alteração posterior à prévia cancela a operação. A interface compara ainda a data UTC
-autenticada do backup com a modificação mais recente do banco ou WAL e mostra um alerta informativo
+o hash do pacote, a identidade, a geração e uma assinatura do conteúdo lógico do SQLite; metadados
+voláteis do WAL/SHM não invalidam a confirmação, mas alterações reais de conteúdo a cancelam. Para
+um destino novo, a ocupação do nome e seus arquivos auxiliares também é reconferida sob lock. A
+interface compara ainda a data UTC autenticada do backup com a modificação mais recente do banco ou
+WAL e mostra um alerta informativo
 quando o backup parece mais antigo. Datas nunca autorizam nem bloqueiam a restauração, porque os
 relógios de dispositivos podem divergir.
 

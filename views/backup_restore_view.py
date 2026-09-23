@@ -95,6 +95,11 @@ def render_local_restore(local_restore: LocalRestoreService, destination_labels:
     if preview is None:
         return None
 
+    if preview.cleanup_warning_path is not None:
+        st.warning(
+            "O pacote foi validado, mas a limpeza dos arquivos temporários falhou. "
+            f"Feche o aplicativo e remova manualmente {preview.cleanup_warning_path}."
+        )
     st.write(f"**Data do backup:** {_format_local_datetime(preview.created_at_utc)}")
     selection_key = f"{WIDGET_PORTFOLIO_RESTORE_SELECTION_PREFIX}{preview.package_sha256}"
     selected = st.selectbox(

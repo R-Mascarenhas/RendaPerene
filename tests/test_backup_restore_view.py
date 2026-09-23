@@ -1,6 +1,7 @@
 import hashlib
 from dataclasses import replace
 from datetime import timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 from streamlit.testing.v1 import AppTest
@@ -138,3 +139,19 @@ def test_restore_screen_requires_a_name_and_shows_one_destination_for_new_identi
     new_name.input("Maria").run()
     assert next(item for item in app.checkbox if item.label.startswith("Confirmo a adição")).value is False
     assert next(item for item in app.button if item.label == "Restaurar carteira").disabled
+
+
+def test_restore_screen_warns_about_failed_inspection_cleanup():
+    service = _RestoreScreenService()
+    service.preview = replace(
+        service.preview,
+        cleanup_warning_path=Path("/backups/.restore-example"),
+    )
+    app = AppTest.from_function(_render_restore_screen, args=(service,), default_timeout=30).run()
+    password = next(item for item in app.text_input if item.label == "Senha do pacote")
+    password.input("senha segura").run()
+    validate = next(item for item in app.button if item.label == "Validar pacote")
+    validate.click().run()
+
+    assert not app.exception
+    assert any(".restore-example" in item.value for item in app.warning)

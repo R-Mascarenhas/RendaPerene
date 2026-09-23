@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 import core.encrypted_backup_package as package_module
-from core.application_paths import ApplicationPaths
+from core.application_paths import ApplicationPaths, PortfolioRestoreConflictError
 from core.database import CURRENT_SCHEMA_VERSION, DatabaseManager
 from core.encrypted_backup_package import EncryptedBackupPackageService
 from core.sqlite_backup import SQLitePortfolioBackupSourceFactory
@@ -163,6 +163,51 @@ def test_cleanup_failure_does_not_hide_a_committed_restore(tmp_path, monkeypatch
     assert "restore.cleanup.failed" in caplog.text
 
 
+def test_inspection_cleanup_failure_reports_temporary_directory(tmp_path, monkeypatch):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database, _portfolio_id = create_portfolio(paths, "portfolio_family.db", "BACK3")
+    backup = create_package(paths, database)
+    restores = LocalRestoreService(paths)
+
+    def fail_cleanup(_path):
+        raise OSError("simulated cleanup failure")
+
+    monkeypatch.setattr("services.local_restore_service.shutil.rmtree", fail_cleanup)
+
+    preview = restores.inspect_package(
+        backup.package_file.read_bytes(), RestoreCredential.with_password("senha segura")
+    )
+
+    assert preview.cleanup_warning_path is not None
+    assert preview.cleanup_warning_path.name.startswith(".restore-")
+
+
+def test_failed_restore_reports_temporary_cleanup_failure(tmp_path, monkeypatch):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    database, _portfolio_id = create_portfolio(paths, "portfolio_family.db", "BACK3")
+    backup = create_package(paths, database)
+    restores = LocalRestoreService(paths)
+    package_content = backup.package_file.read_bytes()
+    credential = RestoreCredential.with_password("senha segura")
+    preview = restores.inspect_package(package_content, credential)
+
+    def fail_cleanup(_path):
+        raise OSError("simulated cleanup failure")
+
+    def fail_publication(_self, _snapshot, _target):
+        raise PortfolioRestoreConflictError("simulated conflict")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("services.local_restore_service.shutil.rmtree", fail_cleanup)
+        patch.setattr(ApplicationPaths, "publish_portfolio_restore", fail_publication)
+        with pytest.raises(BackupRestoreError, match="temporários") as raised:
+            restores.restore_package(package_content, credential, preview.portfolios[0])
+
+    assert ".restore-" in str(raised.value)
+
+
 def test_restore_accepts_wal_sidecar_churn_without_local_content_change(tmp_path):
     paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
     paths.prepare()
@@ -241,6 +286,24 @@ def test_colleagues_principal_backup_can_be_restored_under_a_chosen_local_name(t
     assert restored.database.name == "portfolio_joão.db"
     assert tracked_tickers(restored.database) == ["COLL3"]
     assert tracked_tickers(principal) == ["MINE3"]
+
+
+def test_restore_name_too_long_for_filesystem_has_clear_message(tmp_path):
+    source_paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "source-data", tmp_path / "legacy")
+    source_paths.prepare()
+    source_database, _portfolio_id = create_portfolio(source_paths, "portfolio.db", "COLL3")
+    backup = create_package(source_paths, source_database)
+    destination_paths = ApplicationPaths(
+        tmp_path / "bundle", tmp_path / "destination-data", tmp_path / "legacy"
+    )
+    destination_paths.prepare()
+    restores = LocalRestoreService(destination_paths)
+    preview = restores.inspect_package(
+        backup.package_file.read_bytes(), RestoreCredential.with_password("senha segura")
+    )
+
+    with pytest.raises(BackupRestoreError, match="Escolha um nome mais curto"):
+        restores.choose_new_destination(preview.portfolios[0], "𐐀" * 60)
 
 
 def test_chosen_restore_name_taken_after_preview_cannot_replace_local_data(tmp_path):

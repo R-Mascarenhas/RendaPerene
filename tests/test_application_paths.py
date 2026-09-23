@@ -1617,6 +1617,18 @@ def test_restore_target_uses_a_new_safe_filename_for_an_unknown_identity(tmp_pat
     assert target.state_token
 
 
+def test_restore_name_rejects_multibyte_filename_that_exceeds_sidecar_limit(tmp_path):
+    paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
+    paths.prepare()
+    portfolio_id = "f4b8d9bf-3295-4d80-93b1-846095d53c1f"
+
+    accepted = paths.plan_portfolio_restore(portfolio_id, "𐐀" * 48)
+    assert accepted.requested_name == "𐐀" * 48
+
+    with pytest.raises(ValueError, match="name"):
+        paths.plan_portfolio_restore(portfolio_id, "𐐀" * 60)
+
+
 def test_restore_target_uses_a_chosen_name_for_a_new_portfolio_identity(tmp_path):
     paths = ApplicationPaths(tmp_path / "bundle", tmp_path / "user-data", tmp_path / "legacy")
     paths.prepare()

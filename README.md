@@ -75,7 +75,8 @@ substituída ou adicionada, sem expor dados financeiros. Pacotes com várias car
 uma carteira por vez. Quando a identidade já existe nesta instalação, a carteira correspondente é
 substituída. Para uma identidade nova, o usuário escolhe um nome local de até 60 caracteres, usando
 letras, números, espaços, hífen ou sublinhado; nomes já ocupados são recusados e nenhuma outra
-carteira é sobrescrita. O nome escolhido aparece na lista de carteiras, sem alterar o pacote
+carteira é sobrescrita. Caracteres que usam vários bytes podem exigir um nome menor devido ao limite
+do sistema de arquivos. O nome escolhido aparece na lista de carteiras, sem alterar o pacote
 original. A restauração recusa hash, SQLite, identidade, metadados ou schema incompatíveis antes de
 alterar `database/`.
 
@@ -87,6 +88,7 @@ auxiliares e sua geração anteriores ficam preservados em **backups/pre-restore
 Se a carteira for restaurada mas a limpeza dos arquivos temporários falhar, a aplicação mostrará
 o caminho da pasta privada `.restore-*` remanescente. Feche o aplicativo e remova essa pasta
 manualmente depois de confirmar que a carteira restaurada está acessível.
+O mesmo aviso aparece se a limpeza falhar durante a validação ou após uma restauração malsucedida.
 
 Para recuperação manual, feche todas as janelas da aplicação, localize a pasta correspondente em
 **backups/pre-restore/**, mova a versão atual para outro local e copie de volta o banco, o WAL/SHM e

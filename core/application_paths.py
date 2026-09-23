@@ -241,6 +241,10 @@ class PortfolioRestoreConflictError(PortfolioRestoreError):
     """The local restore destination is ambiguous or changed after preview."""
 
 
+class PortfolioRestoreNameTooLongError(ValueError):
+    """The requested name exceeds the filesystem limit after suffixes are added."""
+
+
 class PortfolioRestoreBusyError(PortfolioRestoreError):
     """The local restore destination still has active readers."""
 
@@ -406,6 +410,8 @@ class ApplicationPaths:
             if requested_name is not None
             else f"portfolio_restored_{portfolio_id[:8]}.db"
         )
+        if requested_name is not None:
+            self._validate_restore_filename_components(filename)
         database = self.portfolio_database(filename)
         if requested_name is not None and self._restore_destination_is_occupied(database):
             raise PortfolioRestoreConflictError("The requested portfolio name is already in use.")
@@ -447,6 +453,30 @@ class ApplicationPaths:
             raise PortfolioRestoreConflictError(
                 "The requested portfolio destination cannot be inspected."
             ) from error
+
+    def _validate_restore_filename_components(self, filename: str) -> None:
+        """Check generated SQLite, lock and marker names against the filesystem limit."""
+        try:
+            component_limit = os.pathconf(self.database_dir, "PC_NAME_MAX")
+        except (AttributeError, OSError, ValueError):
+            component_limit = 255
+        if component_limit <= 0:
+            component_limit = 255
+        random_suffix = "0" * 32
+        components = (
+            filename,
+            f"{filename}-wal",
+            f"{filename}-shm",
+            f"{filename}.generation",
+            f".{filename}.deleted",
+            f".{filename}.lock.reader.{random_suffix}",
+            f".{filename}.generation.{random_suffix}.tmp",
+            f"..{filename}.deleted.{random_suffix}.tmp",
+        )
+        if any(len(os.fsencode(component)) > component_limit for component in components):
+            raise PortfolioRestoreNameTooLongError(
+                "The new portfolio name is too long for the filesystem."
+            )
 
     def publish_portfolio_restore(
         self,

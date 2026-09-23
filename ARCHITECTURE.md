@@ -133,12 +133,15 @@ Pacotes enviados pelo navegador continuam disponíveis para restauração entre 
 inspeção materializa o `.rpb` em um diretório privado temporário, autentica o envelope, confere seu
 `backup_id` contra o manifesto e valida contagem, caminhos, metadados, SHA-256,
 `PRAGMA integrity_check`, identidade e schema de cada carteira. O temporário descriptografado é
-removido ao fim da operação; se a limpeza falhar após uma publicação bem-sucedida, o resultado é
-mantido e a interface avisa onde verificar e remover manualmente os arquivos remanescentes. A prévia
+removido ao fim da operação; se a limpeza falhar, a interface avisa onde verificar e remover
+manualmente os arquivos remanescentes, inclusive na prévia ou após um erro. Uma publicação já
+concluída continua sendo informada como sucesso. A prévia
 retorna somente metadados autenticados e um destino fixado pela identidade:
 uma carteira já conhecida mantém seu arquivo local; uma identidade nova requer um nome local escolhido
 pelo usuário e validado por `ApplicationPaths`. A validação recusa nomes vazios, inválidos ou ocupados,
-inclusive por arquivos inválidos, auxiliares e marcadores de exclusão. A disponibilidade é conferida
+inclusive por arquivos inválidos, auxiliares e marcadores de exclusão. Também verifica em bytes o
+nome do banco e os nomes auxiliares gerados contra o limite do sistema de arquivos. A disponibilidade
+é conferida
 novamente antes da publicação sob os locks existentes, sem substituir outra carteira. Chamadores
 sem nome explícito ainda podem usar o destino legado `portfolio_restored_<id>.db`. Pacotes com várias
 carteiras são restaurados individualmente.

@@ -16,6 +16,7 @@ from core.application_paths import (
     PortfolioRestoreBusyError,
     PortfolioRestoreConflictError,
     PortfolioRestoreManualRecoveryError,
+    PortfolioRestoreNameTooLongError,
     PortfolioRestorePublicationError,
     PortfolioRestorePublicationResult,
     PortfolioRestoreTarget,
@@ -91,6 +92,7 @@ class RestorePreview:
     app_version: str
     installation_id: str
     portfolios: tuple[RestorePortfolioPreview, ...]
+    cleanup_warning_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -169,13 +171,22 @@ class LocalRestoreService:
     ) -> RestorePreview:
         """Validate an encrypted package and return only safe authenticated metadata."""
         logger.info("restore.inspect.started")
+        cleanup_failures: list[Path] = []
         try:
-            with self._open_validated_package(package_content, credential) as package:
+            with self._open_validated_package(
+                package_content, credential, cleanup_failures=cleanup_failures
+            ) as package:
                 preview = self._build_preview(package)
+            if cleanup_failures:
+                preview = replace(preview, cleanup_warning_path=cleanup_failures[0])
             logger.info("restore.inspect.completed portfolios=%s", len(preview.portfolios))
             return preview
         except BackupRestoreError as error:
             logger.warning("restore.inspect.failed error_type=%s", type(error).__name__)
+            if cleanup_failures:
+                raise type(error)(
+                    self._with_cleanup_warning(str(error), cleanup_failures)
+                ) from error
             raise
 
     def choose_new_destination(
@@ -186,6 +197,10 @@ class LocalRestoreService:
             raise BackupRestoreError("Esta carteira já existe e será restaurada no destino atual.")
         try:
             target = self._paths.plan_portfolio_restore(selected.portfolio_id, requested_name)
+        except PortfolioRestoreNameTooLongError as error:
+            raise BackupRestoreError(
+                "O nome gera arquivos longos demais para este sistema. Escolha um nome mais curto."
+            ) from error
         except ValueError as error:
             raise BackupRestoreError(
                 "Informe um nome de carteira de até 60 caracteres, usando letras, números, "
@@ -250,23 +265,49 @@ class LocalRestoreService:
             return result
         except BackupRestoreError as error:
             logger.warning("restore.publish.failed error_type=%s", type(error).__name__)
+            if cleanup_failures:
+                raise type(error)(
+                    self._with_cleanup_warning(str(error), cleanup_failures)
+                ) from error
             raise
         except PortfolioRestoreConflictError as error:
             raise BackupRestoreConflictError(
-                "A carteira local mudou desde a confirmação. Valide o backup novamente."
+                self._with_cleanup_warning(
+                    "A carteira local mudou desde a confirmação. Valide o backup novamente.",
+                    cleanup_failures,
+                )
             ) from error
         except PortfolioRestoreBusyError as error:
             raise BackupRestoreError(
-                "A carteira está em uso por outra sessão. Feche as operações ativas e tente novamente."
+                self._with_cleanup_warning(
+                    "A carteira está em uso por outra sessão. "
+                    "Feche as operações ativas e tente novamente.",
+                    cleanup_failures,
+                )
             ) from error
         except PortfolioRestoreManualRecoveryError as error:
             raise BackupRestoreError(
-                f"A restauração falhou e exige recuperação manual a partir de {error.backup_dir}."
+                self._with_cleanup_warning(
+                    f"A restauração falhou e exige recuperação manual a partir de {error.backup_dir}.",
+                    cleanup_failures,
+                )
             ) from error
         except PortfolioRestorePublicationError as error:
             raise BackupRestoreError(
-                "Não foi possível publicar a restauração; a carteira anterior foi preservada."
+                self._with_cleanup_warning(
+                    "Não foi possível publicar a restauração; a carteira anterior foi preservada.",
+                    cleanup_failures,
+                )
             ) from error
+
+    @staticmethod
+    def _with_cleanup_warning(message: str, cleanup_failures: list[Path]) -> str:
+        if not cleanup_failures:
+            return message
+        return (
+            f"{message} A limpeza dos arquivos temporários falhou. "
+            f"Feche o aplicativo e remova manualmente {cleanup_failures[0]}."
+        )
 
     @staticmethod
     def _matches_confirmed_portfolio(

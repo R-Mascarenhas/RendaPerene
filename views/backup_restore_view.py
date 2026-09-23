@@ -7,6 +7,7 @@ import streamlit as st
 from core.application_paths import PortfolioRestoreTarget
 from core.constants import (
     SESSION_PORTFOLIO_RESTORE_PREVIEW,
+    SESSION_PORTFOLIO_RESTORE_PREVIEW_SOURCE,
     WIDGET_PORTFOLIO_RESTORE_CONFIRMATION_PREFIX,
     WIDGET_PORTFOLIO_RESTORE_CREDENTIAL_KIND,
     WIDGET_PORTFOLIO_RESTORE_LOCAL_PACKAGE,
@@ -43,6 +44,7 @@ def render_local_restore(local_restore: LocalRestoreService, destination_labels:
         st.info("Nenhum pacote local encontrado. Envie um arquivo .rpb para restaurar.")
         source = "Enviar outro arquivo"
     package_content = None
+    local_filename = None
     if source == "Backups locais":
         local_filename = st.selectbox(
             "Pacotes salvos nesta instalação",
@@ -52,10 +54,6 @@ def render_local_restore(local_restore: LocalRestoreService, destination_labels:
         st.caption(
             "Pacotes mais recentes primeiro. Os dados da carteira aparecem após a validação."
         )
-        try:
-            package_content = local_restore.read_local_package(local_filename)
-        except BackupRestoreError as error:
-            st.error(str(error))
     else:
         package_upload = st.file_uploader(
             "Pacote de backup (.rpb)",
@@ -71,25 +69,39 @@ def render_local_restore(local_restore: LocalRestoreService, destination_labels:
     )
     credential = _render_credential(credential_kind)
     package_sha256 = hashlib.sha256(package_content).hexdigest() if package_content else None
+    preview_source = (
+        ("local", local_filename) if local_filename is not None else ("upload", package_sha256)
+    )
     preview = st.session_state.get(SESSION_PORTFOLIO_RESTORE_PREVIEW)
-    if preview is not None and preview.package_sha256 != package_sha256:
+    if (
+        preview is not None
+        and st.session_state.get(SESSION_PORTFOLIO_RESTORE_PREVIEW_SOURCE) != preview_source
+    ):
         st.session_state.pop(SESSION_PORTFOLIO_RESTORE_PREVIEW, None)
+        st.session_state.pop(SESSION_PORTFOLIO_RESTORE_PREVIEW_SOURCE, None)
         preview = None
 
     if st.button(
         "Validar pacote",
-        disabled=package_content is None or credential is None,
+        disabled=(local_filename is None and package_content is None) or credential is None,
         use_container_width=True,
     ):
         try:
             with st.spinner("Validando criptografia, hashes e carteiras..."):
-                preview = local_restore.inspect_package(package_content, credential)
+                selected_content = (
+                    local_restore.read_local_package(local_filename)
+                    if local_filename is not None
+                    else package_content
+                )
+                preview = local_restore.inspect_package(selected_content, credential)
         except BackupRestoreError as error:
             st.session_state.pop(SESSION_PORTFOLIO_RESTORE_PREVIEW, None)
+            st.session_state.pop(SESSION_PORTFOLIO_RESTORE_PREVIEW_SOURCE, None)
             st.error(str(error))
             preview = None
         else:
             st.session_state[SESSION_PORTFOLIO_RESTORE_PREVIEW] = preview
+            st.session_state[SESSION_PORTFOLIO_RESTORE_PREVIEW_SOURCE] = preview_source
             st.success("Pacote autenticado e validado com sucesso.")
 
     if preview is None:
@@ -157,13 +169,27 @@ def render_local_restore(local_restore: LocalRestoreService, destination_labels:
         "Restaurar carteira",
         type="primary",
         disabled=(
-            not confirmed or credential is None or package_content is None or not destination_ready
+            not confirmed
+            or credential is None
+            or (local_filename is None and package_content is None)
+            or not destination_ready
         ),
         use_container_width=True,
     ):
         try:
             with st.spinner("Restaurando a carteira com proteção de rollback..."):
-                return local_restore.restore_package(package_content, credential, selected)
+                selected_content = (
+                    local_restore.read_local_package(local_filename)
+                    if local_filename is not None
+                    else package_content
+                )
+                if hashlib.sha256(selected_content).hexdigest() != preview.package_sha256:
+                    st.session_state.pop(SESSION_PORTFOLIO_RESTORE_PREVIEW, None)
+                    st.session_state.pop(SESSION_PORTFOLIO_RESTORE_PREVIEW_SOURCE, None)
+                    raise BackupRestoreError(
+                        "O pacote selecionado mudou desde a validação. Valide o backup novamente."
+                    )
+                return local_restore.restore_package(selected_content, credential, selected)
         except BackupRestoreError as error:
             st.error(str(error))
     return None

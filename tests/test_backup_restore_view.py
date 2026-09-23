@@ -52,6 +52,10 @@ def test_restore_destination_shows_the_chosen_new_portfolio_name():
 
 class _RestoreScreenService:
     def __init__(self):
+        self.read_count = 0
+        self.restore_count = 0
+        self.package_content = b"encrypted package"
+        self.local_packages = ("local.rpb",)
         package_sha256 = hashlib.sha256(b"encrypted package").hexdigest()
         target = PortfolioRestoreTarget(
             portfolio_id="f4b8d9bf-3295-4d80-93b1-846095d53c1f",
@@ -80,10 +84,11 @@ class _RestoreScreenService:
         )
 
     def list_local_packages(self):
-        return ("local.rpb",)
+        return self.local_packages
 
     def read_local_package(self, _filename):
-        return b"encrypted package"
+        self.read_count += 1
+        return self.package_content
 
     def inspect_package(self, _content, _credential):
         return self.preview
@@ -96,6 +101,10 @@ class _RestoreScreenService:
             requested_name=requested_name,
         )
         return replace(selected, target=target)
+
+    def restore_package(self, _content, _credential, _selected):
+        self.restore_count += 1
+        return SimpleNamespace(database=Path("portfolio_joão.db"), recovery_directory=None)
 
 
 def _render_restore_screen(service):
@@ -155,3 +164,60 @@ def test_restore_screen_warns_about_failed_inspection_cleanup():
 
     assert not app.exception
     assert any(".restore-example" in item.value for item in app.warning)
+
+
+def test_local_backup_is_read_only_when_validating_or_restoring():
+    service = _RestoreScreenService()
+    app = AppTest.from_function(_render_restore_screen, args=(service,), default_timeout=30).run()
+    assert service.read_count == 0
+
+    password = next(item for item in app.text_input if item.label == "Senha do pacote")
+    password.input("senha segura").run()
+    assert service.read_count == 0
+    next(item for item in app.button if item.label == "Validar pacote").click().run()
+    assert service.read_count == 1
+
+    next(item for item in app.text_input if item.label == "Nome da nova carteira").input("João").run()
+    assert service.read_count == 1
+    next(item for item in app.checkbox if item.label.startswith("Confirmo a adição")).check().run()
+    assert service.read_count == 1
+    next(item for item in app.button if item.label == "Restaurar carteira").click().run()
+
+    assert service.read_count == 2
+    assert service.restore_count == 1
+
+
+def test_changed_local_backup_is_rejected_at_restore_action():
+    service = _RestoreScreenService()
+    app = AppTest.from_function(_render_restore_screen, args=(service,), default_timeout=30).run()
+    next(item for item in app.text_input if item.label == "Senha do pacote").input(
+        "senha segura"
+    ).run()
+    next(item for item in app.button if item.label == "Validar pacote").click().run()
+    next(item for item in app.text_input if item.label == "Nome da nova carteira").input("João").run()
+    next(item for item in app.checkbox if item.label.startswith("Confirmo a adição")).check().run()
+    service.package_content = b"changed package"
+
+    next(item for item in app.button if item.label == "Restaurar carteira").click().run()
+
+    assert service.read_count == 2
+    assert service.restore_count == 0
+    assert any("mudou" in item.value for item in app.error)
+
+
+def test_switching_local_package_clears_preview_without_reading_another_package():
+    service = _RestoreScreenService()
+    service.local_packages = ("local.rpb", "other.rpb")
+    app = AppTest.from_function(_render_restore_screen, args=(service,), default_timeout=30).run()
+    next(item for item in app.text_input if item.label == "Senha do pacote").input(
+        "senha segura"
+    ).run()
+    next(item for item in app.button if item.label == "Validar pacote").click().run()
+    assert service.read_count == 1
+
+    next(
+        item for item in app.selectbox if item.label == "Pacotes salvos nesta instalação"
+    ).select("other.rpb").run()
+
+    assert service.read_count == 1
+    assert all(item.label != "Carteira do pacote" for item in app.selectbox)

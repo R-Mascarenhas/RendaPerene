@@ -131,7 +131,8 @@ autentica o cabeçalho e o conteúdo e deriva a chave da senha com Argon2id. A c
 
 `LocalRestoreService` recebe o conteúdo criptografado e uma senha ou chave apenas em memória. Cada
 execução lista os `.rpb` regulares em `backups/local-backups/` por modificação local decrescente;
-o conteúdo selecionado é lido pelo serviço, sem aceitar caminhos externos ou links simbólicos.
+o conteúdo selecionado é lido pelo serviço somente ao validar ou restaurar, sem aceitar caminhos
+externos ou links simbólicos. Na restauração, o hash é conferido novamente antes da publicação.
 Pacotes enviados pelo navegador continuam disponíveis para restauração entre instalações. Cada
 inspeção materializa o `.rpb` em um diretório privado temporário, autentica o envelope, confere seu
 `backup_id` contra o manifesto e valida contagem, caminhos, metadados, SHA-256,

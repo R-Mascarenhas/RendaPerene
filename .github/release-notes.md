@@ -1,15 +1,18 @@
-## Novidades em 0.9.0
+## Novidades em 0.10.0
 
-- Novo backup local consistente para uma ou mais carteiras, com validação SQLite, hashes
-  SHA-256 e metadados do conjunto criado.
-- O catálogo de ativos incluído no aplicativo agora é somente leitura; ativos da carteira que
-  não constem nele continuam preservados e podem ser informados manualmente com validação do
-  ticker B3.
-- Correção do cache das análises de mercado para respeitar a carteira ativa e suas correções
-  anuais de proventos.
-- O aplicativo passa a ser exclusivamente local, sem o antigo modo de demonstração no
-  Streamlit Cloud.
-- Suporte oficial ao Python 3.10 até o Python 3.14.
+- Backups locais agora são publicados como pacotes `.rpb` criptografados por senha, com
+  AES-256-GCM e derivação de chave Argon2id. Uma chave de recuperação opcional pode ser baixada
+  separadamente e deve ser guardada fora do pacote.
+- A nova tela de restauração autentica e valida backups locais ou enviados pelo usuário antes de
+  restaurar uma carteira. Ela confere hashes, integridade SQLite, identidade e compatibilidade do
+  schema, permite prévia e confirmação explícita e preserva a versão anterior em
+  `backups/pre-restore/` antes de substituí-la.
+- O aplicativo verifica em segundo plano, uma vez por sessão, se há uma versão mais nova no
+  GitHub Releases e oferece o pacote compatível para Windows ou Ubuntu x64, sem enviar dados da
+  carteira.
+- O logging foi centralizado: a saída padrão registra eventos seguros da aplicação, e logs locais
+  rotacionados podem ser habilitados com `LOG_TO_FILE=true`. Dados financeiros, nomes de
+  carteiras e identificadores de sessão não são registrados.
 
 ## Sistemas suportados
 
@@ -32,7 +35,8 @@ As carteiras ficam fora da pasta do aplicativo:
 Antes de substituir uma versão instalada, preserve uma cópia da pasta de dados. A aplicação
 detecta bancos legados e oferece a migração para o layout atual na primeira execução.
 
-O backup criado pela interface ainda não é criptografado e a restauração permanece manual.
+Os backups criados pela interface são criptografados e a restauração é feita nela própria. A senha
+ou chave de recuperação não é armazenada pela aplicação; perder ambas impede recuperar o pacote.
 
 ## Limitações conhecidas
 

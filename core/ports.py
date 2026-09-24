@@ -5,6 +5,8 @@ from typing import Any, Protocol
 
 import pandas as pd
 
+from core.update_checker import AvailableUpdate
+
 
 class PortfolioBackupSourceError(RuntimeError):
     """Base error exposed by the portfolio backup source seam."""
@@ -297,3 +299,9 @@ class PlanningProviderPort(Protocol):
     def get_planned_annual_dividends(self, year: int | None = None) -> float: ...
 
     def get_updated_required_contribution(self) -> float: ...
+
+
+class UpdateCheckerPort(Protocol):
+    """Outbound port for checking a compatible published application release."""
+
+    def check(self, installed_version: str) -> AvailableUpdate | None: ...

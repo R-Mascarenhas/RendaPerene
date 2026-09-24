@@ -2,6 +2,7 @@
 
 import json
 import logging
+import platform
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -32,7 +33,10 @@ class UpdateChecker:
         self._fetch_latest_release = fetch_latest_release or self._request_latest_release
 
     def check(
-        self, installed_version: str, platform_name: str | None = None
+        self,
+        installed_version: str,
+        platform_name: str | None = None,
+        machine_name: str | None = None,
     ) -> AvailableUpdate | None:
         """Return a compatible update only when the release is newer than installed_version."""
         installed = _parse_version(installed_version)
@@ -57,7 +61,9 @@ class UpdateChecker:
             return None
 
         version = _format_version(release_version)
-        asset_name = _asset_name(version, platform_name or sys.platform)
+        asset_name = _asset_name(
+            version, platform_name or sys.platform, machine_name or platform.machine()
+        )
         if asset_name is None:
             logger.info("update_check.platform_unsupported")
             return None
@@ -100,7 +106,9 @@ def _format_version(version: tuple[int, int, int]) -> str:
     return ".".join(str(part) for part in version)
 
 
-def _asset_name(version: str, platform_name: str) -> str | None:
+def _asset_name(version: str, platform_name: str, machine_name: str) -> str | None:
+    if machine_name.lower() not in {"amd64", "x86_64"}:
+        return None
     if platform_name.startswith("win"):
         return f"RendaPerene-v{version}-windows-x64.zip"
     if platform_name.startswith("linux"):

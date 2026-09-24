@@ -1,4 +1,5 @@
-from core.constants import SESSION_UPDATE_CHECK_FUTURE
+from core.constants import SESSION_UPDATE_CHECK_DISMISSED, SESSION_UPDATE_CHECK_FUTURE
+from core.update_checker import AvailableUpdate
 from views import update_notification
 
 
@@ -40,3 +41,26 @@ def test_update_notification_reruns_after_background_check_completes(monkeypatch
     scheduled_fragments[0]()
 
     assert reruns == [True]
+
+
+def test_download_failure_keeps_update_dialog_available(monkeypatch):
+    session_state = {}
+    errors = []
+    reruns = []
+    button_values = iter([True, False])
+    monkeypatch.setattr(update_notification.st, "session_state", session_state)
+    monkeypatch.setattr(update_notification.st, "write", lambda _message: None)
+    monkeypatch.setattr(update_notification.st, "text", lambda _message: None)
+    monkeypatch.setattr(
+        update_notification.st, "button", lambda *_args, **_kwargs: next(button_values)
+    )
+    monkeypatch.setattr(update_notification.st, "error", errors.append)
+    monkeypatch.setattr(update_notification.st, "rerun", lambda: reruns.append(True))
+    monkeypatch.setattr(update_notification.webbrowser, "open", lambda _url: False)
+
+    update = AvailableUpdate("1.2.0", "Notas", "https://example.test/update.zip")
+    update_notification._render_update_dialog.__wrapped__(update)
+
+    assert SESSION_UPDATE_CHECK_DISMISSED not in session_state
+    assert reruns == []
+    assert errors == ["Não foi possível abrir o navegador. Tente novamente."]

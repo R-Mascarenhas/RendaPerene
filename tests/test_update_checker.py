@@ -50,6 +50,16 @@ def test_check_selects_linux_asset_by_its_expected_name():
 
 
 @pytest.mark.parametrize(
+    ("platform_name", "machine_name"),
+    [("linux", "aarch64"), ("linux", "i686"), ("win32", "arm64")],
+)
+def test_check_ignores_release_without_a_compatible_x64_package(platform_name, machine_name):
+    checker = UpdateChecker(lambda timeout: release_payload())
+
+    assert checker.check("1.1.0", platform_name=platform_name, machine_name=machine_name) is None
+
+
+@pytest.mark.parametrize(
     "payload",
     [
         {"tag_name": "release-1.2.0", "assets": []},

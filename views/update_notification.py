@@ -58,10 +58,12 @@ def _render_update_dialog(update: AvailableUpdate) -> None:
     if update.release_notes:
         st.text(update.release_notes)
     if st.button("Baixar atualização", use_container_width=True):
-        if not webbrowser.open(update.download_url):
+        if webbrowser.open(update.download_url):
+            st.session_state[SESSION_UPDATE_CHECK_DISMISSED] = True
+            st.rerun()
+        else:
             logger.warning("update_check.browser_open_failed")
-        st.session_state[SESSION_UPDATE_CHECK_DISMISSED] = True
-        st.rerun()
+            st.error("Não foi possível abrir o navegador. Tente novamente.")
     if st.button("Agora não", use_container_width=True):
         st.session_state[SESSION_UPDATE_CHECK_DISMISSED] = True
         st.rerun()

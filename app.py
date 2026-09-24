@@ -15,6 +15,7 @@ from core.daos.portfolio_dao import PortfolioDAO
 from core.database import DatabaseManager, db
 from core.logging_config import configure_logging
 from core.sqlite_backup import SQLitePortfolioBackupSourceFactory
+from core.update_checker import UpdateChecker
 from core.utils import SessionManager, get_app_version
 from core.utils.market_data import MarketData
 from services.local_backup_service import (
@@ -24,6 +25,7 @@ from services.local_backup_service import (
 )
 from services.local_restore_service import LocalRestoreService
 from views.backup_restore_view import render_local_restore
+from views.update_notification import render_update_notification
 
 app_paths = ApplicationPaths.discover()
 configure_logging(app_paths.logs_dir)
@@ -300,6 +302,7 @@ def guard_portfolio_generation(database_path):
 db.connection_guard = guard_portfolio_generation
 db.init_personal_db()
 app_version = get_app_version()
+update_checker = UpdateChecker()
 
 backup_service = LocalBackupService(
     SQLitePortfolioBackupSourceFactory(app_paths),
@@ -439,6 +442,7 @@ ShareQuantityGoalService.set_adapters(
 SessionManager.initialize()
 
 st.title(f"💼 Renda Perene v{app_version}")
+render_update_notification(app_version, update_checker)
 
 from core.strings import TAB_ASSETS, TAB_DASHBOARD, TAB_PLANNING
 from views.assets_view import AssetsView

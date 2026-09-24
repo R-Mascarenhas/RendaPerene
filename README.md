@@ -145,6 +145,7 @@ O acesso à rede é necessário para obter dados atualizados:
 
 - O Yahoo Finance (`yfinance`) fornece cotações da B3, indicadores de mercado, histórico de preços e dados de dividendos. Se uma cotação em tempo real não estiver disponível, a análise do ativo utiliza o último fechamento diário válido.
 - O Banco Central do Brasil (BCB) fornece indicadores de IPCA, Selic e salário mínimo.
+- O GitHub Releases é consultado uma vez por sessão para avisar sobre uma versão mais nova. A consulta não envia dados da carteira, não bloqueia a abertura da aplicação e só oferece o pacote publicado para Windows ou Ubuntu x64.
 
 Os snapshots do Yahoo Finance são armazenados em cache sem dados da carteira. As correções anuais de
 proventos permanecem no SQLite local, são relidas a cada análise e aplicadas antes do cálculo do

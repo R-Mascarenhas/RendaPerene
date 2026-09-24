@@ -141,6 +141,10 @@ SESSION_PORTFOLIO_RESTORE_SUCCESS = "portfolio_restore_success"
 SESSION_PORTFOLIO_RESTORE_CLEANUP_WARNING = "portfolio_restore_cleanup_warning"
 SESSION_ACTIVE_DATABASE_GENERATION = "active_database_generation"
 SESSION_LEGACY_PREFERENCE_MESSAGES = "legacy_preference_messages"
+SESSION_UPDATE_CHECK_EXECUTOR = "update_check_executor"
+SESSION_UPDATE_CHECK_FUTURE = "update_check_future"
+SESSION_UPDATE_CHECK_DISMISSED = "update_check_dismissed"
+SESSION_UPDATE_CHECK_AVAILABLE = "update_check_available"
 
 # Streamlit Interactive Widget key constants (Safe Value-Binding Pattern keys)
 WIDGET_BIRTH_DATE = "birth_date_input"

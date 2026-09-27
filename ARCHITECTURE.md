@@ -64,7 +64,7 @@ A direção das dependências é `views` → `services` → contratos e adaptado
 ### Serviços de domínio
 
 - `AssetService` é a fonte única da verdade para transações, dividendos, posições dos ativos, evolução histórica, lista de ativos monitorados, registros normalizados do catálogo e definição do dividend yield alvo do modelo de Bazin com base em dados de mercado.
-- `SimulationService` controla as configurações de aposentadoria e os cálculos de anuidade antecipada. Os consumidores devem usar `get_current_simulation()` em vez de reimplementar o cálculo dos aportes.
+- `SimulationService` controla as configurações de aposentadoria e os cálculos de anuidade antecipada. Os consumidores devem usar `get_current_simulation()` em vez de reimplementar o cálculo dos aportes. `prepare_historical_evolution()` combina o patrimônio inicial configurado com os aportes líquidos do período e prepara as curvas planejadas para os gráficos do Dashboard e do Planejamento, sem alterar os dados de origem nem o histórico de proventos recebidos. A série de aportes planejados acumula somente os aportes mensais, começando com um aporte no mês 0; os proventos planejados começam em zero e usam o patrimônio inicial mais os aportes anteriores como base a partir do mês 1.
 - `GoalService`, em `services/goals_service.py`, controla as metas gerais da carteira, incluindo o reinvestimento opcional de dividendos e o progresso dos aportes anuais. Ele consome os valores planejados de `SimulationService` por meio de `PlanningProviderPort`, sem duplicar os cálculos de aposentadoria.
 - `ShareQuantityGoalService`, em `services/share_quantity_goal_service.py`, controla a meta anual de quantidade de cotas por ticker. A base é a quantidade mantida em 1º de janeiro do ano corrente; o progresso mede as aquisições desde essa data, inclusive as que ainda têm custo pendente, excluindo entradas de custódia e ações corporativas. O serviço distribui os proventos planejados entre pesos iguais ou personalizados, considera peso zero como inatividade, calcula a meta de cotas a partir do histórico de proventos e informa o crescimento planejado da posição, permitindo progresso acima de 100%.
 - `LocalBackupService`, em `services/local_backup_service.py`, cria um conjunto de backup local para as carteiras selecionadas, valida cada cópia, calcula os hashes, gera os metadados e publica o conjunto de forma atômica. Sua interface não depende de provedor de nuvem.
@@ -216,7 +216,10 @@ leitores sob o lock por carteira, impedindo que uma conexão SQLite aberta conti
 arquivo antigo durante uma substituição. Os locks usam bloqueios advisory do sistema operacional
 mantidos por descritores abertos; por isso, um processo encerrado libera automaticamente sua posse
 sem que outro processo precise apagar um arquivo de lock que pode já ter sido reutilizado. As
-escritas continuam usando o bloqueio nativo do SQLite.
+escritas continuam usando o bloqueio nativo do SQLite. A abertura e a inicialização do arquivo de
+lock também podem sofrer contenção no Windows: nesses casos, o descritor incompleto é fechado e a
+tentativa é repetida dentro do limite de espera existente, sem remover nem assumir o lock de outra
+sessão. Erros de entrada/saída que não indicam contenção continuam sendo propagados.
 Bancos inválidos não ficam disponíveis para seleção. Se a carteira ativa desaparecer ou se tornar
 inválida, a seleção automática de uma alternativa também invalida o estado derivado da carteira
 anterior antes de reiniciar a interface. Quando não existe alternativa válida, a aplicação usa um

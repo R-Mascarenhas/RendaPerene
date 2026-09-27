@@ -5,7 +5,6 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from core.constants import (
-    ANNUAL_INTEREST_RATE,
     CUMULATIVE_DIVIDENDS,
     CUMULATIVE_INVESTED,
     CURRENT_VALUE,
@@ -156,26 +155,13 @@ class DashboardCharts:
         config = SimulationService.get_configuration()
         start_date = config.get(PLANNING_START_DATE) if config else None
         df_evolution = StreamlitCachedPortfolioData.calculate_historical_evolution(start_date)
+        df_evolution = SimulationService.prepare_historical_evolution(df_evolution)
 
         if not df_evolution.empty:
             st.subheader(MSG_HISTORIC_EVOLUTION_TITLE)
 
             df_evolution = df_evolution.sort_values(by=MONTH_STR).reset_index(drop=True)
             df_evolution[MONTH_DISPLAY] = df_evolution[MONTH_STR].apply(Formatter.format_month_year)
-
-            # Pull dynamic values
-            if config:
-                annual_interest_rate_val = float(config[ANNUAL_INTEREST_RATE])
-                monthly_interest_rate = (1 + annual_interest_rate_val / 100) ** (1 / 12) - 1
-            else:
-                monthly_interest_rate = (1 + 6.0 / 100) ** (1 / 12) - 1
-
-            monthly_contribution = SimulationService.get_required_contribution()
-
-            # Call centralized, DRY-compliant mathematical projection service method!
-            df_evolution = SimulationService.calculate_planned_historical_evolution(
-                df_evolution, monthly_contribution, monthly_interest_rate
-            )
 
             # Dual-timeline multi-axis figure
             fig_multi = make_subplots(specs=[[{"secondary_y": True}]])

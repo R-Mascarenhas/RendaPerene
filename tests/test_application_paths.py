@@ -1,3 +1,4 @@
+import errno
 import os
 import sqlite3
 import sys
@@ -6,6 +7,7 @@ import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -441,8 +443,9 @@ def test_successful_legacy_migration_is_copy_only_backed_up_and_idempotent(tmp_p
     assert "já foi importada" in repeated.message
 
 
+@pytest.mark.parametrize("transient_open_failure", [False, True])
 def test_concurrent_legacy_migrations_with_different_destinations_publish_once(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, transient_open_failure
 ):
     resource_root = tmp_path / "application"
     paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
@@ -455,6 +458,20 @@ def test_concurrent_legacy_migrations_with_different_destinations_publish_once(
     write_calls_lock = threading.Lock()
     second_write_reached = threading.Event()
     real_write_marker = ApplicationPaths._write_completion_marker
+    real_open_lock = application_paths_module._open_lock_descriptor
+    source_open_calls = 0
+
+    def open_with_windows_contention(lock):
+        nonlocal source_open_calls
+        if lock.name.endswith(".migration.lock"):
+            with write_calls_lock:
+                source_open_calls += 1
+                call_number = source_open_calls
+            if transient_open_failure and call_number == 2:
+                raise PermissionError(13, "Simulated Windows lock initialization contention")
+        return real_open_lock(lock)
+
+    monkeypatch.setattr(application_paths_module, "_open_lock_descriptor", open_with_windows_contention)
 
     def observed_write_marker(cls, marker, imported_source, destination_name):
         nonlocal write_calls
@@ -771,6 +788,63 @@ def test_reader_registration_does_not_wait_for_existing_readers(tmp_path):
         second.join(timeout=2)
 
     assert not second.is_alive()
+
+
+def test_windows_lock_initialization_failure_closes_descriptor(tmp_path, monkeypatch):
+    descriptors = []
+    monkeypatch.setattr(application_paths_module, "sys", SimpleNamespace(platform="win32"))
+
+    def fail_initial_write(descriptor, content):
+        descriptors.append(descriptor)
+        raise PermissionError(errno.EACCES, "Simulated locked byte")
+
+    monkeypatch.setattr(application_paths_module.os, "write", fail_initial_write)
+    with pytest.raises(PermissionError):
+        application_paths_module._open_lock_descriptor(tmp_path / "migration.lock")
+
+    assert len(descriptors) == 1
+    try:
+        with pytest.raises(OSError) as failure:
+            os.fstat(descriptors[0])
+        assert failure.value.errno == errno.EBADF
+    finally:
+        try:
+            os.close(descriptors[0])
+        except OSError:
+            pass
+
+
+def test_lock_open_contention_respects_timeout(tmp_path, monkeypatch):
+    attempts = 0
+    monkeypatch.setattr(application_paths_module, "FILE_LOCK_TIMEOUT_SECONDS", 0.05)
+
+    def fail_open(lock):
+        nonlocal attempts
+        attempts += 1
+        raise PermissionError(errno.EACCES, "Simulated persistent contention")
+
+    monkeypatch.setattr(application_paths_module, "_open_lock_descriptor", fail_open)
+    with pytest.raises(TimeoutError):
+        with application_paths_module._exclusive_file_lock(tmp_path / "migration.lock"):
+            pytest.fail("Contended lock must never be acquired")
+    assert attempts > 1
+
+
+def test_lock_open_io_failure_is_not_retried(tmp_path, monkeypatch):
+    failure = OSError(errno.EIO, "Simulated disk error")
+    attempts = 0
+
+    def fail_open(lock):
+        nonlocal attempts
+        attempts += 1
+        raise failure
+
+    monkeypatch.setattr(application_paths_module, "_open_lock_descriptor", fail_open)
+    with pytest.raises(OSError) as captured:
+        with application_paths_module._exclusive_file_lock(tmp_path / "migration.lock"):
+            pytest.fail("Failed lock must never be acquired")
+    assert captured.value is failure
+    assert attempts == 1
 
 
 def test_file_lock_serializes_active_writers(tmp_path):

@@ -9,6 +9,7 @@ from core.constants import (
     MONTH_DISPLAY,
     PLANNED_DIVIDENDS,
     PLANNED_INVESTED,
+    SIM_CURRENT_AGE,
     SIM_MONTHLY_INTEREST_RATE,
     SIM_REQUIRED_CONTRIBUTION,
     SIM_START_AGE_YEARS,
@@ -39,6 +40,29 @@ class ProjectionChartWidget:
 
         # 2. RENDER SECTION 2: HISTORICAL REAL VS PLANNED (SIDE BY SIDE WITH EXTRAPOLATION)
         self._render_historical_comparisons(extrapolation=12)
+
+    @staticmethod
+    def _add_today_marker(fig, sim):
+        """Mark the current age on the projection's age axis."""
+        current_age = sim[SIM_CURRENT_AGE]
+        fig.add_vline(
+            x=current_age,
+            line_width=2,
+            line_dash="dot",
+            line_color=ChartThemeAdapter.GRAY,
+        )
+        fig.add_annotation(
+            x=current_age,
+            y=1,
+            yref="paper",
+            text="Hoje",
+            showarrow=False,
+            yanchor="bottom",
+            bgcolor=ChartThemeAdapter.annotation_background(),
+            bordercolor=ChartThemeAdapter.GRAY,
+            borderwidth=1,
+            font=dict(size=12, color=ChartThemeAdapter.annotation_font_color()),
+        )
 
     def _render_cumulative_projection(self, sim, container):
         """Renders the cumulative long-term projection area chart with crossover markers."""
@@ -107,9 +131,10 @@ class ProjectionChartWidget:
                 )
             )
 
-            crossover_rows = df_projection[
-                df_projection["Juros Acumulado (Rendimento)"]
-                >= df_projection["Valor Aportado Acumulado"]
+            growth_rows = df_projection.iloc[1:]
+            crossover_rows = growth_rows[
+                growth_rows["Juros Acumulado (Rendimento)"]
+                >= growth_rows["Valor Aportado Acumulado"]
             ]
             if not crossover_rows.empty:
                 crossover_row = crossover_rows.iloc[0]
@@ -136,6 +161,7 @@ class ProjectionChartWidget:
                     font=dict(size=12, color=ChartThemeAdapter.annotation_font_color()),
                 )
 
+            self._add_today_marker(fig, sim)
             fig.update_layout(
                 title="Crescimento e Composição Patrimonial até a Aposentadoria",
                 xaxis=dict(hoverformat=".1f anos"),
@@ -209,6 +235,7 @@ class ProjectionChartWidget:
                     font=dict(size=12, color=ChartThemeAdapter.annotation_font_color()),
                 )
 
+            self._add_today_marker(fig2, sim)
             fig2.update_layout(
                 title="Fluxo Mensal: Aporte do Bolso vs. Geração de Renda Passiva",
                 xaxis=dict(hoverformat=".1f anos"),

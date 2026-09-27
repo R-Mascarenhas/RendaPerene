@@ -320,7 +320,9 @@ def test_projection_chart_does_not_override_zero_initial_equity(mock_db):
     )
 
     assert not df_projection.empty
-    first_month_invested = df_projection.iloc[0]["Valor Aportado Acumulado"]
+    assert df_projection.iloc[0]["Valor Aportado Acumulado"] == 0.0
+    assert df_projection.iloc[0]["Juros Acumulado (Rendimento)"] == 0.0
+    first_month_invested = df_projection.iloc[1]["Valor Aportado Acumulado"]
     expected_first_month = 0.0 + sim["required_monthly_contribution"]
     assert abs(first_month_invested - expected_first_month) < 1e-5
 
@@ -472,4 +474,83 @@ def test_decoupled_portfolio_provider_seam(mock_db):
 
         SimulationService.set_adapters(
             planning_repo=PlanningDAO, portfolio_provider=AssetService.get_default()
+        )
+
+
+@pytest.mark.parametrize("chart", ["dashboard", "projection"])
+@pytest.mark.parametrize(
+    "initial_equity, automatic, start_date, baseline",
+    [
+        (3000.0, False, "2024-01-01", 3000.0),
+        (10000.0, False, "2024-01-01", 10000.0),
+        (0.0, False, "2024-01-01", 0.0),
+        (0.0, True, "2024-01-01", 3000.0),
+        (10000.0, False, None, 0.0),
+    ],
+)
+def test_history_charts_include_initial_equity(
+    mock_db, monkeypatch, chart, initial_equity, automatic, start_date, baseline
+):
+    AssetService.add_transaction("BBAS3", "2021-01-01", "BUY", 100, 30.0)
+    AssetService.add_transaction("BBAS3", "2024-05-15", "BUY", 50, 40.0)
+    SimulationService.save_configuration(
+        birth_date="1990-01-01",
+        retirement_age=65,
+        desired_income_mw=10.0,
+        annual_interest_rate=6.0,
+        mw_value=1412.0,
+        initial_equity_input=initial_equity,
+        planning_start_date=start_date,
+        initial_equity_auto=automatic,
+    )
+    simulation = SimulationService.get_current_simulation()
+    starting_capital = baseline if start_date else 3000.0
+    final_capital = baseline + 2000.0 if start_date else 5000.0
+    if chart == "projection":
+        history = SimulationService.get_projection_chart_dataset()
+        assert history.iloc[0]["cumulative_invested"] == starting_capital
+        assert history.iloc[0]["planned_invested"] == pytest.approx(
+            simulation["required_monthly_contribution"]
+        )
+        assert history.iloc[0]["cumulative_dividends"] == 0.0
+        assert history.iloc[0]["planned_dividends"] == 0.0
+        assert history.iloc[1]["planned_dividends"] == pytest.approx(
+            (baseline + simulation["required_monthly_contribution"])
+            * simulation["monthly_interest_rate"]
+        )
+        assert history.iloc[1]["planned_invested"] == pytest.approx(
+            2 * simulation["required_monthly_contribution"]
+        )
+        may_capital = history.loc[
+            history["month_str"] == "2024-05", "cumulative_invested"
+        ].iloc[0]
+        assert may_capital == final_capital
+    else:
+        from views.components import charts
+
+        figures = []
+        monkeypatch.setattr(charts.st, "markdown", lambda *args, **kwargs: None)
+        monkeypatch.setattr(charts.st, "subheader", lambda *args, **kwargs: None)
+        monkeypatch.setattr(charts.st, "plotly_chart", lambda fig, **kwargs: figures.append(fig))
+        cached_history = AssetService.calculate_historical_evolution(start_date)
+        original_history = cached_history.copy(deep=True)
+        monkeypatch.setattr(
+            charts.StreamlitCachedPortfolioData,
+            "calculate_historical_evolution",
+            lambda *args, **kwargs: cached_history,
+        )
+        dashboard = charts.DashboardCharts()
+        dashboard._render_evolution_chart()
+        dashboard._render_evolution_chart()
+        pd.testing.assert_frame_equal(cached_history, original_history)
+        assert len(figures) == 2
+        assert figures[1].data[0].y[0] == starting_capital
+        assert figures[0].data[0].y[0] == starting_capital
+        assert figures[0].data[1].y[0] == pytest.approx(
+            simulation["required_monthly_contribution"]
+        )
+        assert figures[0].data[3].y[0] == 0.0
+        assert figures[0].data[3].y[1] == pytest.approx(
+            (baseline + simulation["required_monthly_contribution"])
+            * simulation["monthly_interest_rate"]
         )

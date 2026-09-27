@@ -284,12 +284,12 @@ class SimulationService:
     ):
         """
         Projects current actual equity + future contributions growing over the remaining months.
-        Starts from today (current_age) until retirement.
+        Includes the initial capital at month zero, then each month until retirement.
         """
         if simulation_months <= 0:
             return pd.DataFrame()
 
-        months_array = np.arange(1, simulation_months + 1)
+        months_array = np.arange(0, simulation_months + 1)
         ages_array = current_age + (months_array / 12)
 
         cumulative_invested = initial_equity + months_array * required_monthly_contribution
@@ -356,7 +356,8 @@ class SimulationService:
     ) -> pd.DataFrame:
         """
         Centralized, DRY-compliant mathematical projection for historical planned curves.
-        Generates linear accumulation of planned investments and compound interest.
+        Starts contributions at one monthly payment and income at zero in month zero.
+        Initial capital contributes to income from the following month.
         """
         planned_invested = []
         planned_dividends = []
@@ -364,12 +365,12 @@ class SimulationService:
         last_equity = initial_equity
         last_dividends = 0.0
 
-        for _ in range(len(df_evolution)):
-            period_interest = last_equity * monthly_interest_rate
+        for month_index in range(len(df_evolution)):
+            period_interest = last_equity * monthly_interest_rate if month_index > 0 else 0.0
             next_equity = last_equity + monthly_contribution
             next_dividends = last_dividends + period_interest
 
-            planned_invested.append(next_equity)
+            planned_invested.append((month_index + 1) * monthly_contribution)
             planned_dividends.append(next_dividends)
 
             last_equity = next_equity
@@ -378,6 +379,25 @@ class SimulationService:
         df_evolution["planned_invested"] = planned_invested
         df_evolution["planned_dividends"] = planned_dividends
         return df_evolution
+
+    @hybridmethod
+    def prepare_historical_evolution(self, df_evolution: pd.DataFrame) -> pd.DataFrame:
+        """Applies the planning baseline to actual and planned historical capital."""
+        from core.constants import CUMULATIVE_INVESTED, MONTH_STR
+
+        if df_evolution.empty:
+            return df_evolution.copy()
+        config = self.get_configuration()
+        initial_equity = self._get_initial_equity_input(config) if config else 0.0
+        if initial_equity is None:
+            return pd.DataFrame()
+        annual_rate = float(config[ANNUAL_INTEREST_RATE]) if config else 6.0
+        monthly_rate = (1 + annual_rate / 100) ** (1 / 12) - 1
+        history = df_evolution.sort_values(MONTH_STR).reset_index(drop=True).copy()
+        history[CUMULATIVE_INVESTED] = history[CUMULATIVE_INVESTED] + initial_equity
+        return self.calculate_planned_historical_evolution(
+            history, self.get_required_contribution(), monthly_rate, initial_equity
+        )
 
     @hybridmethod
     def get_projection_chart_dataset(self, extrapolation_months: int = 12) -> pd.DataFrame:
@@ -427,25 +447,10 @@ class SimulationService:
 
         df_extrap[MONTH_DISPLAY] = df_extrap[MONTH_STR].apply(Formatter.format_month_year)
 
-        # 2. GENERATE CONTINUOUS PLANNED CURVES
-        config = self.get_configuration()
-        from core.constants import ANNUAL_INTEREST_RATE
-
-        if config:
-            annual_interest_rate_val = float(config[ANNUAL_INTEREST_RATE])
-            monthly_interest_rate = (1 + annual_interest_rate_val / 100) ** (1 / 12) - 1
-            initial_equity = self._get_initial_equity_input(config)
-        else:
-            monthly_interest_rate = (1 + 6.0 / 100) ** (1 / 12) - 1
-            initial_equity = 0.0
-        if initial_equity is None:
+        # Apply the same capital baseline and planned curves as the dashboard.
+        df_extrap = self.prepare_historical_evolution(df_extrap)
+        if df_extrap.empty:
             return pd.DataFrame()
-
-        monthly_contribution = self.get_required_contribution()
-
-        df_extrap = self.calculate_planned_historical_evolution(
-            df_extrap, monthly_contribution, monthly_interest_rate, initial_equity=initial_equity
-        )
 
         # 3. COMPUTE EXTRAPOLATION TRENDLINES
         df_extrap["trend_dividends"] = TrendlineCalculator.calculate_trend(

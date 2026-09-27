@@ -187,6 +187,22 @@ negativos e aumentam o valor restante para atingir a meta anual. Eventos de cust
 desse cálculo; custos pendentes de negociação no período mantêm os totais indisponíveis até a
 regularização.
 
+Ao selecionar uma data de início do planejamento, o capital real acumulado nos gráficos inclui
+o **Patrimônio Inicial** e os aportes líquidos registrados a partir da data escolhida. O valor
+inicial pode ser calculado automaticamente ou informado manualmente, inclusive como zero.
+No mês 0, os aportes planejados correspondem ao aporte mensal necessário e os proventos
+planejados são zero. A curva de aportes planejados acumula apenas os aportes mensais; o patrimônio
+inicial integra a base de cálculo dos proventos planejados a partir do mês 1. Proventos recebidos
+antes da data permanecem fora do histórico.
+
+Os gráficos de projeção acumulada a longo prazo e de aporte constante versus juros crescentes
+mostram uma linha pontilhada **Hoje** na idade atual, além dos marcos de juros ou rendimentos
+iguais ou superiores aos aportes.
+
+Na Simulação Rápida, o patrimônio inicial aparece no ano zero da projeção acumulada, com
+juros acumulados iguais a zero, e compõe a base de crescimento do patrimônio e dos rendimentos.
+Também reduz o aporte mensal necessário. Os valores dessa simulação não alteram o plano salvo.
+
 ## Requisitos
 
 - Python 3.10 a 3.14

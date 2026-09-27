@@ -1026,3 +1026,44 @@ def test_local_projection_cache_reuses_only_the_same_portfolio_revision(monkeypa
     StreamlitCachedPortfolioData.calculate_historical_evolution()
     StreamlitCachedPortfolioData.calculate_historical_evolution()
     current_date[0] = current_date[0].replace(month=2, day=1)
+
+
+@pytest.mark.parametrize("initial_equity", [0.0, 100_000.0])
+def test_quick_simulation_charts_start_with_entered_equity(monkeypatch, initial_equity):
+    from contextlib import nullcontext
+    from views import planning_view
+    from views.components.chart_theme import ChartThemeAdapter
+
+    inputs = {
+        "sandbox_tempo_anos": 30,
+        "sandbox_salario_desejado": 10_000.0,
+        "sandbox_taxa_juros": 6.0,
+        "sandbox_patrimonio_inicial": initial_equity,
+    }
+    figures = []
+    saved_configuration = SimulationService.get_configuration()
+    monkeypatch.setattr(planning_view.st, "expander", lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr(planning_view.st, "columns", lambda count: [nullcontext() for _ in range(count)])
+    monkeypatch.setattr(planning_view.st, "number_input", lambda *args, **kwargs: inputs[kwargs["key"]])
+    for method in ("write", "markdown", "subheader"):
+        monkeypatch.setattr(planning_view.st, method, lambda *args, **kwargs: None)
+    monkeypatch.setattr(planning_view.st, "plotly_chart", lambda fig, **kwargs: figures.append(fig))
+    monkeypatch.setattr(planning_view.SimulationResultsWidget, "render", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ChartThemeAdapter, "current_theme_type", lambda: "light")
+
+    PlanningView()._render_sandbox_simulation()
+
+    assert len(figures) == 2
+    cumulative, cashflow = figures
+    assert cumulative.data[0].x[0] == 0.0
+    assert cumulative.data[0].y[0] == initial_equity
+    assert cumulative.data[1].y[0] == initial_equity
+    assert cumulative.data[2].y[0] == 0.0
+    crossover = [item for item in cumulative.layout.annotations if "Juros >= Aportes" in item.text]
+    assert crossover and crossover[0].x > 0.0
+    monthly_rate = 1.06 ** (1 / 12) - 1
+    target = 10_000.0 / monthly_rate
+    assert cumulative.data[0].x[-1] == 30.0
+    assert cumulative.data[0].y[-1] == pytest.approx(target)
+    assert cashflow.data[1].y[0] == pytest.approx(initial_equity * monthly_rate)
+    assert SimulationService.get_configuration() == saved_configuration

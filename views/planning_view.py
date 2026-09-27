@@ -4,6 +4,7 @@ import streamlit as st
 
 from core.constants import (
     INITIAL_EQUITY_AUTO,
+    INITIAL_EQUITY_INPUT,
     INITIAL_EQUITY_MANUAL_OVERRIDE,
     SESSION_ANNUAL_INTEREST_RATE,
     SESSION_BIRTH_DATE,
@@ -512,6 +513,7 @@ class PlanningView:
                 SIM_REQUIRED_CONTRIBUTION: aporte_necessario,
                 SIM_UPDATED_CONTRIBUTION: aporte_necessario,  # Required by ProjectionChartWidget
                 SIM_TOTAL_INVESTED: patrimonio_inicial,
+                INITIAL_EQUITY_INPUT: patrimonio_inicial,
             }
 
             SimulationResultsWidget().render(sandbox_sim, show_updated=False)

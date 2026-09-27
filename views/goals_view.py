@@ -1,6 +1,7 @@
 import streamlit as st
 
 from core.constants import WIDGET_REINVESTMENT_GOAL_PREFIX, WIDGET_SHARE_QUANTITY_GOAL_PREFIX
+from core.performance import instrument_screen, measure_navigation
 from services.goals_service import GoalService
 from services.share_quantity_goal_service import ShareQuantityGoalService
 from views.components.accumulation_goals import AccumulationGoalPlanningWidget
@@ -9,20 +10,24 @@ from views.components.accumulation_goals import AccumulationGoalPlanningWidget
 class GoalsView:
     """Renders goal selection and configuration inside Planning."""
 
+    @instrument_screen("planejamento.metas")
     def render(self) -> None:
         st.subheader("🎯 Metas de investimento")
         st.write("Escolha quais metas deseja acompanhar nesta carteira.")
 
         active_database = st.session_state.get("active_db", "portfolio.db")
-        reinvestment_enabled = self._render_reinvestment_option(active_database)
-        share_quantity_enabled = self._render_share_quantity_option(active_database)
+        with measure_navigation("planejamento.metas", "reinvestment"):
+            reinvestment_enabled = self._render_reinvestment_option(active_database)
+        with measure_navigation("planejamento.metas", "share_quantity"):
+            share_quantity_enabled = self._render_share_quantity_option(active_database)
 
         if reinvestment_enabled:
             st.caption(
                 "A meta anual do Dashboard inclui os proventos recebidos como valor a reinvestir."
             )
         if share_quantity_enabled:
-            AccumulationGoalPlanningWidget().render()
+            with measure_navigation("planejamento.metas", "accumulation_widget"):
+                AccumulationGoalPlanningWidget().render()
 
     @staticmethod
     def _render_reinvestment_option(active_database: str) -> bool:

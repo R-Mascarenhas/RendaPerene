@@ -30,6 +30,29 @@ def test_dividend_logging_keeps_value_out_of_all_messages(caplog):
     assert all("123.45" not in message for message in messages)
 
 
+def test_local_projection_revision_advances_only_after_ledger_mutations():
+    """A cache key must change after persisted portfolio data changes."""
+    portfolio = AssetService.get_default()._portfolio_repo
+
+    initial_revision = portfolio.get_local_projection_revision()
+
+    assert AssetService.add_transaction("BBAS3", "2026-09-21", "BUY", 7, 20.0)
+    after_transaction = portfolio.get_local_projection_revision()
+    assert after_transaction == initial_revision + 1
+
+    assert AssetService.add_dividend("BBAS3", "2026-09-22", "DIVIDEND", 10.0)
+    assert portfolio.get_local_projection_revision() == after_transaction + 1
+
+    assert AssetService.add_tracked_market_asset("CXSE3")
+    after_tracking = portfolio.get_local_projection_revision()
+    assert after_tracking == after_transaction + 2
+
+    assert AssetService.save_dividend_correction("BBAS3", 2025, 3.0)
+    assert portfolio.get_local_projection_revision() == after_tracking + 1
+    assert not AssetService.add_dividend("BBAS3", "2026-09-22", "DIVIDEND", 10.0)
+    assert portfolio.get_local_projection_revision() == after_tracking + 1
+
+
 def test_recoverable_post_sale_failure_is_logged_without_changing_result(monkeypatch, caplog):
     service = AssetService.get_default()
 
@@ -80,6 +103,7 @@ def test_uncatalogued_ticker_persists_with_neutral_metadata_after_service_restar
     }
     assert "MOCK4" in reloaded_service.get_tracked_market_assets()
 
+
 def test_average_price_calculation():
     """Ensures chronologically weighted average price math works perfectly."""
     AssetService.add_transaction("BBAS3", "2021-04-30", "BUY", 100, 20.00)
@@ -104,6 +128,7 @@ def test_average_price_calculation():
     assert df.loc[0, "quantity"] == 200
     assert df.loc[0, "average_price"] == 22.50
 
+
 def test_dividends_time_windows():
     """Ensures the engine calculates total, YTD, and L12M accumulated dividends properly."""
     AssetService.add_transaction("BBAS3", "2021-04-30", "BUY", 100, 20.00)
@@ -117,6 +142,7 @@ def test_dividends_time_windows():
     assert df_positions.loc[0, "total_dividends"] == 180.00
     assert df_positions.loc[0, "l12m_dividends"] == 150.00
     assert df_positions.loc[0, "ytd_dividends"] == 100.00
+
 
 def test_historical_evolution_calculation():
     """Ensures monthly accumulated history for cashflow and dividends is correct."""
@@ -134,6 +160,7 @@ def test_historical_evolution_calculation():
     assert df_ev.loc[1, "month_str"] == "2025-02"
     assert df_ev.loc[1, "cumulative_invested"] == 500.00
     assert df_ev.loc[1, "cumulative_dividends"] == 50.00
+
 
 def test_get_quantity_on_date():
     """Verifies retro-calculating the owned quantity of an asset at specific historical cut dates."""
@@ -153,6 +180,7 @@ def test_get_quantity_on_date():
     assert qty_mar == 200
     assert qty_jun == 150
 
+
 def test_asset_annual_dividends_pivot():
     """Verifies that the pivot queries group and sum dividend categories correctly for specific assets and years."""
     AssetService.add_dividend("BBAS3", "2025-05-15", "DIVIDEND", 50.00)
@@ -162,15 +190,22 @@ def test_asset_annual_dividends_pivot():
 
     df_pivot_bb = AssetService.get_asset_annual_dividends_pivot("BBAS3", "2025")
 
-    val_div = df_pivot_bb.loc[df_pivot_bb['Categoria'] == 'Total de Dividendos', 'Valor (R$)'].values[0]
-    val_jcp = df_pivot_bb.loc[df_pivot_bb['Categoria'] == 'Total de JCP', 'Valor (R$)'].values[0]
-    val_rend = df_pivot_bb.loc[df_pivot_bb['Categoria'] == 'Total de Rendimentos', 'Valor (R$)'].values[0]
-    val_total = df_pivot_bb.loc[df_pivot_bb['Categoria'] == 'Total de Proventos (Soma de todos)', 'Valor (R$)'].values[0]
+    val_div = df_pivot_bb.loc[
+        df_pivot_bb["Categoria"] == "Total de Dividendos", "Valor (R$)"
+    ].values[0]
+    val_jcp = df_pivot_bb.loc[df_pivot_bb["Categoria"] == "Total de JCP", "Valor (R$)"].values[0]
+    val_rend = df_pivot_bb.loc[
+        df_pivot_bb["Categoria"] == "Total de Rendimentos", "Valor (R$)"
+    ].values[0]
+    val_total = df_pivot_bb.loc[
+        df_pivot_bb["Categoria"] == "Total de Proventos (Soma de todos)", "Valor (R$)"
+    ].values[0]
 
     assert val_div == 50.00
     assert val_jcp == 30.00
     assert val_rend == 0.00
     assert val_total == 80.00
+
 
 def test_sell_all_shares_retains_monitoring_but_allows_removal():
     """

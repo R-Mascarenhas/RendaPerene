@@ -154,6 +154,8 @@ class PortfolioPort(Protocol):
 
     def get_all_buy_transactions(self) -> pd.DataFrame: ...
 
+    def get_local_projection_revision(self) -> int: ...
+
 
 class AssetsCatalogPort(Protocol):
     """Outbound Port interface defining assets static catalog access (DIP compliant)."""

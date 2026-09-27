@@ -23,6 +23,7 @@ from core.constants import (
     WIDGET_BAZIN_YIELD_INPUT,
     WIDGET_CEILING_MODEL_SELECTOR,
 )
+from core.performance import instrument_screen, measure_navigation
 from core.strings import (
     DISPLAY_AVG_5Y,
     DISPLAY_CEILING,
@@ -63,6 +64,7 @@ from services.planning_service import SimulationService
 class MarketMonitoringView:
     """Render the general market monitoring tab."""
 
+    @instrument_screen("ativos.mercado.monitoramento")
     def render(self):
         """Render the monitoring tab."""
         self._render_monitoring()
@@ -74,7 +76,8 @@ class MarketMonitoringView:
             "💡 As ações que você possui em sua carteira são monitoradas automaticamente nesta central."
         )
 
-        catalog_entries = AssetService.get_asset_catalog_entries()
+        with measure_navigation("ativos.mercado.monitoramento", "catalog"):
+            catalog_entries = AssetService.get_asset_catalog_entries()
 
         col_add, col_yield = st.columns([2, 1])
 
@@ -98,7 +101,6 @@ class MarketMonitoringView:
                     success = AssetService.add_tracked_market_asset(ticker_to_add)
                     if success:
                         st.success(MSG_ASSET_ADDED_SUCCESS.format(ticker=ticker_to_add))
-                        st.cache_data.clear()
                         st.rerun()
                     else:
                         st.error(MSG_ASSET_ADD_ERROR.format(ticker=ticker_to_add))
@@ -141,11 +143,12 @@ class MarketMonitoringView:
                     step=0.5,
                     on_change=self._on_bazin_spread_change,
                 )
-            target_context = AssetService.get_bazin_target_context(
-                model,
-                classic_target_yield=st.session_state[SESSION_BAZIN_TARGET_YIELD],
-                target_spread=st.session_state[SESSION_BAZIN_TARGET_SPREAD],
-            )
+            with measure_navigation("ativos.mercado.monitoramento", "target_yield"):
+                target_context = AssetService.get_bazin_target_context(
+                    model,
+                    classic_target_yield=st.session_state[SESSION_BAZIN_TARGET_YIELD],
+                    target_spread=st.session_state[SESSION_BAZIN_TARGET_SPREAD],
+                )
             target_yield = target_context["target_yield"]
             if model == MODEL_SELIC:
                 selic_val = target_context["reference_rate"]
@@ -157,7 +160,8 @@ class MarketMonitoringView:
                     f"ℹ️ Divisor Resultante: **{target_yield:.2f}%** (IPCA: {ipca_val:.2f}% + Spread: {spread:.2f}%)"
                 )
 
-        tracked_tickers = AssetService.get_tracked_market_assets()
+        with measure_navigation("ativos.mercado.monitoramento", "tracked_assets"):
+            tracked_tickers = AssetService.get_tracked_market_assets()
 
         if not tracked_tickers:
             st.info(MSG_NO_ASSETS_MONITOR)
@@ -175,7 +179,6 @@ class MarketMonitoringView:
                 ):
                     AssetService.remove_tracked_market_asset(remove_ticker)
                     st.success(MSG_ASSET_REMOVED_SUCCESS.format(ticker=remove_ticker))
-                    st.cache_data.clear()
                     st.rerun()
             else:
                 st.caption("ℹ️ Apenas ativos adicionados manualmente podem ser removidos.")
@@ -183,7 +186,10 @@ class MarketMonitoringView:
         st.markdown("---")
         st.subheader(MSG_MONITORED_ASSETS_PANEL)
 
-        with st.spinner("Buscando indicadores em tempo real no Yahoo Finance..."):
+        with (
+            st.spinner("Buscando indicadores em tempo real no Yahoo Finance..."),
+            measure_navigation("ativos.mercado.monitoramento", "market_analysis"),
+        ):
             df_display, df_market = AssetService.get_market_analysis_data(
                 tracked_tickers, target_yield
             )
@@ -202,7 +208,8 @@ class MarketMonitoringView:
                 return "N/D"
             return f"{Formatter.format_currency(low)} - {Formatter.format_currency(high)}"
 
-        df_display[DISPLAY_RANGE_52W] = df_market.apply(format_range_52w, axis=1)
+        with measure_navigation("ativos.mercado.monitoramento", "table_preparation"):
+            df_display[DISPLAY_RANGE_52W] = df_market.apply(format_range_52w, axis=1)
 
         col_configs = {
             DISPLAY_TICKER: st.column_config.TextColumn(width="small"),

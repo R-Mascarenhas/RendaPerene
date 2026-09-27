@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from core.performance import instrument_screen, measure_navigation
 from core.strings import *
 from core.utils.formatter import Formatter
 from core.utils.market_history import (
@@ -13,16 +14,19 @@ from core.utils.market_history import (
 )
 from services.assets_service import AssetService
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
+from views.cached_market_data import StreamlitCachedPortfolioData
 
 
 class PortfolioView:
     """Class responsible for rendering the detailed metrics, charts, and pivot tables per active asset in your portfolio."""
 
+    @instrument_screen("ativos.carteira")
     def render(self):
         st.subheader(MSG_PORTFOLIO_DETAIL_TITLE)
 
         # Fetch active assets in portfolio
-        df_positions = AssetService.calculate_positions()
+        with measure_navigation("ativos.carteira", "get_positions"):
+            df_positions = StreamlitCachedPortfolioData.calculate_positions()
         if df_positions.empty:
             st.info(MSG_PORTFOLIO_EMPTY_ASSETS)
             return
@@ -53,16 +57,21 @@ class PortfolioView:
         row_pos = df_positions[df_positions["ticker"] == ticker].iloc[0]
         metadata = AssetService.get_asset_metadata(ticker)
 
-        with st.spinner(f"Buscando cotações em tempo real para {ticker}..."):
+        with (
+            st.spinner(f"Buscando cotações em tempo real para {ticker}..."),
+            measure_navigation("ativos.carteira", "market_analysis"),
+        ):
             details = AssetService.get_asset_market_analysis(ticker)
 
         self._render_header_metadata_block(ticker, metadata)
         self._render_behavior_chart(ticker, details)
-        df_div = AssetService.get_asset_dividends(ticker)
+        with measure_navigation("ativos.carteira", "dividends_projection"):
+            df_div = AssetService.get_asset_dividends(ticker)
         self._render_proventos_pivot_table(ticker, df_div)
         self._render_indicators_block(row_pos, details)
         self._render_transactions_and_dividends_tables(ticker, df_div)
 
+    @instrument_screen("ativos.carteira.header")
     def _render_header_metadata_block(self, ticker, metadata):
         """Renders the top header block containing the asset's logo, name, and main registry details."""
         col_img, col_meta = st.columns([1, 4])
@@ -101,6 +110,7 @@ class PortfolioView:
                 )
             )
 
+    @instrument_screen("ativos.carteira.dividends")
     def _render_proventos_pivot_table(self, ticker, df_div):
         """SECTION 1: Renders the annual pivot table of received dividends and metrics."""
         st.markdown("---")
@@ -184,6 +194,7 @@ class PortfolioView:
         else:
             st.info(MSG_NO_DIVIDENDS_RECORDED.format(ticker=ticker))
 
+    @instrument_screen("ativos.carteira.indicators")
     def _render_indicators_block(self, row_pos, details):
         """SECTION 2: Renders general financial and valuation indicators for the asset."""
         pending = row_pos.get("cost_pending", False)
@@ -248,6 +259,7 @@ class PortfolioView:
             LABEL_LOW_52W, Formatter.format_currency(low_52w) if low_52w > 0 else "N/D"
         )
 
+    @instrument_screen("ativos.carteira.price_history")
     def _render_behavior_chart(self, ticker, details):
         """SECTION 3: Renders the historical behavior chart with buy/sell annotations."""
         st.markdown("---")
@@ -472,6 +484,7 @@ class PortfolioView:
         else:
             st.info(MSG_NO_YF_CHART_DATA)
 
+    @instrument_screen("ativos.carteira.activity_tables")
     def _render_transactions_and_dividends_tables(self, ticker, df_div):
         """SECTION 4: Renders detailed tables for deposits and dividends side-by-side."""
         st.markdown("---")

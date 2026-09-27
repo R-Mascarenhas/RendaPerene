@@ -152,6 +152,8 @@ proventos permanecem no SQLite local, são relidas a cada análise e aplicadas a
 dividend yield histórico e do preço-teto de Bazin. Assim, trocar de carteira ou salvar uma correção
 atualiza a análise seguinte sem enviar dados pessoais ao Yahoo nem limpar o cache remoto.
 
+
+Posições e agregados locais reutilizam uma projeção temporária enquanto a carteira não muda. Cada alteração relevante avança uma revisão interna do SQLite; por isso, dados de uma carteira, ou de uma versão restaurada dela, não são reutilizados em outra. Essa projeção não substitui o banco local nem altera os backups.
 A importação da B3 é iniciada pelo usuário: baixe a planilha oficial no Portal do Investidor da B3 e envie-a pela aplicação. Bancos locais e planilhas pessoais são ignorados pelo Git; não faça commit desses arquivos.
 
 Entradas de aquisição ou subscrição com valor financeiro zero ou ausente ficam com
@@ -243,6 +245,13 @@ da restauração registram o caminho absoluto e o traceback em `DEBUG` para diag
 arquivos ativos e rotacionados usam `0600`.
 
 ## Validação
+
+### Medição de navegação
+
+Para medir sem registrar dados pessoais, execute `APP_ENV=dev RENDAPERENE_NAVIGATION_METRICS=true venv/bin/streamlit run app.py`. Com uma carteira de teste, visite Dashboard, Ativos e Monitoramento uma vez para a medição fria e repita a mesma navegação sem mutações para a medição quente. Os logs `navigation.metric` contêm apenas a tela, a fase e a duração em milissegundos; não incluem carteira, ticker, valores, caminhos ou identificadores. Os nomes são técnicos e hierárquicos, como `ativos.carteira.price_history.total` e `planejamento.projection_chart`: `total` mede um render completo e as demais fases isolam seus módulos. A instrumentação fica desabilitada fora desse modo explícito de desenvolvimento.
+
+Para comparar resultados, descarte a primeira inicialização do servidor, faça três repetições de cada estado e registre a mediana por tela. Uma mutação de transação, provento, correção, importação ou troca de carteira inicia uma nova medição fria da projeção local.
+
 
 Execute os testes de regressão e as verificações de lint:
 

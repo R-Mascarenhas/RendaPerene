@@ -12,12 +12,14 @@ from core.constants import (
     SESSION_UPDATE_CHECK_EXECUTOR,
     SESSION_UPDATE_CHECK_FUTURE,
 )
+from core.performance import instrument_screen
 from core.ports import UpdateCheckerPort
 from core.update_checker import AvailableUpdate
 
 logger = logging.getLogger(__name__)
 
 
+@instrument_screen("atualizacao")
 def render_update_notification(installed_version: str, update_checker: UpdateCheckerPort) -> None:
     """Start one background check per session and show its completed result."""
     if SESSION_UPDATE_CHECK_FUTURE not in st.session_state:

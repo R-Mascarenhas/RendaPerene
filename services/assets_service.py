@@ -71,6 +71,11 @@ class AssetService:
             inst._planning_provider = planning_provider
 
     @hybridmethod
+    def get_local_projection_revision(self) -> int:
+        """Return the current portfolio revision for temporary local projections."""
+        return self._portfolio_repo.get_local_projection_revision()
+
+    @hybridmethod
     def add_transaction(
         self,
         ticker: str,

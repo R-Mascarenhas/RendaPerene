@@ -1,5 +1,6 @@
 import streamlit as st
 
+from core.performance import instrument_screen
 from core.strings import TAB_ASSET_DEEP_DIVE, TAB_MARKET_MONITORING
 from views.asset_deep_dive_view import AssetDeepDiveView
 from views.market_monitoring_view import MarketMonitoringView
@@ -8,6 +9,7 @@ from views.market_monitoring_view import MarketMonitoringView
 class MarketView:
     """Route the Market sub-navigation to its dedicated tab modules."""
 
+    @instrument_screen("ativos.mercado")
     def render(self):
         """Render only the selected market tab."""
         selected_tab = st.segmented_control(

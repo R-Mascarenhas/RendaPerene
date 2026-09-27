@@ -1,3 +1,5 @@
+from core.database import db
+from views.cached_market_data import StreamlitCachedPortfolioData
 import pytest
 import os
 import re
@@ -904,6 +906,8 @@ def test_sector_chart_hover_customdata(monkeypatch):
                 "invested_amount": 1600.00,
                 "total_dividends": 100.00,
                 "total_yoc": 6.25,
+
+
             },
             {
                 "ticker": "CXSE3",
@@ -973,3 +977,31 @@ def test_sector_chart_hover_customdata(monkeypatch):
 
     assert found_financeiro, "Hover data for Financeiro not found or incorrect"
     assert found_seguridade, "Hover data for Seguridade not found or incorrect"
+
+
+def test_local_projection_cache_reuses_only_the_same_portfolio_revision(monkeypatch, tmp_path):
+    database = tmp_path / "portfolio.db"
+    database.touch()
+    revisions = [4]
+    calls = []
+
+    StreamlitCachedPortfolioData._calculate_positions.clear()
+    monkeypatch.setattr(db, "get_personal_database_path", lambda: database)
+    monkeypatch.setattr(AssetService, "get_local_projection_revision", lambda: revisions[0])
+    monkeypatch.setattr(
+        AssetService,
+        "calculate_positions",
+        lambda today_date=None, start_date=None: calls.append((today_date, start_date))
+        or pd.DataFrame({"ticker": ["BBAS3"]}),
+    )
+
+    first = StreamlitCachedPortfolioData.calculate_positions()
+    second = StreamlitCachedPortfolioData.calculate_positions()
+
+    assert len(calls) == 1
+    assert first.equals(second)
+
+    revisions[0] += 1
+    StreamlitCachedPortfolioData.calculate_positions()
+
+    assert len(calls) == 2

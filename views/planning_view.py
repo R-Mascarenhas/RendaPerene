@@ -37,6 +37,7 @@ from core.constants import (
     WIDGET_PLANNING_START_DATE_ENABLED,
     WIDGET_RETIREMENT_AGE,
 )
+from core.performance import instrument_screen, measure_navigation
 from core.strings import (
     HELP_INCOME_MULTIPLIER,
     HELP_INITIAL_EQUITY_INPUT_DYNAMIC,
@@ -63,6 +64,7 @@ from views.goals_view import GoalsView
 class PlanningView:
     """Clean orchestrator for the Planning tab GUI layout, delegating to SRP components."""
 
+    @instrument_screen("planejamento")
     def render(self):
         st.header("🎯 Planejamento de Aposentadoria e Independência Financeira")
         selected_subtab = st.segmented_control(
@@ -75,22 +77,27 @@ class PlanningView:
             selected_subtab = "Aposentadoria"
 
         if selected_subtab == "Aposentadoria":
-            self._render_retirement_planning()
+            with measure_navigation("planejamento", "retirement"):
+                self._render_retirement_planning()
         elif selected_subtab == "Metas":
-            GoalsView().render()
+            with measure_navigation("planejamento", "goals"):
+                GoalsView().render()
 
     def _render_retirement_planning(self):
         """Renders retirement inputs and projections inside the planning tab."""
         st.write(MSG_PLANNING_DESC)
 
         # Renders the Sandbox Simulation expander (in-memory play zone)
-        self._render_sandbox_simulation()
+        with measure_navigation("planejamento", "sandbox"):
+            self._render_sandbox_simulation()
 
         # 1. Renders all editable life parameters and minimum wage controls on exactly the same single horizontal row!
-        current_age, months_age = self._render_life_parameters()
+        with measure_navigation("planejamento", "life_parameters"):
+            current_age, months_age = self._render_life_parameters()
 
         # 2. Unified Service call (Single source of truth)
-        sim = SimulationService.get_current_simulation()
+        with measure_navigation("planejamento", "simulation"):
+            sim = SimulationService.get_current_simulation()
         if not sim:
             st.warning(MSG_PLANNING_LOAD_ERROR)
             return
@@ -108,9 +115,12 @@ class PlanningView:
         st.session_state[SESSION_REQUIRED_CONTRIBUTION_CACHE] = sim["updated_monthly_contribution"]
 
         # 3. Render Metric Widgets & Compounding Line Chart
-        TimeMetricsWidget().render(sim)
-        SimulationResultsWidget().render(sim)
-        ProjectionChartWidget().render(sim)
+        with measure_navigation("planejamento", "time_metrics"):
+            TimeMetricsWidget().render(sim)
+        with measure_navigation("planejamento", "simulation_results"):
+            SimulationResultsWidget().render(sim)
+        with measure_navigation("planejamento", "projection_chart"):
+            ProjectionChartWidget().render(sim)
 
     def _on_mw_value_change(self):
         """Syncs the custom widget key-input back to the core session state and saves it."""

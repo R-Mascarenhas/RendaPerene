@@ -26,8 +26,8 @@ from core.strings import (
     MSG_HISTORIC_EVOLUTION_TITLE,
 )
 from core.utils.formatter import Formatter
-from services.assets_service import AssetService
 from services.planning_service import SimulationService
+from views.cached_market_data import StreamlitCachedPortfolioData
 from views.components.chart_theme import ChartThemeAdapter
 
 
@@ -155,7 +155,7 @@ class DashboardCharts:
         st.markdown("---")
         config = SimulationService.get_configuration()
         start_date = config.get(PLANNING_START_DATE) if config else None
-        df_evolution = AssetService.calculate_historical_evolution(start_date=start_date)
+        df_evolution = StreamlitCachedPortfolioData.calculate_historical_evolution(start_date)
 
         if not df_evolution.empty:
             st.subheader(MSG_HISTORIC_EVOLUTION_TITLE)
@@ -282,7 +282,7 @@ class DashboardCharts:
         st.markdown("---")
         config = SimulationService.get_configuration()
         start_date = config.get(PLANNING_START_DATE) if config else None
-        df_contribs = AssetService.get_monthly_contributions_by_year(start_date=start_date)
+        df_contribs = StreamlitCachedPortfolioData.get_monthly_contributions_by_year(start_date)
         if not df_contribs.empty:
             st.subheader(MSG_HISTORIC_CONTRIBUTIONS_TITLE)
 

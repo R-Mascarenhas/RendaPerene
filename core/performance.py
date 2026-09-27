@@ -43,7 +43,7 @@ def measure_navigation(screen: str, phase: str) -> Iterator[None]:
     finally:
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.debug(
-            "navigation.metric %s.%s duration_ms=%s",
+            "%s.%s duration: %s ms",
             screen,
             phase,
             elapsed_ms,

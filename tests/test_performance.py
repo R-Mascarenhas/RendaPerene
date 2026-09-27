@@ -20,7 +20,7 @@ def test_measure_navigation_logs_technical_identifier_in_development(monkeypatch
     with measure_navigation("ativos.carteira", "total"):
         pass
 
-    assert "navigation.metric ativos.carteira.total duration_ms=" in caplog.text
+    assert "ativos.carteira.total duration:" in caplog.text
 
 
 @pytest.mark.parametrize(

@@ -119,7 +119,12 @@ class StreamlitCachedPortfolioData:
     ) -> pd.DataFrame:
         del portfolio_key, database_generation, revision
         today = datetime.date.fromisoformat(today_date) if today_date else None
-        return AssetService.calculate_positions(today_date=today, start_date=start_date)
+        filters = {}
+        if today is not None:
+            filters["today_date"] = today
+        if start_date is not None:
+            filters["start_date"] = start_date
+        return AssetService.calculate_positions(**filters)
 
     @classmethod
     def calculate_positions(cls, today_date=None, start_date=None) -> pd.DataFrame:

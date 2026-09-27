@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from core.constants import WIDGET_B3_FILE_UPLOADER_PREFIX
+from core.performance import instrument_screen, measure_navigation
 from core.strings import (
     HELP_OPS_SEARCH,
     MSG_INVALID_ASSET_SELECTION,
@@ -39,17 +40,19 @@ class OperationsView:
 
         return sorted(catalog.index.tolist()) if not catalog.empty else []
 
+    @instrument_screen("ativos.operacoes")
     def render(self):
         st.header("Gestão de Movimentações")
         col1, col2 = st.columns(2)
 
-        with col1:
+        with col1, measure_navigation("ativos.operacoes", "manual_entry"):
             self._render_unified_manual_form()
 
-        with col2:
+        with col2, measure_navigation("ativos.operacoes", "b3_import"):
             self._render_b3_import_zone()
 
-        self._render_pending_costs()
+        with measure_navigation("ativos.operacoes", "pending_costs"):
+            self._render_pending_costs()
 
     def _render_pending_costs(self):
         pending = AssetService.get_pending_costs()
@@ -90,7 +93,6 @@ class OperationsView:
                 if AssetService.regularize_cost(
                     selected, value, value_is_total=mode == "Valor total da aquisição", fees=fees
                 ):
-                    st.cache_data.clear()
                     st.rerun()
                 else:
                     st.warning("Esta operação já foi regularizada. Atualize a página.")
@@ -252,7 +254,6 @@ class OperationsView:
                         else:
                             st.error("Erro ao registrar o provento ou lançamento duplicado.")
 
-                    st.cache_data.clear()
                     st.rerun()
 
     def _render_b3_import_zone(self):
@@ -308,7 +309,6 @@ class OperationsView:
                     st.session_state.b3_import_success_msg = success_text
                     st.session_state.processed_files.add(file_key)
                     st.session_state.b3_uploader_key += 1
-                    st.cache_data.clear()
                     st.rerun()
                 except Exception as e:
                     st.error(MSG_SMART_IMPORTER_ERROR.format(e=e))

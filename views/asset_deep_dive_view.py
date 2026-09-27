@@ -9,6 +9,7 @@ from core.constants import (
     SESSION_BAZIN_TARGET_YIELD,
     SESSION_CEILING_MODEL_SELECTION,
 )
+from core.performance import instrument_screen, measure_navigation
 from core.strings import (
     MODEL_CLASSIC,
     MSG_ASSET_ADD_ERROR,
@@ -33,6 +34,7 @@ from views.components.chart_theme import ChartThemeAdapter
 class AssetDeepDiveView:
     """Render the catalog-wide Raio-X market analysis tab."""
 
+    @instrument_screen("ativos.mercado.raio_x")
     def render(self):
         """Render the Raio-X tab."""
         self._render_asset_deep_dive()
@@ -42,7 +44,8 @@ class AssetDeepDiveView:
         st.subheader(MSG_ASSET_DEEP_DIVE_TITLE)
         st.write(MSG_ASSET_DEEP_DIVE_DESC)
 
-        catalog_entries = AssetService.get_asset_catalog_entries()
+        with measure_navigation("ativos.mercado.raio_x", "catalog"):
+            catalog_entries = AssetService.get_asset_catalog_entries()
         if not catalog_entries:
             st.warning("O catálogo de ativos não está disponível no momento.")
             return
@@ -60,8 +63,12 @@ class AssetDeepDiveView:
             return
 
         ticker = selection.split(" - ", maxsplit=1)[0]
-        target_yield = self._get_current_target_yield()
-        with st.spinner("Buscando indicadores e histórico de proventos..."):
+        with measure_navigation("ativos.mercado.raio_x", "target_yield"):
+            target_yield = self._get_current_target_yield()
+        with (
+            st.spinner("Buscando indicadores e histórico de proventos..."),
+            measure_navigation("ativos.mercado.raio_x", "market_analysis"),
+        ):
             details = AssetService.get_asset_market_analysis(ticker, target_yield)
 
         if not details or float(details.get("current_price", 0.0) or 0.0) <= 0:
@@ -72,9 +79,12 @@ class AssetDeepDiveView:
         st.markdown(f"### {ticker} — {details.get('name') or metadata['name']}")
         if metadata["sector"]:
             st.caption(f"Setor: {metadata['sector']}")
-        self._render_favorite_button(ticker)
-        self._render_asset_price_history(ticker)
-        self._render_quote_snapshot(details.get("quote_snapshot", {}))
+        with measure_navigation("ativos.mercado.raio_x", "favorite"):
+            self._render_favorite_button(ticker)
+        with measure_navigation("ativos.mercado.raio_x", "price_history"):
+            self._render_asset_price_history(ticker)
+        with measure_navigation("ativos.mercado.raio_x", "quote_snapshot"):
+            self._render_quote_snapshot(details.get("quote_snapshot", {}))
 
         current_price = float(details.get("current_price", 0.0) or 0.0)
         ceiling_price = float(details.get("ceiling_price", 0.0) or 0.0)
@@ -113,9 +123,12 @@ class AssetDeepDiveView:
             Formatter.format_market_value(details.get("net_margin"), "percentage_points"),
         )
 
-        self._render_dividend_event_map(details.get("dividend_events", []))
-        self._render_dividend_history(details, target_yield)
-        self._render_market_indicators(details.get("indicators", {}))
+        with measure_navigation("ativos.mercado.raio_x", "dividend_event_map"):
+            self._render_dividend_event_map(details.get("dividend_events", []))
+        with measure_navigation("ativos.mercado.raio_x", "dividend_history"):
+            self._render_dividend_history(details, target_yield)
+        with measure_navigation("ativos.mercado.raio_x", "indicators"):
+            self._render_market_indicators(details.get("indicators", {}))
 
     @staticmethod
     def _render_quote_snapshot(snapshot: dict):

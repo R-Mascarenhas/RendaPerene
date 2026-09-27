@@ -1,7 +1,13 @@
+import datetime
+import hashlib
+
 import pandas as pd
 import streamlit as st
 
+from core.application_paths import ApplicationPaths
+from core.database import db
 from core.utils.market_data import MarketData
+from services.assets_service import AssetService
 
 
 class StreamlitCachedMarketData:
@@ -87,3 +93,83 @@ class StreamlitCachedMarketData:
 StreamlitCachedMarketData.get_ticker_market_snapshot.clear = (
     StreamlitCachedMarketData._get_cached_ticker_market_snapshot.clear
 )
+
+
+class StreamlitCachedPortfolioData:
+    """Cache discardable portfolio projections behind the Streamlit boundary."""
+
+    @staticmethod
+    def _context() -> tuple[str, str | None, int]:
+        database_path = db.get_personal_database_path()
+        portfolio_key = hashlib.sha256(str(database_path).encode()).hexdigest()
+        return (
+            portfolio_key,
+            ApplicationPaths.database_generation(database_path),
+            AssetService.get_local_projection_revision(),
+        )
+
+    @staticmethod
+    @st.cache_data
+    def _calculate_positions(
+        portfolio_key: str,
+        database_generation: str | None,
+        revision: int,
+        today_date: str | None,
+        start_date: str | None,
+    ) -> pd.DataFrame:
+        del portfolio_key, database_generation, revision
+        today = datetime.date.fromisoformat(today_date)
+        filters = {}
+        filters["today_date"] = today
+        if start_date is not None:
+            filters["start_date"] = start_date
+        return AssetService.calculate_positions(**filters)
+
+    @classmethod
+    def calculate_positions(cls, today_date=None, start_date=None) -> pd.DataFrame:
+        portfolio_key, database_generation, revision = cls._context()
+        effective_today = today_date or datetime.date.today()
+        return cls._calculate_positions(
+            portfolio_key,
+            database_generation,
+            revision,
+            effective_today.isoformat(),
+            start_date,
+        )
+
+    @staticmethod
+    @st.cache_data
+    def _calculate_historical_evolution(
+        portfolio_context: tuple[str, str | None, int],
+        start_date: str | None,
+        include_pending_costs: bool,
+        as_of_month: str,
+    ) -> pd.DataFrame:
+        del portfolio_context, as_of_month
+        return AssetService.calculate_historical_evolution(start_date, include_pending_costs)
+
+    @classmethod
+    def calculate_historical_evolution(cls, start_date=None, include_pending_costs=False):
+        portfolio_context = cls._context()
+        as_of_month = datetime.date.today().strftime("%Y-%m")
+        return cls._calculate_historical_evolution(
+            portfolio_context,
+            start_date,
+            include_pending_costs,
+            as_of_month,
+        )
+
+    @staticmethod
+    @st.cache_data
+    def _get_monthly_contributions_by_year(
+        portfolio_key: str, database_generation: str | None, revision: int, start_date: str | None
+    ) -> pd.DataFrame:
+        del portfolio_key, database_generation, revision
+        return AssetService.get_monthly_contributions_by_year(start_date)
+
+    @classmethod
+    def get_monthly_contributions_by_year(cls, start_date=None) -> pd.DataFrame:
+        portfolio_key, database_generation, revision = cls._context()
+        return cls._get_monthly_contributions_by_year(
+            portfolio_key, database_generation, revision, start_date
+        )

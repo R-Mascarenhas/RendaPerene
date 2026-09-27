@@ -1587,6 +1587,7 @@ class ApplicationPaths:
                     "asset_accumulation_goals",
                     "goal_settings",
                     "portfolio_metadata",
+                    "portfolio_projection_state",
                 }
                 legacy_required_tables = {
                     "transactions",
@@ -1624,12 +1625,22 @@ class ApplicationPaths:
                     "SELECT ticker, year, total_value FROM dividend_corrections "
                     "ORDER BY ticker, year"
                 ).fetchall()
-                return goal_settings == [(1, 1, 0)] and seeded_corrections == [
-                    ("BBAS3", 2023, 2.29),
-                    ("BBAS3", 2024, 2.61),
-                    ("BBDC3", 2023, 1.54),
-                    ("BBDC3", 2024, 1.01),
-                ]
+                revision_state = [(1, 0)]
+                if "portfolio_projection_state" in tables:
+                    revision_state = connection.execute(
+                        "SELECT id, revision FROM portfolio_projection_state"
+                    ).fetchall()
+                return (
+                    revision_state == [(1, 0)]
+                    and goal_settings == [(1, 1, 0)]
+                    and seeded_corrections
+                    == [
+                        ("BBAS3", 2023, 2.29),
+                        ("BBAS3", 2024, 2.61),
+                        ("BBDC3", 2023, 1.54),
+                        ("BBDC3", 2024, 1.01),
+                    ]
+                )
             finally:
                 connection.close()
         except (OSError, sqlite3.DatabaseError):

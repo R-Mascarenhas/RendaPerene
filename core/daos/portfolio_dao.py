@@ -16,6 +16,16 @@ class PortfolioDAO:
         """Delegates and returns an active SQLite database connection."""
         return self.db.get_personal_connection()
 
+    def get_local_projection_revision(self) -> int:
+        """Return the revision that keys discardable local portfolio projections."""
+        conn = self.get_personal_connection()
+        try:
+            return int(
+                conn.execute("SELECT revision FROM portfolio_projection_state").fetchone()[0]
+            )
+        finally:
+            conn.close()
+
     @staticmethod
     def _canonical_source_text(value) -> str:
         return (
@@ -865,6 +875,51 @@ class PortfolioDAO:
             cursor.execute(
                 "INSERT OR REPLACE INTO dividend_corrections (ticker, year, total_value) VALUES ('BBDC3', 2024, 1.01)"
             )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS portfolio_projection_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0)
+            )
+            """
+        )
+        cursor.execute("INSERT OR IGNORE INTO portfolio_projection_state (id) VALUES (1)")
+
+        cursor.executescript(
+            """
+            CREATE TRIGGER IF NOT EXISTS portfolio_projection_revision_after_transaction_insert
+            AFTER INSERT ON transactions
+            BEGIN
+                UPDATE portfolio_projection_state SET revision = revision + 1 WHERE id = 1;
+            END;
+            CREATE TRIGGER IF NOT EXISTS portfolio_projection_revision_after_transaction_update
+            AFTER UPDATE ON transactions
+            BEGIN
+                UPDATE portfolio_projection_state SET revision = revision + 1 WHERE id = 1;
+            END;
+            CREATE TRIGGER IF NOT EXISTS portfolio_projection_revision_after_dividend_insert
+            AFTER INSERT ON dividends
+            BEGIN
+                UPDATE portfolio_projection_state SET revision = revision + 1 WHERE id = 1;
+            END;
+            CREATE TRIGGER IF NOT EXISTS portfolio_projection_revision_after_tracked_asset_insert
+            AFTER INSERT ON tracked_market_assets
+            BEGIN
+                UPDATE portfolio_projection_state SET revision = revision + 1 WHERE id = 1;
+            END;
+            CREATE TRIGGER IF NOT EXISTS portfolio_projection_revision_after_tracked_asset_delete
+            AFTER DELETE ON tracked_market_assets
+            BEGIN
+                UPDATE portfolio_projection_state SET revision = revision + 1 WHERE id = 1;
+            END;
+            CREATE TRIGGER IF NOT EXISTS portfolio_projection_revision_after_dividend_correction
+            AFTER INSERT ON dividend_corrections
+            BEGIN
+                UPDATE portfolio_projection_state SET revision = revision + 1 WHERE id = 1;
+            END;
+            """
+        )
 
 
 # Register schema self-registration provider

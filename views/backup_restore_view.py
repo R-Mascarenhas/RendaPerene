@@ -18,6 +18,7 @@ from core.constants import (
     WIDGET_PORTFOLIO_RESTORE_SELECTION_PREFIX,
     WIDGET_PORTFOLIO_RESTORE_SOURCE,
 )
+from core.performance import instrument_screen
 from services.local_restore_service import (
     BackupRestoreError,
     LocalRestoreService,
@@ -25,6 +26,7 @@ from services.local_restore_service import (
 )
 
 
+@instrument_screen("restauracao")
 def render_local_restore(local_restore: LocalRestoreService, destination_labels: Mapping[str, str]):
     """Render package validation and explicit restore confirmation controls."""
     st.markdown("---")

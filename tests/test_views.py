@@ -1,3 +1,5 @@
+from core.database import db
+from views.cached_market_data import StreamlitCachedPortfolioData
 import pytest
 import os
 import re
@@ -260,7 +262,7 @@ def test_portfolio_view_renders_missing_market_multiples_as_unavailable(monkeypa
     monkeypatch.setattr(st, "info", lambda *args, **kwargs: None)
     monkeypatch.setattr(st, "radio", lambda *args, **kwargs: "1 Ano")
     monkeypatch.setattr(st, "plotly_chart", lambda *args, **kwargs: None)
-    monkeypatch.setattr(AssetService, "calculate_positions", lambda: positions)
+    monkeypatch.setattr(AssetService, "calculate_positions", lambda **_kwargs: positions)
     monkeypatch.setattr(
         AssetService,
         "get_asset_metadata",
@@ -601,9 +603,7 @@ def test_operations_view_reports_invalid_free_form_ticker_without_saving(mock_db
 
     OperationsView()._render_unified_manual_form()
 
-    assert errors == [
-        "Informe um ticker válido da B3, como PETR4, BOVA11, NUBR33 ou PETR4F."
-    ]
+    assert errors == ["Informe um ticker válido da B3, como PETR4, BOVA11, NUBR33 ou PETR4F."]
     assert AssetService.calculate_positions().empty
 
 
@@ -734,9 +734,7 @@ def test_planning_view_start_date_change_callback(mock_db, monkeypatch):
     assert st.session_state[SESSION_INITIAL_EQUITY] == 3000.0
 
 
-def test_planning_view_first_start_date_enable_initializes_automatic_equity(
-    mock_db, monkeypatch
-):
+def test_planning_view_first_start_date_enable_initializes_automatic_equity(mock_db, monkeypatch):
     from core.constants import (
         INITIAL_EQUITY_AUTO,
         INITIAL_EQUITY_MANUAL_OVERRIDE,
@@ -973,3 +971,58 @@ def test_sector_chart_hover_customdata(monkeypatch):
 
     assert found_financeiro, "Hover data for Financeiro not found or incorrect"
     assert found_seguridade, "Hover data for Seguridade not found or incorrect"
+
+
+def test_local_projection_cache_reuses_only_the_same_portfolio_revision(monkeypatch, tmp_path):
+    database = tmp_path / "portfolio.db"
+    database.touch()
+    revisions = [4]
+    calls = []
+
+    StreamlitCachedPortfolioData._calculate_positions.clear()
+    monkeypatch.setattr(db, "get_personal_database_path", lambda: database)
+    monkeypatch.setattr(AssetService, "get_local_projection_revision", lambda: revisions[0])
+    monkeypatch.setattr(
+        AssetService,
+        "calculate_positions",
+        lambda today_date=None, start_date=None: (
+            calls.append((today_date, start_date)) or pd.DataFrame({"ticker": ["BBAS3"]})
+        ),
+    )
+
+    first = StreamlitCachedPortfolioData.calculate_positions()
+    second = StreamlitCachedPortfolioData.calculate_positions()
+
+    assert len(calls) == 1
+    assert first.equals(second)
+
+    StreamlitCachedPortfolioData.calculate_positions(today_date=datetime.date(2026, 1, 2))
+
+    assert len(calls) == 2
+
+    revisions[0] += 1
+    StreamlitCachedPortfolioData.calculate_positions()
+
+    assert len(calls) == 3
+
+    evolution_calls = []
+    current_date = [datetime.date(2026, 1, 31)]
+
+    class CurrentDate:
+        @classmethod
+        def today(cls):
+            return current_date[0]
+
+    StreamlitCachedPortfolioData._calculate_historical_evolution.clear()
+    monkeypatch.setattr("views.cached_market_data.datetime.date", CurrentDate)
+    monkeypatch.setattr(
+        AssetService,
+        "calculate_historical_evolution",
+        lambda start_date, include_pending_costs: (
+            evolution_calls.append((start_date, include_pending_costs)) or pd.DataFrame()
+        ),
+    )
+
+    StreamlitCachedPortfolioData.calculate_historical_evolution()
+    StreamlitCachedPortfolioData.calculate_historical_evolution()
+    current_date[0] = current_date[0].replace(month=2, day=1)

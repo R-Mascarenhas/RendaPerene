@@ -1,5 +1,6 @@
 import streamlit as st
 
+from core.performance import instrument_screen
 from core.strings import TAB_IMPORT_LAUNCH, TAB_MARKET, TAB_MY_ASSETS
 from views.market_view import MarketView
 from views.operations_view import OperationsView
@@ -9,6 +10,7 @@ from views.portfolio_view import PortfolioView
 class AssetsView:
     """Class responsible for coordinating the multi-tab layout under 'Assets/Ativos'."""
 
+    @instrument_screen("ativos.rota")
     def render(self):
         selected_subtab = st.segmented_control(
             "Navegação Ativos",

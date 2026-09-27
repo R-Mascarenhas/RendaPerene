@@ -118,10 +118,9 @@ class StreamlitCachedPortfolioData:
         start_date: str | None,
     ) -> pd.DataFrame:
         del portfolio_key, database_generation, revision
-        today = datetime.date.fromisoformat(today_date) if today_date else None
+        today = datetime.date.fromisoformat(today_date)
         filters = {}
-        if today is not None:
-            filters["today_date"] = today
+        filters["today_date"] = today
         if start_date is not None:
             filters["start_date"] = start_date
         return AssetService.calculate_positions(**filters)
@@ -129,31 +128,35 @@ class StreamlitCachedPortfolioData:
     @classmethod
     def calculate_positions(cls, today_date=None, start_date=None) -> pd.DataFrame:
         portfolio_key, database_generation, revision = cls._context()
+        effective_today = today_date or datetime.date.today()
         return cls._calculate_positions(
             portfolio_key,
             database_generation,
             revision,
-            str(today_date) if today_date else None,
+            effective_today.isoformat(),
             start_date,
         )
 
     @staticmethod
     @st.cache_data
     def _calculate_historical_evolution(
-        portfolio_key: str,
-        database_generation: str | None,
-        revision: int,
+        portfolio_context: tuple[str, str | None, int],
         start_date: str | None,
         include_pending_costs: bool,
+        as_of_month: str,
     ) -> pd.DataFrame:
-        del portfolio_key, database_generation, revision
+        del portfolio_context, as_of_month
         return AssetService.calculate_historical_evolution(start_date, include_pending_costs)
 
     @classmethod
     def calculate_historical_evolution(cls, start_date=None, include_pending_costs=False):
-        portfolio_key, database_generation, revision = cls._context()
+        portfolio_context = cls._context()
+        as_of_month = datetime.date.today().strftime("%Y-%m")
         return cls._calculate_historical_evolution(
-            portfolio_key, database_generation, revision, start_date, include_pending_costs
+            portfolio_context,
+            start_date,
+            include_pending_costs,
+            as_of_month,
         )
 
     @staticmethod

@@ -760,45 +760,6 @@ class PortfolioDAO:
         finally:
             conn.close()
 
-    def get_ytd_contributions_sum(self, limit_date: str) -> float:
-        """Returns sum of net buy transactions on or after a given date."""
-        conn = self.get_personal_connection()
-        cursor = conn.cursor()
-        try:
-            pending = cursor.execute(
-                """
-                SELECT 1 FROM transactions
-                WHERE transaction_type = 'BUY' AND date >= ? AND cost_status = 'PENDING'
-                  AND NOT EXISTS (
-                      SELECT 1 FROM b3_import_records b
-                      WHERE b.transaction_id = transactions.id AND b.event_kind = 'CUSTODY'
-                  )
-                LIMIT 1
-                """,
-                (limit_date,),
-            ).fetchone()
-            if pending:
-                return None
-            cursor.execute(
-                "SELECT SUM(quantity * unit_price + fees) FROM transactions WHERE transaction_type = 'BUY' AND date >= ? AND NOT EXISTS (SELECT 1 FROM b3_import_records b WHERE b.transaction_id=transactions.id AND b.event_kind='CUSTODY')",
-                (limit_date,),
-            )
-            res = cursor.fetchone()
-            return res[0] if res and res[0] is not None else 0.0
-        finally:
-            conn.close()
-
-    def get_all_buy_transactions(self) -> pd.DataFrame:
-        """Returns all buy transactions in the database."""
-        conn = self.get_personal_connection()
-        try:
-            return pd.read_sql_query(
-                "SELECT date, quantity, unit_price, fees, cost_status FROM transactions WHERE transaction_type = 'BUY' AND NOT EXISTS (SELECT 1 FROM b3_import_records b WHERE b.transaction_id=transactions.id AND b.event_kind='CUSTODY')",
-                conn,
-            )
-        finally:
-            conn.close()
-
     def initialize_tables(self, conn) -> None:
         """Creates tables, runs migrations, and seeds defaults for the Portfolio/Transaction domain."""
         cursor = conn.cursor()

@@ -80,7 +80,7 @@ class GoalService:
         raw_ytd_contributions = self._portfolio_provider.get_ytd_contributions(current_year)
         contributions_pending = planning_pending or raw_ytd_contributions is None
         ytd_contributions = (
-            max(0.0, float(raw_ytd_contributions)) if raw_ytd_contributions is not None else None
+            float(raw_ytd_contributions) if raw_ytd_contributions is not None else None
         )
         progress_percentage = (
             ytd_contributions / total_goal * 100

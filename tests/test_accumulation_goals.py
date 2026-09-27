@@ -816,6 +816,21 @@ def test_annual_investment_and_reinvestment_goal_is_owned_by_goal_service(mock_d
     assert contribution_only_goal["total_goal"] == 12_000
 
 
+def test_annual_goal_is_unavailable_when_trade_cost_is_pending(mock_db):
+    service = GoalService(
+        settings_repo=PlanningDAO(),
+        portfolio_provider=StubPortfolioProvider([], ytd_contributions=None),
+        planning_provider=StubPlanningProvider(),
+    )
+
+    goal = service.get_annual_investment_goal(2026, ytd_dividends=1_000)
+
+    assert goal["ytd_contributions"] is None
+    assert goal["contributions_pending"] is True
+    assert goal["progress_percentage"] is None
+    assert goal["remaining_to_invest"] is None
+
+
 def test_annual_goal_is_unavailable_when_planning_simulation_is_pending(mock_db):
     class UnavailablePlanningProvider:
         @staticmethod
@@ -838,6 +853,25 @@ def test_annual_goal_is_unavailable_when_planning_simulation_is_pending(mock_db)
     assert goal["contributions_pending"] is True
     assert goal["progress_percentage"] is None
     assert goal["remaining_to_invest"] is None
+
+
+def test_net_withdrawal_increases_remaining_annual_contribution(mock_db):
+    from services.assets_service import AssetService
+
+    assert AssetService.add_transaction("BBAS3", "2025-12-01", "BUY", 100, 100)
+    assert AssetService.add_transaction("BBAS3", "2026-01-01", "SELL", 100, 100, 20)
+    service = GoalService(
+        settings_repo=PlanningDAO(),
+        portfolio_provider=AssetService.get_default(),
+        planning_provider=StubPlanningProvider(),
+    )
+
+    goal = service.get_annual_investment_goal(2026, ytd_dividends=0)
+
+    assert goal["ytd_contributions"] == -9_980
+    assert goal["remaining_to_invest"] == 21_980
+    assert goal["progress_percentage"] == pytest.approx(-83.16666667)
+    assert not goal["contributions_pending"]
 
 
 def test_annual_goal_is_available_without_planning_configuration(mock_db):

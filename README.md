@@ -180,6 +180,13 @@ Os registros antigos são preservados; uma reimportação associa movimentaçõe
 ainda não tenham origem registrada. Históricos anteriores importados posteriormente não
 reclassificam automaticamente transferências já processadas.
 
+O histórico mensal e o acumulado de aportes usado na meta anual consideram **aportes líquidos**:
+compras com taxas menos vendas líquidas de taxas. Vender R$ 10.000 e comprar R$ 10.000 no mesmo
+mês, sem taxas, resulta em aporte líquido de R$ 0. Retiradas líquidas aparecem como valores
+negativos e aumentam o valor restante para atingir a meta anual. Eventos de custódia ficam fora
+desse cálculo; custos pendentes de negociação no período mantêm os totais indisponíveis até a
+regularização.
+
 ## Requisitos
 
 - Python 3.10 a 3.14

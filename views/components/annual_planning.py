@@ -36,7 +36,7 @@ class AnnualPlanningWidget:
             if goal["reinvestment_enabled"]
             else "Meta Anual de Aportes",
             Formatter.format_currency(goal["total_goal"]),
-            "Meta de Compras na B3",
+            "Meta de Aportes Líquidos na B3",
         )
 
         if goal["contributions_pending"]:

@@ -871,23 +871,34 @@ class AssetService:
     @hybridmethod
     def get_ytd_contributions(self, current_year: int) -> float | None:
         """Calculates total net contributions made in the current year."""
-        limit_date = f"{current_year}-01-01"
-        return self._portfolio_repo.get_ytd_contributions_sum(limit_date)
+        contributions = self._get_net_contributions(f"{current_year}-01-01")
+        if contributions is None:
+            return None
+        return float(contributions["amount"].sum())
+
+    def _get_net_contributions(self, start_date=None) -> pd.DataFrame | None:
+        """Returns trade cash flows, or None when a selected trade has pending cost."""
+        transactions = self._portfolio_repo.get_all_transactions()
+        trades = transactions["transaction_type"].isin(["BUY", "SELL"])
+        custody = transactions["event_kind"].eq("CUSTODY")
+        transactions = transactions.loc[trades & ~custody].copy()
+        if start_date is not None:
+            transactions = transactions.loc[transactions["date"] >= start_date].copy()
+        if transactions["cost_status"].eq("PENDING").any():
+            return None
+
+        direction = transactions["transaction_type"].map({"BUY": 1.0, "SELL": -1.0})
+        transactions["amount"] = (
+            direction * transactions["quantity"] * transactions["unit_price"] + transactions["fees"]
+        )
+        return transactions
 
     @hybridmethod
     def get_monthly_contributions_by_year(self, start_date=None) -> pd.DataFrame:
         """Returns monthly contributions grouped by year for the bar chart. Optional start_date filters out older transactions."""
-        df_transactions = self._portfolio_repo.get_all_buy_transactions()
-        if start_date is not None:
-            df_transactions = df_transactions[df_transactions["date"] >= start_date]
-        if df_transactions.empty:
+        df_transactions = self._get_net_contributions(start_date)
+        if df_transactions is None or df_transactions.empty:
             return pd.DataFrame()
-        if df_transactions["cost_status"].eq("PENDING").any():
-            return pd.DataFrame()
-
-        df_transactions["amount"] = (
-            df_transactions["quantity"] * df_transactions["unit_price"] + df_transactions["fees"]
-        )
         df_transactions["year"] = df_transactions["date"].str[:4]
         df_transactions["month"] = df_transactions["date"].str[5:7]
 

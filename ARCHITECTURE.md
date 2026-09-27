@@ -278,6 +278,11 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
 
 - Compras atualizam o preço médio ponderado, incluindo as taxas.
 - Vendas reduzem a quantidade mantida sem alterar o preço médio da posição restante.
+- `AssetService` centraliza a regra dos aportes líquidos do histórico mensal e do acumulado YTD:
+  compras mais taxas de compra menos vendas mais taxas de venda. O cálculo usa as transações
+  fornecidas por `PortfolioPort`, exclui custódia e preserva a indisponibilidade quando há custos
+  pendentes de negociação no período selecionado. `GoalService` usa esse acumulado sem limitar
+  retiradas líquidas a zero; valores negativos aumentam o restante da meta anual.
 - Desdobramentos e bonificações da B3 são armazenados como transações `BUY` com custo zero.
 - Grupamentos são armazenados como transações `GROUP`, que substituem a quantidade atual pela quantidade informada.
 - Resgates são armazenados como transações `SELL`.

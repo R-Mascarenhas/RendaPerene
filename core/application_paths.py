@@ -64,8 +64,12 @@ def _unlock_descriptor(descriptor: int) -> None:
 def _open_lock_descriptor(path: Path) -> int:
     """Open a persistent lock file, creating a byte for Windows byte-range locking."""
     descriptor = os.open(path, os.O_CREAT | os.O_RDWR)
-    if sys.platform.startswith("win") and os.fstat(descriptor).st_size == 0:
-        os.write(descriptor, b"\0")
+    try:
+        if sys.platform.startswith("win") and os.fstat(descriptor).st_size == 0:
+            os.write(descriptor, b"\0")
+    except OSError:
+        os.close(descriptor)
+        raise
     return descriptor
 
 
@@ -110,7 +114,15 @@ def _exclusive_file_lock(lock: Path, wait_for_readers: bool = True):
     deadline = time.monotonic() + FILE_LOCK_TIMEOUT_SECONDS
     try:
         while time.monotonic() < deadline:
-            descriptor = _open_lock_descriptor(lock)
+            try:
+                descriptor = _open_lock_descriptor(lock)
+            except OSError as error:
+                if error.errno not in (errno.EACCES, errno.EAGAIN) and getattr(
+                    error, "winerror", None
+                ) not in (32, 33):
+                    raise
+                time.sleep(0.01)
+                continue
             if not _try_lock_descriptor(descriptor):
                 os.close(descriptor)
                 descriptor = None

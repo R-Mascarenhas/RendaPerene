@@ -216,7 +216,10 @@ leitores sob o lock por carteira, impedindo que uma conexão SQLite aberta conti
 arquivo antigo durante uma substituição. Os locks usam bloqueios advisory do sistema operacional
 mantidos por descritores abertos; por isso, um processo encerrado libera automaticamente sua posse
 sem que outro processo precise apagar um arquivo de lock que pode já ter sido reutilizado. As
-escritas continuam usando o bloqueio nativo do SQLite.
+escritas continuam usando o bloqueio nativo do SQLite. A abertura e a inicialização do arquivo de
+lock também podem sofrer contenção no Windows: nesses casos, o descritor incompleto é fechado e a
+tentativa é repetida dentro do limite de espera existente, sem remover nem assumir o lock de outra
+sessão. Erros de entrada/saída que não indicam contenção continuam sendo propagados.
 Bancos inválidos não ficam disponíveis para seleção. Se a carteira ativa desaparecer ou se tornar
 inválida, a seleção automática de uma alternativa também invalida o estado derivado da carteira
 anterior antes de reiniciar a interface. Quando não existe alternativa válida, a aplicação usa um

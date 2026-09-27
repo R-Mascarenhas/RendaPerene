@@ -167,6 +167,21 @@ def test_sale_reduces_known_capital_proportionally_after_pending_acquisition():
     assert position["cost_pending"]
 
 
+@pytest.mark.parametrize("regularize_custody", [False, True])
+def test_custody_does_not_block_or_change_net_trade_contributions(regularize_custody):
+    assert AssetService.process_b3_import(pd.DataFrame([movement("Transferência")])) == (1, 0)
+    if regularize_custody:
+        identifier = int(AssetService.get_pending_costs().iloc[0]["id"])
+        assert AssetService.regularize_cost(identifier, 20, fees=10)
+    assert AssetService.add_transaction("CXSE3", "2024-01-03", "BUY", 100, 10, 10)
+    assert AssetService.add_transaction("CXSE3", "2024-01-04", "SELL", 50, 12, 20)
+
+    assert AssetService.get_ytd_contributions(2024) == 430
+    assert AssetService.get_monthly_contributions_by_year().to_dict("records") == [
+        {"year": "2024", "month": "01", "amount": 430},
+    ]
+
+
 def test_pending_trade_withholds_contribution_totals():
     AssetService.process_b3_import(pd.DataFrame([movement()]))
 

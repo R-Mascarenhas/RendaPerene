@@ -88,7 +88,7 @@ MSG_RECEIVED_DIVIDENDS = "💰 Proventos Recebidos"
 MSG_NO_DIVIDENDS_RECORDED_SIMPLE = "Nenhum provento registrado."
 
 MSG_HISTORIC_EVOLUTION_TITLE = "📈 Evolução Patrimonial Histórica & Planejamento"
-MSG_HISTORIC_CONTRIBUTIONS_TITLE = "📊 Histórico de Aportes por Ano e Mês"
+MSG_HISTORIC_CONTRIBUTIONS_TITLE = "📊 Histórico de Aportes Líquidos por Ano e Mês"
 
 MSG_CUSTODY_ASSETS_TITLE = "Ativos em Custódia (Detalhado)"
 
@@ -177,8 +177,8 @@ MSG_NO_DIVIDENDS_RECORDED = (
     "Nenhum provento recebido registrado para o ativo {ticker} no banco de dados."
 )
 MSG_ANNUAL_PLANNING_TITLE = "📅 Planejamento Anual de Investimentos ({year})"
-MSG_YTD_CONTRIBUTIONS = "**Total Comprado (Aportado) este ano na B3:** {value} ({pct:.1f}%)"
-MSG_REMAINING_TO_BUY = "🔴 **Falta comprar/reinvestir na B3 para bater a meta:** {value}"
+MSG_YTD_CONTRIBUTIONS = "**Aportes líquidos este ano na B3:** {value} ({pct:.1f}%)"
+MSG_REMAINING_TO_BUY = "🔴 **Falta aportar/reinvestir na B3 para bater a meta:** {value}"
 MSG_ALL_GOALS_MET = "🎉 **Excelente! Todos os aportes mínimos e proventos do ano foram totalmente investidos e reinvestidos na B3!**"
 MSG_REAL_VS_PLANNED_TITLE = (
     "📊 Histórico Real vs. Planejado (Com Projeção de {months} Meses no Futuro)"

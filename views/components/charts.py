@@ -298,13 +298,13 @@ class DashboardCharts:
                 y="amount",
                 color="year",
                 barmode="group",
-                title="Aportes Mensais",
-                labels={"amount": "Valor Aportado (R$)", "Mês": "Mês", "year": "Ano"},
+                title="Aportes Líquidos Mensais",
+                labels={"amount": "Aporte Líquido (R$)", "Mês": "Mês", "year": "Ano"},
                 category_orders={"year": anos_ordenados},
             )
 
             fig_contribs.update_traces(
-                hovertemplate="Ano: %{data.name}<br>Aporte: R$ %{y:,.2f}<extra></extra>"
+                hovertemplate="Ano: %{data.name}<br>Aporte líquido: R$ %{y:,.2f}<extra></extra>"
             )
             fig_contribs.update_xaxes(categoryorder="array", categoryarray=meses_completos)
             fig_contribs.update_yaxes(tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT)

@@ -8,6 +8,7 @@ from core.constants import (
     SESSION_PORTFOLIO_DELETION_SUCCESS,
     SESSION_PORTFOLIO_RESTORE_CLEANUP_WARNING,
     SESSION_PORTFOLIO_RESTORE_SUCCESS,
+    WIDGET_MAIN_NAVIGATION,
     WIDGET_PORTFOLIO_DELETE_CONFIRMATION_PREFIX,
     WIDGET_PORTFOLIO_DELETION_TARGET,
 )
@@ -61,7 +62,7 @@ if legacy_sources:
             )
         else:
             migration_destinations[source] = source.name
-    if st.sidebar.button("Importar carteiras antigas", use_container_width=True):
+    if st.sidebar.button("Importar carteiras antigas", width="stretch"):
         migrated_databases = []
         migration_warnings = []
         for source in selected_legacy:
@@ -90,7 +91,7 @@ if legacy_sources:
             st.rerun()
     if st.sidebar.button(
         "Não oferecer novamente",
-        use_container_width=True,
+        width="stretch",
         disabled=not selected_legacy,
     ):
         preference_messages = []
@@ -122,7 +123,7 @@ if ignored_legacy_sources:
     )
     if ignored_panel.button(
         "Voltar a oferecer",
-        use_container_width=True,
+        width="stretch",
         disabled=not selected_ignored_sources,
     ):
         preference_messages = []
@@ -219,7 +220,7 @@ st.sidebar.markdown("#### ➕ Nova Carteira")
 new_db_name = st.sidebar.text_input(
     "Nome da Nova Carteira", placeholder="Ex: compania, esposa", label_visibility="collapsed"
 )
-if st.sidebar.button("Criar Nova Carteira", use_container_width=True) and new_db_name:
+if st.sidebar.button("Criar Nova Carteira", width="stretch") and new_db_name:
     clean_name = "".join([c for c in new_db_name if c.isalnum() or c in ("_", "-")]).strip()
     if clean_name:
         new_filename = f"portfolio_{clean_name.lower()}.db"
@@ -266,7 +267,7 @@ with st.sidebar.expander("🗑️ Excluir carteira"):
         key=f"delete_portfolio_{deletion_target}_{deletion_generation}",
         type="primary",
         disabled=is_last_portfolio,
-        use_container_width=True,
+        width="stretch",
     ):
         deletion_result = app_paths.delete_portfolio(
             deletion_target,
@@ -347,7 +348,7 @@ with st.sidebar.expander("💾 Backup local"):
             or len(backup_password) < 4
             or backup_password != backup_password_confirmation
         ),
-        use_container_width=True,
+        width="stretch",
     ):
         backup_selections = [
             PortfolioBackupSelection(
@@ -383,7 +384,7 @@ with st.sidebar.expander("💾 Backup local"):
             data=recovery_key,
             file_name=st.session_state["encrypted_backup_recovery_key_name"],
             mime="application/json",
-            use_container_width=True,
+            width="stretch",
         )
 
     restore_result = render_local_restore(restore_service, labels)
@@ -454,6 +455,7 @@ selected_tab = st.segmented_control(
     options=[TAB_DASHBOARD, TAB_ASSETS, TAB_PLANNING],
     default=TAB_DASHBOARD,
     label_visibility="collapsed",
+    key=WIDGET_MAIN_NAVIGATION,
 )
 
 if not selected_tab:

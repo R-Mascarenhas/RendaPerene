@@ -5,6 +5,7 @@ import math
 
 import pandas as pd
 
+from core.activity import ACTIVITY_EVENTS, activity_event
 from core.daos.portfolio_dao import PortfolioDAO
 from core.ports import (
     ExcelParserPort,
@@ -125,8 +126,16 @@ class AssetService:
         return success
 
     @hybridmethod
-    def add_dividend(self, ticker: str, date: str, dividend_type: str, total_value: float) -> bool:
-        """Inserts a Dividend, JCP, or Yield receipt into the database, avoiding duplicates."""
+    def add_dividend(
+        self,
+        ticker: str,
+        date: str,
+        dividend_type: str,
+        total_value: float,
+        quantity: float | None = None,
+        unit_price: float | None = None,
+    ) -> bool:
+        """Save a receipt or complete its missing B3 metadata without duplicating its total."""
         ticker = ticker.strip().upper()
         if dividend_type in ("Dividendo", "DIVIDEND"):
             dividend_type = "DIVIDEND"
@@ -135,10 +144,14 @@ class AssetService:
         elif dividend_type in ("Rendimento", "YIELD"):
             dividend_type = "YIELD"
 
-        if self._portfolio_repo.find_dividend(date, ticker, dividend_type, total_value):
-            return False
-
-        success = self._portfolio_repo.insert_dividend(date, ticker, dividend_type, total_value)
+        success = self._portfolio_repo.insert_dividend(
+            date,
+            ticker,
+            dividend_type,
+            total_value,
+            self._positive_number(quantity),
+            self._positive_number(unit_price),
+        )
         if success:
             logger.info("portfolio.dividend_saved")
             logger.debug(
@@ -224,6 +237,8 @@ class AssetService:
                 date=row["date"],
                 dividend_type=row["dividend_type"],
                 total_value=row["total_value"],
+                quantity=row.get("quantity"),
+                unit_price=row.get("unit_price"),
             )
             if success:
                 processed_dividends += 1
@@ -330,6 +345,150 @@ class AssetService:
             return df_positions["ticker"].tolist()
         return df_positions.loc[df_positions["quantity"] > 0, "ticker"].tolist()
 
+    @staticmethod
+    def _positive_number(value) -> float | None:
+        """Accept usable numeric metadata without converting missing values to zero."""
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) and number > 0 else None
+
+    def _receipt_unit_value(
+        self, ticker, date, total, quantity=None, unit_price=None, conn=None
+    ) -> float | None:
+        """Prefer reported prices, then reported quantities, then the legacy historical basis."""
+        price = self._positive_number(unit_price)
+        if price is not None:
+            return price
+        total = self._positive_number(total)
+        if total is None:
+            return None
+        basis = self._positive_number(quantity)
+        if basis is None:
+            basis = self._positive_number(
+                self._portfolio_repo.get_quantity_on_date(ticker, date, conn=conn)
+            )
+        return self._positive_number(total / basis) if basis is not None else None
+
+    @hybridmethod
+    def get_portfolio_activity(self, limit: int | None = 10) -> pd.DataFrame:
+        """Return recent financial activities without changing portfolio calculations.
+
+        Dates descend; same-day ties use transactions before dividends, then newest ID.
+        A None limit returns the full history. Read failures propagate to the caller.
+        """
+        if limit is not None and (
+            isinstance(limit, bool) or not isinstance(limit, int) or limit < 0
+        ):
+            raise ValueError("Activity limit must be a non-negative integer or None")
+        records = self._portfolio_repo.get_activity_records(limit)
+        return self._prepare_activity(records)
+
+    @hybridmethod
+    def get_activity_filter_options(self) -> dict:
+        """Expose recorded tickers without loading or calculating historical activities."""
+        return {"tickers": self._portfolio_repo.get_activity_tickers(), "events": ACTIVITY_EVENTS}
+
+    @hybridmethod
+    def get_activity_page(
+        self,
+        page: int = 1,
+        start_date=None,
+        end_date=None,
+        event=None,
+        ticker=None,
+    ) -> dict:
+        """Read one filtered page; date bounds include both endpoints."""
+        if isinstance(page, bool) or not isinstance(page, int) or page < 1:
+            raise ValueError("A página deve ser um inteiro positivo.")
+        dates = []
+        for value in (start_date, end_date):
+            if value is None:
+                dates.append(None)
+                continue
+            try:
+                dates.append(datetime.date.fromisoformat(str(value)).isoformat())
+            except (TypeError, ValueError):
+                raise ValueError("Informe uma data válida.") from None
+        start_date, end_date = dates
+        if start_date and end_date and start_date > end_date:
+            raise ValueError("A data inicial deve ser anterior ou igual à data final.")
+        if event is not None and event not in ACTIVITY_EVENTS:
+            raise ValueError("Selecione um evento válido.")
+        if ticker is not None:
+            ticker = normalize_b3_ticker(ticker)
+        result = self._portfolio_repo.get_activity_page_records(
+            page,
+            start_date,
+            end_date,
+            event,
+            ticker,
+        )
+        result["activity"] = self._prepare_activity(result.pop("records"))
+        return result
+
+    def _prepare_activity(self, records: pd.DataFrame) -> pd.DataFrame:
+        """Calculate values and receipt estimates only for the records being displayed."""
+        activities = []
+        for row in records.to_dict("records"):
+            event = activity_event(row)
+            value_status = "known"
+            quantity = row["quantity"]
+            quantity_status = "reported"
+            if row["source"] == "dividend":
+                value = row["total_value"]
+                quantity = self._positive_number(quantity)
+                if quantity is None:
+                    price = self._receipt_unit_value(
+                        row["ticker"], row["date"], value, unit_price=row["unit_price"]
+                    )
+                    quantity = self._positive_number(value / price) if price is not None else None
+                    quantity_status = "estimated" if quantity is not None else "unavailable"
+            elif row["event_kind"] == "CUSTODY":
+                value = None
+                value_status = "not_applicable"
+            elif row["cost_status"] == "PENDING":
+                value = None
+                value_status = "pending"
+            elif (
+                row["event_type"] == "GROUP"
+                or row["event_kind"] == "CORPORATE"
+                or (
+                    row["event_type"] == "BUY"
+                    and pd.isna(row["event_kind"])
+                    and row["unit_price"] == 0
+                    and row["fees"] == 0
+                )
+            ):
+                value = 0.0
+            else:
+                gross = row["quantity"] * row["unit_price"]
+                value = gross - row["fees"] if row["event_type"] == "SELL" else gross + row["fees"]
+            activities.append(
+                {
+                    "date": row["date"],
+                    "event": event,
+                    "ticker": row["ticker"],
+                    "quantity": quantity,
+                    "quantity_status": quantity_status,
+                    "value": value,
+                    "value_status": value_status,
+                }
+            )
+        return pd.DataFrame(
+            activities,
+            columns=[
+                "date",
+                "event",
+                "ticker",
+                "quantity",
+                "quantity_status",
+                "value",
+                "value_status",
+            ],
+        )
+
     @hybridmethod
     def get_asset_transactions(self, ticker: str) -> pd.DataFrame:
         """Returns all transactions for a specific asset ordered by date descending."""
@@ -356,8 +515,15 @@ class AssetService:
             for _, row in df_div.iterrows():
                 dt = row["Data"]
                 total = row["Total"]
-                qty_owned = self._portfolio_repo.get_quantity_on_date(ticker, dt, conn=conn_shared)
-                unit_vals.append(total / qty_owned if qty_owned > 0 else 0.0)
+                unit_value = self._receipt_unit_value(
+                    ticker,
+                    dt,
+                    total,
+                    quantity=row.get("quantity"),
+                    unit_price=row.get("unit_price"),
+                    conn=conn_shared,
+                )
+                unit_vals.append(unit_value if unit_value is not None else 0.0)
         finally:
             conn_shared.close()
 

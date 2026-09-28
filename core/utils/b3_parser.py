@@ -22,6 +22,15 @@ class B3ExcelParserAdapter:
         return result if math.isfinite(result) else 0.0
 
     @staticmethod
+    def _optional_positive_number(value) -> float | None:
+        """Keep absent or invalid receipt metadata separate from a reported zero."""
+        try:
+            result = float(value)
+        except (TypeError, ValueError):
+            return None
+        return result if math.isfinite(result) and result > 0 else None
+
+    @staticmethod
     def _canonical_text(value) -> str:
         """Normalizes human-readable B3 fields before generating source identities."""
         return (
@@ -60,9 +69,18 @@ class B3ExcelParserAdapter:
                 except ValueError:
                     continue
 
-                quantity = int(row.get("Quantidade", 0))
+                is_dividend = any(term in movement for term in ["Dividendo", "Juros", "Rendimento"])
+                quantity = (
+                    self._optional_positive_number(row.get("Quantidade"))
+                    if is_dividend
+                    else int(row.get("Quantidade", 0))
+                )
                 raw_price = row.get("Preço", row.get("Preço unitário", 0.0))
-                price = self._number(raw_price)
+                price = (
+                    self._optional_positive_number(raw_price)
+                    if is_dividend
+                    else self._number(raw_price)
+                )
 
                 raw_value = row.get("Valor", row.get("Valor da Operação", 0.0))
                 total_value = self._number(raw_value)
@@ -188,7 +206,7 @@ class B3ExcelParserAdapter:
                             "matched_custody_transfer": False,
                         }
                     )
-                elif any(term in movement for term in ["Dividendo", "Juros", "Rendimento"]):
+                elif is_dividend:
                     dividend_type = "DIVIDEND" if "Dividendo" in movement else "JCP"
                     if "Rendimento" in movement:
                         dividend_type = "YIELD"
@@ -198,6 +216,8 @@ class B3ExcelParserAdapter:
                             "date": date,
                             "dividend_type": dividend_type,
                             "total_value": total_value,
+                            "quantity": quantity,
+                            "unit_price": price,
                         }
                     )
 
@@ -234,10 +254,9 @@ class B3ExcelParserAdapter:
                 pair_count = min(len(credits), len(debits))
                 matched = credits[:pair_count] + debits[:pair_count]
                 transactions_df.loc[matched, "matched_custody_transfer"] = True
-        dividends_df = (
-            pd.DataFrame(dividends_list, columns=["ticker", "date", "dividend_type", "total_value"])
-            if dividends_list
-            else pd.DataFrame(columns=["ticker", "date", "dividend_type", "total_value"])
+        dividends_df = pd.DataFrame(
+            dividends_list,
+            columns=["ticker", "date", "dividend_type", "total_value", "quantity", "unit_price"],
         )
 
         return transactions_df, dividends_df

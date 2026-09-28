@@ -25,8 +25,8 @@ Baixe o pacote mais recente para Windows ou Ubuntu na página de
 
 ## Funcionalidades
 
-- **Dashboard da carteira:** totais da carteira, progresso dos aportes anuais, indicadores de desempenho, tabelas de posições e gráficos Plotly.
-- **Operações manuais e importação da B3:** registro manual de compras, vendas, dividendos, JCP e rendimentos, ou importação do arquivo `.xlsx` oficial da B3.
+- **Dashboard da carteira:** totais da carteira, progresso dos aportes anuais, indicadores de desempenho, tabelas de posições, gráficos Plotly e as 10 últimas movimentações da carteira ativa.
+- **Operações manuais e importação da B3:** registro manual de compras, vendas, dividendos, JCP e rendimentos, ou importação do arquivo `.xlsx` oficial da B3. A aba **Ativos → Operações** também reúne o histórico de movimentações em páginas de 25 registros, com filtros por período, evento e ticker, acessível pelo botão no Dashboard.
 - **Regras de movimentação:** cálculo do preço médio ponderado incluindo taxas; tratamento de desdobramentos/bonificações, grupamentos, resgates e importações duplicadas.
 - **Detalhes dos ativos e monitor de mercado:** acompanhamento dos ativos em carteira e dos selecionados manualmente, histórico de preços e dividendos, modelos de preço-teto de Bazin e consulta Raio-X de todo o catálogo, com indicadores de valuation e dividend yields anuais calculados a partir do preço de fechamento de cada ano.
 - **Planejamento de aposentadoria:** cálculo do aporte mensal vitalício e do aporte corrigido ao longo do tempo por meio da fórmula de anuidade antecipada, com projeções baseadas no plano salvo e no histórico da carteira.
@@ -165,6 +165,37 @@ Informe o preço unitário ou o valor total da aquisição, sem taxas, e acresce
 opcionais no campo separado. Consulte o comprovante da oferta, extrato financeiro,
 nota/comprovante de liquidação ou declaração de IR. A aplicação não infere custos por
 cotações históricas nem usa preços fixos por ativo.
+
+O histórico de movimentações combina transações e proventos registrados na carteira ativa,
+da data mais recente para a mais antiga, inclusive quando não há mais posições.
+Em Operações, a consulta retorna páginas de até 25 registros. Os filtros por data inicial e final
+(ambas inclusivas), evento e ticker podem ser combinados; sem seleção, incluem todo o histórico.
+Os tickers incluem ativos já vendidos. Alterar filtros volta à primeira página; trocar de carteira
+reinicia os filtros. Os botões **Anterior** e **Próxima** navegam pelos resultados, com indicação
+da página e da quantidade encontrada. O histórico permanece integralmente salvo no banco local.
+Todos os registros da página ficam visíveis na tabela, sem rolagem vertical interna.
+A interação com o histórico atualiza somente essa seção, sem remontar os formulários de lançamento
+e importação. Cada linha mostra data, evento, ticker, quantidade quando aplicável e valor em BRL. Compras incluem taxas;
+vendas descontam taxas; proventos mostram o valor recebido. Desdobros, bonificações e grupamentos
+têm valor financeiro zero; em grupamentos, a quantidade é o total final. Transferências de
+custódia mostram **—** no valor, pois não representam dinheiro recebido. Aquisições sem custo
+conhecido mostram **Custo pendente**. Eventos manuais sem distinção entre desdobro e bonificação
+mantêm o rótulo conjunto. A lista é informativa e não altera aportes, patrimônio ou metas.
+As linhas inteiras são destacadas por evento: compra em verde, venda em
+vermelho, dividendo em azul, JCP em lilás, rendimento em laranja e os demais em roxo.
+Os fundos usam tons suaves com texto escuro no tema claro e tons escuros com texto claro no
+tema escuro, acompanhando o tema ativo da interface. Para proventos, a importação preserva
+a quantidade e o preço unitário informados pela B3, sem recalcular o Valor da Operação.
+O histórico usa essa quantidade; quando ela falta, mostra **Total ÷ Unitário** como quantidade
+**estimada**, usando valores sem arredondamento prévio. Em registros antigos, o unitário é
+calculado pela posição na data do pagamento, que pode diferir da quantidade remunerada.
+Sem unitário válido nem histórico suficiente, a quantidade permanece como **—**.
+Reimporte a planilha para completar os campos ausentes de proventos já registrados, sem duplicar
+recebimentos nem alterar seus totais. Campos conhecidos são preservados; registros divergentes
+ou correspondências antigas ambíguas não são complementados. A mensagem de importação conta
+proventos adicionados ou complementados. **Proventos recebidos** também prioriza o preço unitário
+importado. A migração automática adiciona campos opcionais ao banco local e mantém os registros
+existentes; backups antigos continuam sendo aceitos e atualizados ao restaurar.
 
 Transferências de custódia não são aportes ou resgates. Pares de **Transferência** com o mesmo
 ativo, data e quantidade, sendo um débito e um crédito, representam apenas a troca de corretora

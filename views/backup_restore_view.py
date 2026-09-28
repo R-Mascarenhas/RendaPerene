@@ -86,7 +86,7 @@ def render_local_restore(local_restore: LocalRestoreService, destination_labels:
     if st.button(
         "Validar pacote",
         disabled=(local_filename is None and package_content is None) or credential is None,
-        use_container_width=True,
+        width="stretch",
     ):
         try:
             with st.spinner("Validando criptografia, hashes e carteiras..."):
@@ -176,7 +176,7 @@ def render_local_restore(local_restore: LocalRestoreService, destination_labels:
             or (local_filename is None and package_content is None)
             or not destination_ready
         ),
-        use_container_width=True,
+        width="stretch",
     ):
         try:
             with st.spinner("Restaurando a carteira com proteção de rollback..."):

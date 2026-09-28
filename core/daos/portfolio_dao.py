@@ -3,7 +3,18 @@ import unicodedata
 
 import pandas as pd
 
+from core.activity import ACTIVITY_EVENT_FIELDS, ACTIVITY_PAGE_SIZE, activity_event
 from core.database import db
+
+_ACTIVITY_SQL = """
+    SELECT t.id, 'transaction' AS source, t.date, t.ticker,
+           t.transaction_type AS event_type, t.quantity, t.unit_price,
+           t.fees, t.cost_status, b.event_kind, b.source_record, NULL AS total_value
+    FROM transactions t LEFT JOIN b3_import_records b ON b.transaction_id = t.id
+    UNION ALL
+    SELECT id, 'dividend', date, ticker, dividend_type, quantity, unit_price,
+           NULL, NULL, NULL, NULL, total_value FROM dividends
+"""
 
 
 class PortfolioDAO:
@@ -483,18 +494,55 @@ class PortfolioDAO:
             conn.close()
 
     def insert_dividend(
-        self, date: str, ticker: str, dividend_type: str, total_value: float
+        self,
+        date: str,
+        ticker: str,
+        dividend_type: str,
+        total_value: float,
+        quantity: float | None = None,
+        unit_price: float | None = None,
     ) -> bool:
-        """Inserts a new dividend into the dividends table."""
+        """Insert a receipt or atomically complete its missing metadata on reimport."""
         conn = self.get_personal_connection()
         cursor = conn.cursor()
         try:
+            conn.execute("BEGIN IMMEDIATE")
+            existing = cursor.execute(
+                "SELECT id, quantity, unit_price FROM dividends "
+                "WHERE date=? AND ticker=? AND dividend_type=? AND total_value=?",
+                (date, ticker, dividend_type, total_value),
+            ).fetchall()
+            if existing:
+                # Never guess which legacy duplicate should receive new source metadata.
+                if len(existing) != 1:
+                    return False
+                receipt_id, stored_quantity, stored_price = existing[0]
+                if (
+                    stored_quantity is not None
+                    and quantity is not None
+                    and stored_quantity != quantity
+                ) or (
+                    stored_price is not None
+                    and unit_price is not None
+                    and stored_price != unit_price
+                ):
+                    return False
+                cursor.execute(
+                    "UPDATE dividends SET quantity=COALESCE(quantity, ?), "
+                    "unit_price=COALESCE(unit_price, ?) WHERE id=? AND "
+                    "((quantity IS NULL AND ? IS NOT NULL) OR "
+                    "(unit_price IS NULL AND ? IS NOT NULL))",
+                    (quantity, unit_price, receipt_id, quantity, unit_price),
+                )
+                changed = cursor.rowcount > 0
+                conn.commit()
+                return changed
             cursor.execute(
                 """
-                INSERT INTO dividends (date, ticker, dividend_type, total_value)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO dividends (date, ticker, dividend_type, total_value, quantity, unit_price)
+                VALUES (?, ?, ?, ?, ?, ?)
             """,
-                (date, ticker, dividend_type, total_value),
+                (date, ticker, dividend_type, total_value, quantity, unit_price),
             )
             conn.commit()
             return True
@@ -574,7 +622,7 @@ class PortfolioDAO:
         conn = self.get_personal_connection()
         try:
             return pd.read_sql_query(
-                "SELECT date as Data, CASE WHEN dividend_type='DIVIDEND' THEN 'Dividendo' WHEN dividend_type='JCP' THEN 'JCP' ELSE 'Rendimento' END as Tipo, total_value as Total FROM dividends WHERE ticker = ? ORDER BY date DESC",
+                "SELECT date as Data, CASE WHEN dividend_type='DIVIDEND' THEN 'Dividendo' WHEN dividend_type='JCP' THEN 'JCP' ELSE 'Rendimento' END as Tipo, total_value as Total, quantity, unit_price FROM dividends WHERE ticker = ? ORDER BY date DESC",
                 conn,
                 params=(ticker,),
             )
@@ -714,6 +762,74 @@ class PortfolioDAO:
         finally:
             conn.close()
 
+    def get_activity_records(self, limit: int | None = None) -> pd.DataFrame:
+        """Read both activity sources in one snapshot of the active portfolio."""
+        conn = self.get_personal_connection()
+        try:
+            return pd.read_sql_query(
+                _ACTIVITY_SQL + " ORDER BY date DESC, source DESC, id DESC LIMIT ?",
+                conn,
+                params=(-1 if limit is None else limit,),
+            )
+        finally:
+            conn.close()
+
+    def get_activity_tickers(self) -> list[str]:
+        """Include every recorded ticker, including assets with no remaining position."""
+        conn = self.get_personal_connection()
+        try:
+            return [
+                row[0]
+                for row in conn.execute(
+                    "SELECT ticker FROM transactions UNION SELECT ticker FROM dividends ORDER BY ticker"
+                )
+            ]
+        finally:
+            conn.close()
+
+    def get_activity_page_records(self, page, start_date, end_date, event, ticker) -> dict:
+        """Count and read a bounded page in the same SQLite read snapshot."""
+        clauses, params = [], []
+        for column, operator, value in (
+            ("date", ">=", start_date),
+            ("date", "<=", end_date),
+            ("ticker", "=", ticker),
+        ):
+            if value is not None:
+                clauses.append(f"{column} {operator} ?")
+                params.append(value)
+        if event is not None:
+            clauses.append(
+                "activity_event(source, event_type, event_kind, source_record, "
+                "cost_status, unit_price, fees) = ?"
+            )
+            params.append(event)
+        query = f"SELECT * FROM ({_ACTIVITY_SQL})"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        conn = self.get_personal_connection()
+        try:
+            conn.create_function(
+                "activity_event",
+                7,
+                lambda *values: activity_event(
+                    dict(zip(ACTIVITY_EVENT_FIELDS, values, strict=True))
+                ),
+                deterministic=True,
+            )
+            conn.execute("BEGIN")
+            total = conn.execute(f"SELECT COUNT(*) FROM ({query})", params).fetchone()[0]
+            pages = max(1, (total + ACTIVITY_PAGE_SIZE - 1) // ACTIVITY_PAGE_SIZE)
+            page = min(page, pages)
+            records = pd.read_sql_query(
+                query + " ORDER BY date DESC, source DESC, id DESC LIMIT ? OFFSET ?",
+                conn,
+                params=(*params, ACTIVITY_PAGE_SIZE, (page - 1) * ACTIVITY_PAGE_SIZE),
+            )
+            return {"records": records, "total": total, "page": page, "pages": pages}
+        finally:
+            conn.close()
+
     def get_all_transactions(self) -> pd.DataFrame:
         """Returns all transactions in the database."""
         conn = self.get_personal_connection()
@@ -786,6 +902,11 @@ class PortfolioDAO:
                 total_value REAL NOT NULL
             )
         """)
+
+        dividend_columns = {row[1] for row in cursor.execute("PRAGMA table_info(dividends)")}
+        for column in ("quantity", "unit_price"):
+            if column not in dividend_columns:
+                cursor.execute(f"ALTER TABLE dividends ADD COLUMN {column} REAL")
 
         columns = {row[1] for row in cursor.execute("PRAGMA table_info(transactions)")}
         if "cost_status" not in columns:
@@ -861,6 +982,11 @@ class PortfolioDAO:
             END;
             CREATE TRIGGER IF NOT EXISTS portfolio_projection_revision_after_dividend_insert
             AFTER INSERT ON dividends
+            BEGIN
+                UPDATE portfolio_projection_state SET revision = revision + 1 WHERE id = 1;
+            END;
+            CREATE TRIGGER IF NOT EXISTS portfolio_projection_revision_after_dividend_update
+            AFTER UPDATE ON dividends
             BEGIN
                 UPDATE portfolio_projection_state SET revision = revision + 1 WHERE id = 1;
             END;

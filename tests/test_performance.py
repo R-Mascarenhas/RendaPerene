@@ -23,6 +23,25 @@ def test_measure_navigation_logs_technical_identifier_in_development(monkeypatch
     assert "ativos.carteira.total duration:" in caplog.text
 
 
+def test_operations_reports_separate_manual_form_timings(monkeypatch, caplog):
+    import pandas as pd
+    from streamlit.testing.v1 import AppTest
+    from views.operations_view import MarketData
+
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.setenv("RENDA_PERENE_NAVIGATION_METRICS", "true")
+    caplog.set_level(logging.DEBUG, logger="core.performance")
+    monkeypatch.setattr(MarketData, "load_assets_catalog", lambda: pd.DataFrame())
+    app = AppTest.from_string('''
+from views.operations_view import OperationsView
+OperationsView().render()
+''').run(timeout=30)
+    assert not app.exception
+    metrics = [record.message for record in caplog.records if record.name == "core.performance"]
+    for phase in ("manual_catalog", "manual_ticker_options", "manual_controls"):
+        assert sum(message.startswith(f"ativos.operacoes.{phase} duration:") for message in metrics) == 1
+
+
 @pytest.mark.parametrize(
     ("screen", "phase"),
     [

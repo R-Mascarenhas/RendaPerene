@@ -1998,3 +1998,52 @@ def test_corporate_action_targets_remain_whole_and_allow_editing_other_assets(
         else 100
     )
     assert goal["progress_percentage"] == pytest.approx(expected_progress)
+
+
+@pytest.mark.parametrize("schema_version", [0, 1, 2])
+@pytest.mark.parametrize("planning_provider", [EmptyPlanningProvider(), StubPlanningProvider()])
+def test_legacy_modes_migrate_to_fixed_targets_consistent_across_views(
+    tmp_path, schema_version, planning_provider
+):
+    manager = DatabaseManager(tmp_path / "legacy-modes.db")
+    manager.init_personal_db()
+    repository = PlanningDAO(manager)
+    for ticker, mode, target, percentage, active in [
+        ("BBAS3", "DIVIDEND_INCOME", 120, None, True),
+        ("SANB3", "PERCENTAGE", 140, 20, True),
+        ("TAEE11", "QUANTITY", 160, None, True),
+        ("ITUB3", "DIVIDEND_INCOME", 180, None, False),
+    ]:
+        repository.upsert_accumulation_goal(ticker, 50, target, mode, percentage, 25, 2, active)
+    connection = manager.get_personal_connection()
+    connection.execute("UPDATE asset_accumulation_goals SET created_at = '2025-12-31 10:00:00'")
+    connection.execute(f"PRAGMA user_version = {schema_version}")
+    connection.commit()
+    connection.close()
+    before = repository.list_accumulation_goals()
+
+    manager.init_personal_db()
+
+    expected = [{**goal, "target_mode": "QUANTITY", "target_percentage": None} for goal in before]
+    assert repository.list_accumulation_goals() == expected
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=StubPortfolioProvider(
+            [{"ticker": ticker, "quantity": 110} for ticker in ["BBAS3", "SANB3", "TAEE11"]],
+            year_start_quantities=dict.fromkeys(["BBAS3", "SANB3", "TAEE11"], 100),
+        ),
+        market_analysis_api=StubMarketData,
+        planning_provider=planning_provider,
+    )
+    date = datetime.date(2026, 9, 28)
+    plan = service.get_portfolio_goal_plan(today_date=date)
+    planning_targets = dict(
+        zip(plan["rows"][service.PLAN_TICKER], plan["rows"][service.PLAN_TARGET_QUANTITY])
+    )
+    dashboard = service.list_goals_with_progress(today_date=date)
+    assert {goal["ticker"]: goal["target_quantity"] for goal in dashboard} == planning_targets
+    assert planning_targets == {"BBAS3": 120, "SANB3": 140, "TAEE11": 160}
+    assert [goal["progress_percentage"] for goal in dashboard] == pytest.approx([50, 25, 100 / 6])
+
+    manager.init_personal_db()
+    assert repository.list_accumulation_goals() == expected

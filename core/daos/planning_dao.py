@@ -399,6 +399,14 @@ class PlanningDAO:
             """)
             cursor.execute("DROP TABLE asset_accumulation_goals_legacy")
 
+        # Freeze legacy targets once, retaining their corporate-action cutoff and active state.
+        if cursor.execute("PRAGMA user_version").fetchone()[0] < 3:
+            cursor.execute("""
+                UPDATE asset_accumulation_goals
+                SET target_mode = 'QUANTITY', target_percentage = NULL
+                WHERE target_mode IN ('DIVIDEND_INCOME', 'PERCENTAGE')
+            """)
+
         legacy_goal_settings_exists = cursor.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' "
             "AND name = 'accumulation_goal_settings'"

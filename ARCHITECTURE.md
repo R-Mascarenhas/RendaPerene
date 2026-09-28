@@ -275,7 +275,7 @@ somente leitura e pode ser substituído por uma nova versão sem migração.
 
 O SQLite não declara chaves estrangeiras entre esses armazenamentos. Os serviços preservam programaticamente a consistência necessária.
 
-A versão 2 do esquema permite metas de cotas iguais ou inferiores à base anual, inclusive zero. A migração automática substitui a restrição antiga e preserva os registros existentes.
+A versão 2 do esquema permite metas de cotas iguais ou inferiores à base anual, inclusive zero. A migração automática substitui a restrição antiga e preserva os registros existentes. A versão 3 converte uma única vez as metas legadas por proventos ou percentual em quantidade fixa, usando o alvo já salvo e removendo o percentual persistido. Preserva a base, os pesos, a média de proventos, o estado ativo e a data de criação, usada como referência para os ajustes por eventos corporativos. Planejamento e Dashboard passam a usar o mesmo alvo independente da renda planejada; o crescimento exibido continua derivado da base de 01/01.
 
 ## Regras financeiras e de importação
 

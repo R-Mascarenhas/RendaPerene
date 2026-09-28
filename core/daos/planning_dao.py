@@ -187,10 +187,28 @@ class PlanningDAO:
         is_active: bool = True,
     ) -> None:
         """Creates a goal or replaces its baseline and target for the ticker."""
+        self.upsert_accumulation_goals(
+            [
+                {
+                    "ticker": ticker,
+                    "start_quantity": start_quantity,
+                    "target_quantity": target_quantity,
+                    "target_mode": target_mode,
+                    "target_percentage": target_percentage,
+                    "allocation_weight": allocation_weight,
+                    "average_dividend_5y": average_dividend_5y,
+                    "is_active": is_active,
+                }
+            ]
+        )
+
+    def upsert_accumulation_goals(self, goals: list[dict]) -> None:
+        """Persist all goal edits in one transaction, rolling back any failed batch."""
         conn = self.get_personal_connection()
         try:
-            conn.execute(
-                """
+            with conn:
+                conn.executemany(
+                    """
                 INSERT INTO asset_accumulation_goals (
                     ticker, start_quantity, target_quantity, target_mode,
                     target_percentage, allocation_weight, average_dividend_5y, is_active
@@ -206,18 +224,20 @@ class PlanningDAO:
                     is_active = excluded.is_active,
                     created_at = CURRENT_TIMESTAMP
                 """,
-                (
-                    ticker,
-                    start_quantity,
-                    target_quantity,
-                    target_mode,
-                    target_percentage,
-                    allocation_weight,
-                    average_dividend_5y,
-                    int(is_active),
-                ),
-            )
-            conn.commit()
+                    [
+                        (
+                            goal["ticker"],
+                            goal["start_quantity"],
+                            goal["target_quantity"],
+                            goal["target_mode"],
+                            goal["target_percentage"],
+                            goal["allocation_weight"],
+                            goal["average_dividend_5y"],
+                            int(goal.get("is_active", True)),
+                        )
+                        for goal in goals
+                    ],
+                )
         finally:
             conn.close()
 
@@ -319,7 +339,7 @@ class PlanningDAO:
             CREATE TABLE IF NOT EXISTS asset_accumulation_goals (
                 ticker TEXT PRIMARY KEY,
                 start_quantity REAL NOT NULL CHECK (start_quantity >= 0),
-                target_quantity REAL NOT NULL CHECK (target_quantity > start_quantity),
+                target_quantity REAL NOT NULL CHECK (target_quantity >= 0),
                 target_mode TEXT NOT NULL CHECK (
                     target_mode IN ('DIVIDEND_INCOME', 'PERCENTAGE', 'QUANTITY')
                 ),
@@ -343,6 +363,7 @@ class PlanningDAO:
         if (
             "is_active" not in accumulation_columns
             or "allocation_weight > 0" in accumulation_schema
+            or "target_quantity > start_quantity" in accumulation_schema
         ):
             active_expression = "is_active" if "is_active" in accumulation_columns else "1"
             cursor.execute(
@@ -352,7 +373,7 @@ class PlanningDAO:
                 CREATE TABLE asset_accumulation_goals (
                     ticker TEXT PRIMARY KEY,
                     start_quantity REAL NOT NULL CHECK (start_quantity >= 0),
-                    target_quantity REAL NOT NULL CHECK (target_quantity > start_quantity),
+                    target_quantity REAL NOT NULL CHECK (target_quantity >= 0),
                     target_mode TEXT NOT NULL CHECK (
                         target_mode IN ('DIVIDEND_INCOME', 'PERCENTAGE', 'QUANTITY')
                     ),

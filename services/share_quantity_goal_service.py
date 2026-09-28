@@ -5,6 +5,7 @@ from decimal import ROUND_CEILING, Decimal
 import pandas as pd
 
 from core.constants import (
+    CURRENT_PRICE,
     DATE,
     GOAL_SHARE_QUANTITY,
     MARKET_AVG_DIV_5Y,
@@ -34,15 +35,17 @@ class ShareQuantityGoalService:
     MODE_QUANTITY = "QUANTITY"
     VALID_MODES = {MODE_DIVIDEND_INCOME, MODE_PERCENTAGE, MODE_QUANTITY}
     PLAN_TICKER = "ticker"
-    PLAN_ACTIVE = "is_active"
     PLAN_WEIGHT = "allocation_weight"
     PLAN_AVERAGE_DIVIDEND = "average_dividend_5y"
-    PLAN_ALLOCATED_DIVIDENDS = "allocated_annual_dividends"
     PLAN_CURRENT_QUANTITY = "current_quantity"
     PLAN_YEAR_START_QUANTITY = "year_start_quantity"
     PLAN_TARGET_QUANTITY = "target_quantity"
     PLAN_GROWTH_PERCENTAGE = "target_growth_percentage"
     PLAN_HISTORY_NOTE = "dividend_history_note"
+    PLAN_CURRENT_PRICE = "current_price"
+    PLAN_ESTIMATED_COST = "estimated_cost"
+    PLAN_REMAINING_COST = "remaining_estimated_cost"
+    PLAN_PROJECTED_DIVIDENDS = "projected_annual_dividends"
 
     def __init__(
         self,
@@ -106,11 +109,11 @@ class ShareQuantityGoalService:
 
     @staticmethod
     def calculate_percentage_target(start_quantity: float, target_percentage: float) -> int:
-        """Returns a whole-share target for a percentage increase over the baseline."""
+        """Returns a whole-share target for a percentage change from the baseline."""
         if start_quantity < 0:
             raise ValueError("A quantidade inicial não pode ser negativa.")
-        if target_percentage <= 0:
-            raise ValueError("O percentual desejado deve ser maior que zero.")
+        if not math.isfinite(target_percentage) or target_percentage < -100:
+            raise ValueError("O percentual desejado deve ser finito e no mínimo −100%.")
         exact_target = Decimal(str(start_quantity)) * (
             Decimal("1") + Decimal(str(target_percentage)) / Decimal("100")
         )
@@ -122,17 +125,17 @@ class ShareQuantityGoalService:
     ) -> float:
         """Returns incremental progress from the frozen baseline without an upper limit."""
         incremental_target = target_quantity - start_quantity
-        if incremental_target <= 0:
-            raise ValueError("A quantidade-alvo deve ser maior que a quantidade inicial.")
+        if math.isclose(incremental_target, 0.0, rel_tol=0.0, abs_tol=1e-9):
+            return 100.0 if math.isclose(current_quantity, start_quantity) else 0.0
         raw_progress = (current_quantity - start_quantity) / incremental_target * 100
         return max(0.0, raw_progress)
 
     @staticmethod
     def calculate_target_growth(start_quantity: float, target_quantity: float) -> float:
-        """Returns the percentage increase required from the annual baseline."""
+        """Returns the percentage change required from the annual baseline."""
         if start_quantity <= 0 or not math.isfinite(target_quantity):
             return math.nan
-        return max(0.0, (target_quantity - start_quantity) / start_quantity * 100)
+        return (target_quantity - start_quantity) / start_quantity * 100
 
     @staticmethod
     def calculate_weighted_progress(goals: list[dict]) -> float:
@@ -146,7 +149,14 @@ class ShareQuantityGoalService:
                 continue
             weighted_progress += progress * weight
             total_weight += weight
-        return weighted_progress / total_weight if total_weight > 0 else 0.0
+        if total_weight > 0:
+            return weighted_progress / total_weight
+        finite_progress = [
+            float(goal.get("progress_percentage", 0.0))
+            for goal in goals
+            if math.isfinite(float(goal.get("progress_percentage", 0.0)))
+        ]
+        return sum(finite_progress) / len(finite_progress) if finite_progress else 0.0
 
     @hybridmethod
     def get_goal_enabled(self) -> bool:
@@ -164,6 +174,22 @@ class ShareQuantityGoalService:
                 "O provedor da carteira não está configurado para metas de acumulação."
             )
         return self._portfolio_provider.calculate_positions()
+
+    def _get_goal_positions(self) -> pd.DataFrame:
+        """Keeps saved reduction goals visible after their positions have been sold."""
+        positions = self._get_positions()
+        held_tickers = set(positions[TICKER]) if not positions.empty else set()
+        closed_positions = [
+            {TICKER: goal[TICKER], QUANTITY: 0.0}
+            for goal in self._goal_repo.list_accumulation_goals()
+            if bool(goal.get("is_active", 1))
+            and goal["target_mode"] in (self.MODE_QUANTITY, self.MODE_PERCENTAGE)
+            and goal["target_quantity"] <= goal["start_quantity"]
+            and goal[TICKER] not in held_tickers
+        ]
+        if closed_positions:
+            return pd.concat([positions, pd.DataFrame(closed_positions)], ignore_index=True)
+        return positions
 
     def _get_position(self, ticker: str) -> tuple[pd.DataFrame, float]:
         positions = self._get_positions()
@@ -261,9 +287,16 @@ class ShareQuantityGoalService:
                 adjusted_acquisition_delta *= factor
                 quantity_before_action = quantity
 
+        # Corporate actions can produce fractions or floating-point noise near whole shares.
+        nearest_whole_target = round(adjusted_target)
+        adjusted_target = float(
+            nearest_whole_target
+            if math.isclose(adjusted_target, nearest_whole_target, rel_tol=0.0, abs_tol=1e-9)
+            else math.ceil(adjusted_target)
+        )
         incremental_target = adjusted_target - adjusted_baseline
-        if incremental_target <= 0:
-            progress = 100.0 if adjusted_acquisition_delta >= incremental_target else 0.0
+        if math.isclose(incremental_target, 0.0, rel_tol=0.0, abs_tol=1e-9):
+            progress = 100.0 if math.isclose(adjusted_acquisition_delta, 0.0, abs_tol=1e-9) else 0.0
         else:
             progress = max(0.0, adjusted_acquisition_delta / incremental_target * 100)
         return adjusted_baseline, adjusted_target, progress
@@ -336,13 +369,12 @@ class ShareQuantityGoalService:
         average_dividend: float, average_years: int, history_status: str
     ) -> str:
         """Explains partial or unavailable dividend history to the user."""
-        if average_dividend <= 0:
+        if not math.isfinite(average_dividend) or average_dividend <= 0:
+            if average_years > 0 and math.isfinite(average_dividend):
+                return f"Sem proventos nos {average_years} ano(s) disponíveis."
             if average_years > 0:
-                return (
-                    f"Sem proventos nos {average_years} ano(s) disponíveis; "
-                    "a meta de cotas não pôde ser calculada."
-                )
-            return "Sem histórico de proventos; a meta de cotas não pôde ser calculada."
+                return "Dados de proventos indisponíveis; os proventos projetados são N/D."
+            return "Sem histórico de proventos; os proventos projetados são N/D."
         if history_status == "partial" or average_years < 5:
             return (
                 f"Histórico parcial: média calculada com {average_years} ano(s) desde a "
@@ -351,248 +383,332 @@ class ShareQuantityGoalService:
         return ""
 
     @staticmethod
-    def validate_allocation_weights(
-        allocation_weights: dict[str, float],
-        expected_tickers: set[str],
-    ) -> dict[str, float]:
-        """Normalizes weights and requires active allocations to total 100%."""
-        normalized_weights = {
-            ticker.strip().upper(): float(weight) for ticker, weight in allocation_weights.items()
-        }
-        if set(normalized_weights) != expected_tickers:
-            raise ValueError("Informe um peso para cada ativo atualmente em carteira.")
-        if any(
-            not math.isfinite(weight) or weight < 0 or weight > 100
-            for weight in normalized_weights.values()
-        ):
-            raise ValueError("Cada peso deve estar entre zero e 100%.")
-        active_weight = sum(weight for weight in normalized_weights.values() if weight > 0)
-        if active_weight and abs(active_weight - 100) > 0.01:
-            raise ValueError("A soma dos pesos das metas ativas deve ser igual a 100%.")
-        return normalized_weights
+    def _validate_targets(targets: dict[str, float], baselines: dict[str, float]) -> dict[str, int]:
+        if set(targets) != set(baselines):
+            raise ValueError("Informe uma meta de cotas para cada ativo em carteira.")
+        validated = {}
+        for ticker, raw_target in targets.items():
+            try:
+                target = float(raw_target)
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"A meta de cotas de {ticker} é inválida.") from error
+            if not math.isfinite(target) or target != math.ceil(target) or target < 0:
+                raise ValueError(f"A meta de cotas de {ticker} deve ser inteira e não negativa.")
+            validated[ticker] = int(target)
+        return validated
 
     @classmethod
-    def allocation_weights_from_dataframe(cls, plan_rows: pd.DataFrame) -> dict[str, float]:
-        """Extracts the editable allocation values returned by the presentation table."""
-        required_columns = {cls.PLAN_TICKER, cls.PLAN_WEIGHT}
-        if plan_rows.empty or not required_columns.issubset(plan_rows.columns):
-            return {}
-        weights = {}
-        for _, row in plan_rows.iterrows():
-            ticker = str(row[cls.PLAN_TICKER]).strip().upper()
+    def targets_from_edited_rows(
+        cls, original_rows: pd.DataFrame, edited_rows: pd.DataFrame
+    ) -> dict[str, float]:
+        """Resolve share and growth edits against each row's January baseline."""
+        if len(original_rows) != len(edited_rows):
+            raise ValueError("A tabela de metas mudou; recarregue a página.")
+        targets = {}
+        baselines = {}
+        for (_, original), (_, edited) in zip(
+            original_rows.iterrows(), edited_rows.iterrows(), strict=True
+        ):
+            ticker = original[cls.PLAN_TICKER]
+            baseline = float(original[cls.PLAN_YEAR_START_QUANTITY])
+            target = edited[cls.PLAN_TARGET_QUANTITY]
+            growth_input = edited[cls.PLAN_GROWTH_PERCENTAGE]
             try:
-                weights[ticker] = float(row[cls.PLAN_WEIGHT])
-            except (TypeError, ValueError):
-                weights[ticker] = math.nan
-        return weights
+                growth = (
+                    math.nan
+                    if pd.isna(growth_input) or str(growth_input).strip().upper() == "N/D"
+                    else float(str(growth_input).replace(",", "."))
+                )
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"O crescimento de {ticker} é inválido.") from error
+            if target != original[cls.PLAN_TARGET_QUANTITY]:
+                targets[ticker] = target
+            elif baseline > 0 and (
+                not math.isfinite(growth)
+                or round(growth, 2) != round(float(original[cls.PLAN_GROWTH_PERCENTAGE]), 2)
+            ):
+                try:
+                    targets[ticker] = cls.calculate_percentage_target(baseline, float(growth))
+                except (TypeError, ValueError) as error:
+                    raise ValueError(f"O crescimento de {ticker} é inválido.") from error
+            elif baseline <= 0 and not pd.isna(growth):
+                raise ValueError(f"O crescimento de {ticker} é N/D sem posição em 01/01.")
+            else:
+                targets[ticker] = original[cls.PLAN_TARGET_QUANTITY]
+            baselines[ticker] = baseline
+        return cls._validate_targets(targets, baselines)
+
+    @classmethod
+    def targets_from_editor_changes(
+        cls, original_rows: pd.DataFrame, editing_state: dict
+    ) -> dict[str, float]:
+        """Resolve Streamlit cell deltas against the rows shown before the rerun."""
+        edited_rows = original_rows.copy()
+        editable_columns = {cls.PLAN_TARGET_QUANTITY, cls.PLAN_GROWTH_PERCENTAGE}
+        for row_index, changes in editing_state.get("edited_rows", {}).items():
+            try:
+                index = int(row_index)
+            except (TypeError, ValueError) as error:
+                raise ValueError("A tabela de metas mudou; recarregue a página.") from error
+            if index < 0 or index >= len(original_rows):
+                raise ValueError("A tabela de metas mudou; recarregue a página.")
+            for column, value in changes.items():
+                if column in editable_columns:
+                    # Text edits must retain PT-BR decimal separators until validation.
+                    edited_rows[column] = edited_rows[column].astype(object)
+                    edited_rows.iat[index, edited_rows.columns.get_loc(column)] = value
+        return cls.targets_from_edited_rows(original_rows, edited_rows)
 
     @hybridmethod
     def get_portfolio_goal_plan(
         self,
-        allocation_weights: dict[str, float] | None = None,
+        targets: dict[str, float] | None = None,
         today_date: datetime.date | None = None,
     ) -> dict:
-        """Builds the annual accumulation plan for all currently held assets."""
-        positions = self._get_positions()
-        planned_annual_dividends = (
+        """Build an independent annual share target and financial estimate per asset."""
+        positions = self._get_goal_positions()
+        planned_dividends = (
             float(self._planning_provider.get_planned_annual_dividends())
             if self._planning_provider is not None
             else 0.0
         )
+        simulation = (
+            self._planning_provider.get_current_simulation()
+            if self._planning_provider is not None
+            and hasattr(self._planning_provider, "get_current_simulation")
+            else None
+        )
+        monthly_contribution = (
+            simulation.get("updated_monthly_contribution") if simulation else None
+        )
+        planned_external = (
+            max(0.0, float(monthly_contribution) * 12)
+            if monthly_contribution is not None and math.isfinite(float(monthly_contribution))
+            else None
+        )
         if positions.empty:
             return {
-                "planned_annual_dividends": planned_annual_dividends,
-                "allocation_weights": {},
-                "active_tickers": set(),
+                "planned_annual_dividends": planned_dividends,
+                "planned_external_contribution": planned_external,
+                "total_estimated_cost": 0.0,
+                "total_remaining_cost": 0.0,
+                "projected_annual_dividends": 0.0,
+                "estimated_external_contribution": 0.0,
+                "exceeds_planned_resources": False,
                 "rows": pd.DataFrame(),
             }
 
         positions = positions.sort_values(TICKER).reset_index(drop=True)
         tickers = positions[TICKER].tolist()
-        year_start_quantities = self._get_year_start_quantities(tickers, today_date)
-        expected_tickers = set(tickers)
-        equal_weight = 100 / len(tickers)
+        baselines = self._get_year_start_quantities(tickers, today_date)
         stored_goals = {goal[TICKER]: goal for goal in self._goal_repo.list_accumulation_goals()}
-        has_unavailable_market_data = False
-        stored_weights = {
-            ticker: (
-                float(stored_goals[ticker]["allocation_weight"])
-                if bool(stored_goals[ticker].get("is_active", 1))
-                else 0.0
-            )
-            for ticker in tickers
-            if ticker in stored_goals
-        }
-        stored_active_tickers = {
-            ticker
-            for ticker in tickers
-            if ticker in stored_goals and bool(stored_goals[ticker].get("is_active", 1))
-        }
-        stored_active_weight = sum(stored_weights[ticker] for ticker in stored_active_tickers)
-        stored_weights_are_complete = set(stored_weights) == expected_tickers and (
-            not stored_active_tickers or abs(stored_active_weight - 100) <= 0.01
-        )
-
-        if allocation_weights is not None:
-            weights = {
-                ticker.strip().upper(): float(weight)
-                for ticker, weight in allocation_weights.items()
-                if ticker.strip().upper() in expected_tickers
-            }
-            for ticker in tickers:
-                weights.setdefault(ticker, equal_weight)
-            selected_active_tickers = {ticker for ticker, weight in weights.items() if weight > 0}
-        elif stored_weights_are_complete:
-            weights = stored_weights
-            selected_active_tickers = stored_active_tickers
-        else:
-            weights = dict.fromkeys(tickers, equal_weight)
-            selected_active_tickers = expected_tickers
-
+        if targets is not None:
+            targets = self._validate_targets(targets, dict.fromkeys(tickers, -1.0))
+        reference_date = today_date or datetime.date.today()
+        adjusted_baselines = {}
         rows = []
         for _, position in positions.iterrows():
             ticker = position[TICKER]
-            weight = weights[ticker]
-            is_active = ticker in selected_active_tickers and weight > 0
-            weight_is_valid = math.isfinite(weight) and 0 <= weight <= 100
-            market_analysis = self._market_analysis_api.get_ticker_market_analysis(ticker)
-            average_dividend_5y = float(market_analysis.get(MARKET_AVG_DIV_5Y, 0.0) or 0.0)
-            average_years = int(
-                market_analysis.get(
-                    MARKET_DIVIDEND_AVERAGE_YEARS, 5 if average_dividend_5y > 0 else 0
-                )
+            baseline = baselines[ticker]
+            current = float(position[QUANTITY])
+            stored = stored_goals.get(ticker)
+            target = (
+                targets[ticker]
+                if targets is not None
+                else float(stored["target_quantity"])
+                if stored is not None and bool(stored.get("is_active", 1))
+                else math.ceil(max(baseline, current)) + 1
             )
-            history_status = market_analysis.get(
-                MARKET_DIVIDEND_HISTORY_STATUS,
-                "complete" if average_years == 5 else "unavailable",
+            action_cutoff = (
+                str(stored.get("created_at", ""))[:10] or None
+                if targets is None and stored is not None and bool(stored.get("is_active", 1))
+                else reference_date.isoformat()
             )
-            market_data_available = bool(market_analysis)
-            stored_goal = stored_goals.get(ticker)
-            if not market_data_available and is_active:
-                has_unavailable_market_data = True
-                if stored_goal is not None and bool(stored_goal.get("is_active", 1)):
-                    average_dividend_5y = float(stored_goal["average_dividend_5y"])
-                    average_years = 5 if average_dividend_5y > 0 else 0
-                    history_status = "complete" if average_dividend_5y > 0 else "unavailable"
-            allocated_dividends = (
-                planned_annual_dividends * weight / 100 if weight_is_valid and is_active else 0.0
+            action_result = self._get_corporate_action_adjusted_progress(
+                {TICKER: ticker, "start_quantity": baseline, "target_quantity": target},
+                f"{reference_date.year}-01-01",
+                action_cutoff,
             )
-            if (
-                planned_annual_dividends > 0
-                and average_dividend_5y > 0
-                and weight_is_valid
-                and is_active
-            ):
-                target_quantity = self.calculate_dividend_income_target(
-                    planned_annual_dividends,
-                    weight,
-                    average_dividend_5y,
-                )
-            elif is_active:
-                target_quantity = math.nan
-            else:
-                target_quantity = float(position[QUANTITY])
-            history_note = self._dividend_history_note(
-                average_dividend_5y, average_years, history_status
+            if action_result is not None:
+                baseline, target, _ = action_result
+            adjusted_baselines[ticker] = baseline
+            analysis = self._market_analysis_api.get_ticker_market_analysis(ticker)
+            price = float(analysis.get(CURRENT_PRICE, math.nan) or math.nan)
+            if not math.isfinite(price) or price <= 0:
+                price = math.nan
+            average_dividend = float(analysis.get(MARKET_AVG_DIV_5Y, math.nan))
+            if not math.isfinite(average_dividend) or average_dividend < 0:
+                average_dividend = math.nan
+            years = int(
+                analysis.get(MARKET_DIVIDEND_AVERAGE_YEARS, 5 if average_dividend > 0 else 0)
             )
-            if is_active and planned_annual_dividends <= 0:
-                history_note = "Configure os proventos planejados no ano para calcular a meta."
-            year_start_quantity = year_start_quantities[ticker]
-            target_growth_percentage = (
-                self.calculate_target_growth(year_start_quantity, target_quantity)
-                if is_active
-                else 0.0
+            status = analysis.get(
+                MARKET_DIVIDEND_HISTORY_STATUS, "complete" if years == 5 else "unavailable"
             )
-            if is_active and year_start_quantity <= 0 and math.isfinite(target_quantity):
-                growth_note = (
-                    "Sem posição em 01/01; o crescimento percentual não pode ser calculado."
-                )
-                history_note = f"{history_note} {growth_note}" if history_note else growth_note
-            if not market_data_available:
-                if stored_goal is not None and bool(stored_goal.get("is_active", 1)):
-                    target_quantity = float(stored_goal["target_quantity"])
-                    target_growth_percentage = self.calculate_target_growth(
-                        year_start_quantity, target_quantity
-                    )
-                    history_note = (
-                        f"{history_note} Dados de mercado indisponíveis; meta salva preservada."
-                    )
-                else:
-                    history_note = f"{history_note} Dados de mercado indisponíveis; tente novamente mais tarde."
+            if years == 0:
+                average_dividend = math.nan
+            note = self._dividend_history_note(average_dividend, years, status)
+            if baseline <= 0:
+                note = f"{note} Crescimento N/D: sem posição em 01/01.".strip()
+            if math.isnan(price) and (target > baseline or target > current):
+                note = f"{note} Cotação indisponível; custo estimado N/D.".strip()
             rows.append(
                 {
                     self.PLAN_TICKER: ticker,
-                    self.PLAN_ACTIVE: is_active,
-                    self.PLAN_WEIGHT: weight,
-                    self.PLAN_AVERAGE_DIVIDEND: average_dividend_5y,
-                    self.PLAN_ALLOCATED_DIVIDENDS: allocated_dividends,
-                    self.PLAN_YEAR_START_QUANTITY: year_start_quantity,
-                    self.PLAN_CURRENT_QUANTITY: float(position[QUANTITY]),
-                    self.PLAN_TARGET_QUANTITY: target_quantity,
-                    self.PLAN_GROWTH_PERCENTAGE: target_growth_percentage,
-                    self.PLAN_HISTORY_NOTE: history_note,
+                    self.PLAN_YEAR_START_QUANTITY: baseline,
+                    self.PLAN_CURRENT_QUANTITY: current,
+                    self.PLAN_TARGET_QUANTITY: target,
+                    self.PLAN_GROWTH_PERCENTAGE: self.calculate_target_growth(baseline, target),
+                    self.PLAN_CURRENT_PRICE: price,
+                    self.PLAN_AVERAGE_DIVIDEND: average_dividend,
+                    self.PLAN_ESTIMATED_COST: (target - baseline) * price
+                    if target > baseline
+                    else 0.0,
+                    self.PLAN_REMAINING_COST: (target - current) * price
+                    if target > current
+                    else 0.0,
+                    self.PLAN_PROJECTED_DIVIDENDS: target * average_dividend if target > 0 else 0.0,
+                    self.PLAN_HISTORY_NOTE: note,
                 }
             )
+        if targets is not None:
+            self._validate_targets(targets, adjusted_baselines)
+        frame = pd.DataFrame(rows)
+        return self._summarize_goal_plan(frame, planned_dividends, planned_external)
 
+    @classmethod
+    def _summarize_goal_plan(
+        cls, frame: pd.DataFrame, planned_dividends: float, planned_external: float | None
+    ) -> dict:
+        """Summarize already loaded estimates without consulting any adapters."""
+        costs = frame[cls.PLAN_ESTIMATED_COST]
+        complete_cost = bool(costs.notna().all())
+        total_cost = float(costs.sum()) if complete_cost else None
+        if complete_cost and total_cost > 0:
+            frame[cls.PLAN_WEIGHT] = costs / total_cost * 100
+        elif complete_cost:
+            frame[cls.PLAN_WEIGHT] = 0.0
+        else:
+            frame[cls.PLAN_WEIGHT] = math.nan
+        remaining_costs = frame[cls.PLAN_REMAINING_COST]
+        total_remaining_cost = (
+            float(remaining_costs.sum()) if remaining_costs.notna().all() else None
+        )
+        dividends = frame[cls.PLAN_PROJECTED_DIVIDENDS]
+        projected_dividends = float(dividends.sum()) if dividends.notna().all() else None
+        external = (
+            max(0.0, total_cost - projected_dividends)
+            if total_cost is not None and projected_dividends is not None
+            else None
+        )
         return {
-            "planned_annual_dividends": planned_annual_dividends,
-            "allocation_weights": weights,
-            "active_tickers": selected_active_tickers,
-            "has_unavailable_market_data": has_unavailable_market_data,
-            "rows": pd.DataFrame(rows),
+            "planned_annual_dividends": planned_dividends,
+            "planned_external_contribution": planned_external,
+            "total_estimated_cost": total_cost,
+            "total_remaining_cost": total_remaining_cost,
+            "projected_annual_dividends": projected_dividends,
+            "estimated_external_contribution": external,
+            "exceeds_planned_resources": (
+                external > planned_external
+                if external is not None and planned_external is not None
+                else False
+            ),
+            "rows": frame,
         }
+
+    @classmethod
+    def recalculate_goal_plan(cls, plan: dict, targets: dict[str, float]) -> dict:
+        """Apply edits to the displayed snapshot without reloading portfolio or market data."""
+        frame = plan["rows"].copy()
+        baselines = dict(
+            zip(frame[cls.PLAN_TICKER], frame[cls.PLAN_YEAR_START_QUANTITY], strict=True)
+        )
+        validated = cls._validate_targets(targets, baselines)
+        frame[cls.PLAN_TARGET_QUANTITY] = frame[cls.PLAN_TICKER].map(validated)
+        target = frame[cls.PLAN_TARGET_QUANTITY]
+        baseline = frame[cls.PLAN_YEAR_START_QUANTITY]
+        current = frame[cls.PLAN_CURRENT_QUANTITY]
+        price = frame[cls.PLAN_CURRENT_PRICE]
+        frame[cls.PLAN_GROWTH_PERCENTAGE] = [
+            cls.calculate_target_growth(start, desired)
+            for start, desired in zip(baseline, target, strict=True)
+        ]
+        frame[cls.PLAN_ESTIMATED_COST] = ((target - baseline) * price).where(target > baseline, 0.0)
+        frame[cls.PLAN_REMAINING_COST] = ((target - current) * price).where(target > current, 0.0)
+        frame[cls.PLAN_PROJECTED_DIVIDENDS] = (target * frame[cls.PLAN_AVERAGE_DIVIDEND]).where(
+            target > 0, 0.0
+        )
+        quote_note = "Cotação indisponível; custo estimado N/D."
+        frame[cls.PLAN_HISTORY_NOTE] = [
+            (
+                str(note).replace(quote_note, "").strip()
+                + (
+                    " " + quote_note
+                    if not math.isfinite(quote) and (desired > start or desired > held)
+                    else ""
+                )
+            ).strip()
+            for note, quote, desired, start, held in zip(
+                frame[cls.PLAN_HISTORY_NOTE], price, target, baseline, current, strict=True
+            )
+        ]
+        return cls._summarize_goal_plan(
+            frame, plan["planned_annual_dividends"], plan["planned_external_contribution"]
+        )
+
+    @hybridmethod
+    def save_edited_goal_plan(self, original_plan: dict, targets: dict[str, float]) -> dict:
+        """Recalculate and persist only edited targets using the displayed snapshot."""
+        updated_plan = self.recalculate_goal_plan(original_plan, targets)
+        changed_tickers = {
+            row[self.PLAN_TICKER]
+            for _, row in original_plan["rows"].iterrows()
+            if targets[row[self.PLAN_TICKER]] != row[self.PLAN_TARGET_QUANTITY]
+        }
+        if changed_tickers:
+            self.save_prepared_goal_plan(updated_plan, changed_tickers)
+        return updated_plan
+
+    @hybridmethod
+    def save_prepared_goal_plan(self, plan: dict, changed_tickers: set[str] | None = None) -> None:
+        """Persist validated edits from a loaded plan without market or simulation work."""
+        rows = plan["rows"]
+        if rows.empty:
+            raise ValueError("Adicione ativos à carteira antes de salvar as metas.")
+        self._validate_targets(
+            dict(zip(rows[self.PLAN_TICKER], rows[self.PLAN_TARGET_QUANTITY], strict=True)),
+            dict(zip(rows[self.PLAN_TICKER], rows[self.PLAN_YEAR_START_QUANTITY], strict=True)),
+        )
+        goals = []
+        for _, row in rows.iterrows():
+            if changed_tickers is not None and row[self.PLAN_TICKER] not in changed_tickers:
+                continue
+            average = row[self.PLAN_AVERAGE_DIVIDEND]
+            weight = row[self.PLAN_WEIGHT]
+            goals.append(
+                {
+                    "ticker": row[self.PLAN_TICKER],
+                    "start_quantity": float(row[self.PLAN_YEAR_START_QUANTITY]),
+                    "target_quantity": float(row[self.PLAN_TARGET_QUANTITY]),
+                    "target_mode": self.MODE_QUANTITY,
+                    "target_percentage": None,
+                    "allocation_weight": float(weight) if math.isfinite(weight) else 0.0,
+                    "average_dividend_5y": float(average) if math.isfinite(average) else 0.0,
+                    "is_active": True,
+                }
+            )
+        self._goal_repo.upsert_accumulation_goals(goals)
 
     @hybridmethod
     def save_portfolio_goal_plan(
         self,
-        allocation_weights: dict[str, float],
+        targets: dict[str, float],
         today_date: datetime.date | None = None,
     ) -> list[dict]:
-        """Validates and persists annual dividend-income goals for every held asset."""
-        positions = self._get_positions()
-        if positions.empty:
-            raise ValueError("Adicione ativos à carteira antes de salvar as metas.")
-        expected_tickers = set(positions[TICKER].tolist())
-        normalized_weights = self.validate_allocation_weights(allocation_weights, expected_tickers)
-        plan = self.get_portfolio_goal_plan(normalized_weights, today_date)
-        if plan.get("has_unavailable_market_data"):
-            raise ValueError(
-                "Dados de mercado indisponíveis; as metas não foram alteradas. Tente novamente."
-            )
-        unavailable_weight = (
-            plan["rows"]
-            .loc[
-                (plan["rows"][self.PLAN_ACTIVE]) & (plan["rows"][self.PLAN_AVERAGE_DIVIDEND] <= 0),
-                self.PLAN_WEIGHT,
-            ]
-            .sum()
-        )
-        if unavailable_weight > 0:
-            raise ValueError(
-                "Ativos sem histórico de proventos devem ter peso zero antes de salvar."
-            )
-
-        for _, row in plan["rows"].iterrows():
-            ticker = row[self.PLAN_TICKER]
-            start_quantity = float(row[self.PLAN_YEAR_START_QUANTITY])
-            calculated_target = float(row[self.PLAN_TARGET_QUANTITY])
-            persistence_target = (
-                max(calculated_target, start_quantity + 1)
-                if math.isfinite(calculated_target)
-                else start_quantity + 1
-            )
-            is_active = bool(row[self.PLAN_ACTIVE]) and math.isfinite(calculated_target)
-            self._goal_repo.upsert_accumulation_goal(
-                ticker=ticker,
-                start_quantity=start_quantity,
-                target_quantity=persistence_target,
-                target_mode=self.MODE_DIVIDEND_INCOME,
-                target_percentage=None,
-                allocation_weight=float(row[self.PLAN_WEIGHT]),
-                average_dividend_5y=float(row[self.PLAN_AVERAGE_DIVIDEND]),
-                is_active=is_active,
-            )
-        return self.list_goals_with_progress()
+        """Validate and save share targets without using income allocation as a limit."""
+        plan = self.get_portfolio_goal_plan(targets, today_date)
+        self.save_prepared_goal_plan(plan)
+        return self.list_goals_with_progress(today_date)
 
     @hybridmethod
     def create_goal(
@@ -626,10 +742,13 @@ class ShareQuantityGoalService:
         else:
             if target_value is None:
                 raise ValueError("Informe a quantidade-alvo para esta meta.")
-            target_quantity = float(math.ceil(float(target_value)))
+            raw_target = float(target_value)
+            if not math.isfinite(raw_target) or raw_target < 0:
+                raise ValueError("A quantidade-alvo deve ser finita e não negativa.")
+            target_quantity = float(math.ceil(raw_target))
 
-        if not math.isfinite(target_quantity) or target_quantity <= start_quantity:
-            raise ValueError("A quantidade-alvo deve ser maior que a quantidade atual.")
+        if not math.isfinite(target_quantity) or target_quantity < 0:
+            raise ValueError("A quantidade-alvo deve ser finita e não negativa.")
 
         self._goal_repo.upsert_accumulation_goal(
             ticker=suggestion[TICKER],
@@ -661,10 +780,47 @@ class ShareQuantityGoalService:
         )
         return result
 
+    def _refresh_annual_progress_weights(self, goals: list[dict]) -> None:
+        """Derive current annual effort weights without changing persisted goals."""
+        quantity_goals = [
+            goal
+            for goal in goals
+            if goal["target_mode"] in (self.MODE_QUANTITY, self.MODE_PERCENTAGE)
+        ]
+        costs = []
+        for goal in quantity_goals:
+            additional_quantity = max(0.0, goal["target_quantity"] - goal["start_quantity"])
+            if additional_quantity == 0:
+                costs.append(0.0)
+                continue
+            try:
+                analysis = (
+                    self._market_analysis_api.get_ticker_market_analysis(goal[TICKER])
+                    if self._market_analysis_api is not None
+                    else {}
+                )
+                price = float(analysis.get(CURRENT_PRICE, math.nan))
+            except Exception:
+                # Market availability must not hide transaction-based progress.
+                price = math.nan
+            costs.append(
+                additional_quantity * price if math.isfinite(price) and price > 0 else math.nan
+            )
+        complete_quotes = all(math.isfinite(cost) for cost in costs)
+        if not complete_quotes:
+            costs = [
+                1.0 if goal["target_quantity"] > goal["start_quantity"] else 0.0
+                for goal in quantity_goals
+            ]
+        total_cost = sum(costs)
+        for goal, cost in zip(quantity_goals, costs, strict=True):
+            goal["allocation_weight"] = cost / total_cost * 100 if total_cost > 0 else 0.0
+            goal["equal_progress_weights"] = not complete_quotes
+
     @hybridmethod
     def list_goals_with_progress(self, today_date: datetime.date | None = None) -> list[dict]:
         """Combines stored baselines and targets with current portfolio quantities."""
-        positions = self._get_positions()
+        positions = self._get_goal_positions()
         held_tickers = set(positions[TICKER].tolist()) if not positions.empty else set()
         goals = [
             goal
@@ -731,7 +887,10 @@ class ShareQuantityGoalService:
                 adjusted_baseline, adjusted_target, _ = corporate_action_result
                 goal["start_quantity"] = adjusted_baseline
                 goal["target_quantity"] = adjusted_target
-            if goal["target_quantity"] <= goal["start_quantity"]:
+            if (
+                goal["target_mode"] == self.MODE_DIVIDEND_INCOME
+                and goal["target_quantity"] <= goal["start_quantity"]
+            ):
                 current_quantity = current_quantities.get(goal[TICKER], 0.0)
                 goal["current_quantity"] = current_quantity
                 goal["progress_percentage"] = (
@@ -740,6 +899,10 @@ class ShareQuantityGoalService:
                     else 0.0
                 )
                 results.append(goal)
+            elif math.isclose(
+                goal["target_quantity"], goal["start_quantity"], rel_tol=0.0, abs_tol=1e-9
+            ):
+                results.append(self._build_progress(goal, current_quantities))
             elif corporate_action_result is not None:
                 _, _, corporate_action_progress = corporate_action_result
                 goal["current_quantity"] = current_quantities.get(goal[TICKER], 0.0)
@@ -747,6 +910,7 @@ class ShareQuantityGoalService:
                 results.append(goal)
             else:
                 results.append(self._build_progress(goal, current_quantities))
+        self._refresh_annual_progress_weights(results)
         return results
 
     @hybridmethod

@@ -255,6 +255,8 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
         "b3_uploader_key",
         "accumulation_plan_editor_portfolio.db",
         "accumulation_plan_weights_portfolio.db",
+        "accumulation_plan_draft_portfolio.db",
+        "accumulation_plan_draft_portfolio.dbrevision",
         "enable_dividend_reinvestment_goal_portfolio.db",
         "enable_share_quantity_goal_portfolio.db",
         "initial_equity_widget_250000.0",

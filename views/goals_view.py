@@ -48,7 +48,7 @@ class GoalsView:
         enabled = st.checkbox(
             "Meta por quantidade de ações",
             value=stored_enabled,
-            help="Distribui os proventos planejados e calcula uma meta de cotas por ativo.",
+            help="Permite definir metas anuais de cotas independentes da renda planejada.",
             key=f"{WIDGET_SHARE_QUANTITY_GOAL_PREFIX}{active_database}",
         )
         if enabled != stored_enabled:

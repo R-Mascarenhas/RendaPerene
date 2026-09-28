@@ -7,7 +7,7 @@ from core.application_paths import (
     portfolio_deletion_marker,
 )
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 3
 
 
 class _LockedCursor(sqlite3.Cursor):

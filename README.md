@@ -193,8 +193,10 @@ Sem unitário válido nem histórico suficiente, a quantidade permanece como **�
 Reimporte a planilha para completar os campos ausentes de proventos já registrados, sem duplicar
 recebimentos nem alterar seus totais. Campos conhecidos são preservados; registros divergentes
 ou correspondências antigas ambíguas não são complementados. A mensagem de importação conta
-proventos adicionados ou complementados. **Proventos recebidos** também prioriza o preço unitário
-importado. A migração automática adiciona campos opcionais ao banco local e mantém os registros
+proventos adicionados ou complementados. **Proventos recebidos** e a métrica anual de proventos
+por cota priorizam o preço unitário importado, depois o total dividido pela quantidade informada
+e, na ausência desses metadados, a posição histórica na data do pagamento.
+A migração automática adiciona campos opcionais ao banco local e mantém os registros
 existentes; backups antigos continuam sendo aceitos e atualizados ao restaurar.
 
 Transferências de custódia não são aportes ou resgates. Pares de **Transferência** com o mesmo

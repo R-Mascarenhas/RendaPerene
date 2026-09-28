@@ -116,3 +116,48 @@ def test_concurrent_receipts_are_saved_only_once():
     history = AssetService.get_portfolio_activity(limit=None)
     assert len(history) == 1
     assert history["value"].sum() == 10
+
+
+@pytest.mark.parametrize("kind,quantity,unit_price,total", [
+    ("Dividendo", 80, 0.125, 10),
+    ("Juros Sobre Capital Próprio", 80, 0.125, 9.25),
+    ("Rendimento", 80, None, 10),
+    ("Dividendo", None, 0.125, 10),
+])
+def test_annual_per_share_metric_honors_receipt_metadata(kind, quantity, unit_price, total):
+    AssetService.add_transaction("BBAS3", "2025-01-01", "BUY", 40, 20)
+    AssetService.add_transaction("BBAS3", "2026-01-01", "BUY", 60, 20)
+    assert AssetService.process_b3_import(receipt(kind, quantity, unit_price, total)) == (0, 1)
+    metrics = AssetService.get_annual_dividends_metrics(
+        "BBAS3", "2026", AssetService.get_asset_dividends("BBAS3")
+    )
+    assert metrics["total_paid_per_share"] == 0.125
+    assert AssetService.get_asset_dividends_detailed("BBAS3").iloc[0]["Unitário"] == 0.125
+    assert metrics["qty_end_of_year"] == 100
+    assert metrics["qty_prev_year"] == 40
+
+
+def test_annual_per_share_metric_sums_selected_year_with_legacy_fallback():
+    AssetService.add_transaction("BBAS3", "2025-01-01", "BUY", 40, 20)
+    AssetService.add_transaction("BBAS3", "2026-01-01", "BUY", 60, 20)
+    AssetService.add_dividend("BBAS3", "2025-02-01", "DIVIDEND", 40, unit_price=1)
+    AssetService.add_dividend("BBAS3", "2026-01-02", "JCP", 9.25, quantity=80, unit_price=0.125)
+    AssetService.add_dividend("BBAS3", "2026-02-01", "YIELD", 10, quantity=50)
+    AssetService.add_dividend("BBAS3", "2026-03-01", "DIVIDEND", 10)
+    metrics = AssetService.get_annual_dividends_metrics(
+        "BBAS3", "2026", AssetService.get_asset_dividends("BBAS3")
+    )
+    assert metrics["total_paid_per_share"] == pytest.approx(0.425)
+    assert metrics["qty_end_of_year"] == 100
+    assert metrics["qty_prev_year"] == 40
+
+
+def test_annual_per_share_metric_uses_reported_price_without_historical_position():
+    AssetService.add_dividend("BBAS3", "2026-01-02", "JCP", 10, unit_price=0.125)
+    AssetService.add_dividend("BBAS3", "2026-02-01", "DIVIDEND", 10)
+    metrics = AssetService.get_annual_dividends_metrics(
+        "BBAS3", "2026", AssetService.get_asset_dividends("BBAS3")
+    )
+    assert metrics["total_paid_per_share"] == 0.125
+    assert metrics["qty_end_of_year"] == 0
+    assert metrics["qty_prev_year"] == 0

@@ -392,6 +392,10 @@ marcando a quantidade como estimada. O unitário prioriza o preço importado, de
 dividido pela quantidade informada e, por último, a posição histórica na data do pagamento,
 mantendo a regra antiga de Proventos recebidos. A apresentação diferencia quantidades estimadas
 e mostra — quando faltam dados; valores estimados não são persistidos.
+`AssetService.get_annual_dividends_metrics()` soma os unitários dos recebimentos do ano selecionado
+usando a mesma prioridade de `_receipt_unit_value()` da tabela detalhada: preço informado,
+total dividido pela quantidade informada e posição histórica como fallback legado.
+As quantidades no fim do ano e no fim do ano anterior continuam sendo posições históricas.
 `PortfolioDAO.insert_dividend()` usa uma transação com `BEGIN IMMEDIATE` para inserir ou preencher
 somente metadados ausentes de um recebimento identificado por data, ticker, tipo e total.
 Reimportações idênticas não duplicam registros. Dados já conhecidos não são sobrescritos;

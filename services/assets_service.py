@@ -546,13 +546,16 @@ class AssetService:
             if not df_div.empty:
                 df_div_year = df_div[df_div["Data"].str.startswith(chosen_year)]
                 for _, row in df_div_year.iterrows():
-                    dt = row["Data"]
-                    tot = row["Total"]
-                    qty_on_date = self._portfolio_repo.get_quantity_on_date(
-                        ticker, dt, conn=conn_shared
+                    unit_value = self._receipt_unit_value(
+                        ticker,
+                        row["Data"],
+                        row["Total"],
+                        quantity=row.get("quantity"),
+                        unit_price=row.get("unit_price"),
+                        conn=conn_shared,
                     )
-                    if qty_on_date > 0:
-                        total_paid_per_share += tot / qty_on_date
+                    if unit_value is not None:
+                        total_paid_per_share += unit_value
 
             qty_end_of_year = self._portfolio_repo.get_quantity_on_date(
                 ticker, f"{chosen_year}-12-31", conn=conn_shared

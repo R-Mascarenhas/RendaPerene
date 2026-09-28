@@ -175,18 +175,34 @@ class ShareQuantityGoalService:
             )
         return self._portfolio_provider.calculate_positions()
 
-    def _get_goal_positions(self) -> pd.DataFrame:
-        """Keeps saved reduction goals visible after their positions have been sold."""
+    def _get_goal_positions(self, today_date: datetime.date | None = None) -> pd.DataFrame:
+        """Keep closed reductions visible using the effective baseline for the requested year."""
         positions = self._get_positions()
         held_tickers = set(positions[TICKER]) if not positions.empty else set()
-        closed_positions = [
-            {TICKER: goal[TICKER], QUANTITY: 0.0}
+        closed_goals = [
+            goal
             for goal in self._goal_repo.list_accumulation_goals()
             if bool(goal.get("is_active", 1))
             and goal["target_mode"] in (self.MODE_QUANTITY, self.MODE_PERCENTAGE)
-            and goal["target_quantity"] <= goal["start_quantity"]
             and goal[TICKER] not in held_tickers
         ]
+        baselines = self._get_year_start_quantities(
+            [goal[TICKER] for goal in closed_goals], today_date
+        )
+        year_start_date = f"{(today_date or datetime.date.today()).year}-01-01"
+        closed_positions = []
+        for goal in closed_goals:
+            baseline = baselines[goal[TICKER]]
+            target = float(goal["target_quantity"])
+            adjusted = self._get_corporate_action_adjusted_progress(
+                {**goal, "start_quantity": baseline},
+                year_start_date,
+                str(goal.get("created_at", ""))[:10] or None,
+            )
+            if adjusted is not None:
+                baseline, target, _ = adjusted
+            if target <= baseline or math.isclose(target, baseline, rel_tol=0.0, abs_tol=1e-9):
+                closed_positions.append({TICKER: goal[TICKER], QUANTITY: 0.0})
         if closed_positions:
             return pd.concat([positions, pd.DataFrame(closed_positions)], ignore_index=True)
         return positions
@@ -466,7 +482,7 @@ class ShareQuantityGoalService:
         today_date: datetime.date | None = None,
     ) -> dict:
         """Build an independent annual share target and financial estimate per asset."""
-        positions = self._get_goal_positions()
+        positions = self._get_goal_positions(today_date)
         planned_dividends = (
             float(self._planning_provider.get_planned_annual_dividends())
             if self._planning_provider is not None
@@ -820,7 +836,7 @@ class ShareQuantityGoalService:
     @hybridmethod
     def list_goals_with_progress(self, today_date: datetime.date | None = None) -> list[dict]:
         """Combines stored baselines and targets with current portfolio quantities."""
-        positions = self._get_goal_positions()
+        positions = self._get_goal_positions(today_date)
         held_tickers = set(positions[TICKER].tolist()) if not positions.empty else set()
         goals = [
             goal

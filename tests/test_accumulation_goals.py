@@ -2047,3 +2047,77 @@ def test_legacy_modes_migrate_to_fixed_targets_consistent_across_views(
 
     manager.init_personal_db()
     assert repository.list_accumulation_goals() == expected
+
+
+@pytest.mark.parametrize("annual_baseline, expected_visible", [(200, True), (100, False)])
+def test_closed_goal_visibility_uses_effective_annual_baseline(
+    mock_db, annual_baseline, expected_visible
+):
+    repository = PlanningDAO()
+    repository.upsert_accumulation_goal("SANB3", 100, 150, "QUANTITY", None, 100, 2)
+    connection = repository.get_personal_connection()
+    connection.execute("UPDATE asset_accumulation_goals SET created_at = '2025-07-01 10:00:00'")
+    connection.commit()
+    connection.close()
+    portfolio = StubPortfolioProvider([], year_start_quantities={"SANB3": annual_baseline})
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=portfolio,
+        market_analysis_api=StubMarketData,
+        planning_provider=EmptyPlanningProvider(),
+    )
+    date = datetime.date(2027, 9, 28)
+    plan = service.get_portfolio_goal_plan(today_date=date)
+    dashboard = service.list_goals_with_progress(today_date=date)
+    assert (not plan["rows"].empty) == expected_visible
+    assert bool(dashboard) == expected_visible
+    if expected_visible:
+        row = plan["rows"].iloc[0]
+        assert row[service.PLAN_YEAR_START_QUANTITY] == annual_baseline
+        assert row[service.PLAN_CURRENT_QUANTITY] == 0
+        assert row[service.PLAN_TARGET_QUANTITY] == 150
+        assert dashboard[0]["progress_percentage"] == 400
+    assert set(portfolio.quantity_queries) == {("SANB3", "2027-01-01")}
+
+
+def test_closed_maintenance_goal_remains_visible_after_fractional_bonus(mock_db):
+    repository = PlanningDAO()
+    repository.upsert_accumulation_goal("SANB3", 100, 100, "QUANTITY", None, 0, 2)
+    connection = repository.get_personal_connection()
+    connection.execute("UPDATE asset_accumulation_goals SET created_at = '2025-12-31 10:00:00'")
+    connection.commit()
+    connection.close()
+    portfolio = StubPortfolioProvider(
+        [],
+        year_start_quantities={"SANB3": 100},
+        transactions={
+            "SANB3": [
+                {
+                    "date": "2027-03-01",
+                    "transaction_type": "BUY",
+                    "quantity": 13,
+                    "unit_price": 0,
+                    "fees": 0,
+                },
+                {
+                    "date": "2027-04-01",
+                    "transaction_type": "SELL",
+                    "quantity": 113,
+                    "unit_price": 10,
+                    "fees": 0,
+                },
+            ]
+        },
+    )
+    service = ShareQuantityGoalService(
+        goal_repo=repository,
+        portfolio_provider=portfolio,
+        market_analysis_api=StubMarketData,
+        planning_provider=EmptyPlanningProvider(),
+    )
+    date = datetime.date(2027, 9, 28)
+    plan = service.get_portfolio_goal_plan(today_date=date)
+    assert plan["rows"].iloc[0][service.PLAN_TARGET_QUANTITY] == 113
+    dashboard = service.list_goals_with_progress(today_date=date)
+    assert dashboard[0]["target_quantity"] == 113
+    assert dashboard[0]["progress_percentage"] == 0

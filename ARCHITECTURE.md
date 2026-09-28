@@ -8,6 +8,10 @@ A aplicação prioriza o armazenamento local. Ela não utiliza banco de dados em
 
 ## Execução e composição
 
+A interface requer Streamlit 1.52.0 ou superior, conforme `pyproject.toml`. Esse mínimo
+suporta `width="stretch"` e `height="content"`, usados para dimensionar os componentes
+e exibir todos os registros da página do histórico sem rolagem interna.
+
 O `app.py` é a raiz de composição. Ele:
 
 1. seleciona e inicializa o banco de dados da carteira ativa;

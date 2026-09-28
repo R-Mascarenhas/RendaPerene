@@ -244,6 +244,10 @@ Também reduz o aporte mensal necessário. Os valores dessa simulação não alt
 
 ## Instalação
 
+O Streamlit mínimo suportado é 1.52.0, necessário para `width="stretch"` nos componentes
+e `height="content"` no histórico de movimentações. A instalação abaixo garante esse mínimo.
+Para atualizar um ambiente existente, execute `python -m pip install --upgrade .`.
+
 Clone o repositório, crie um ambiente virtual e instale a aplicação:
 
 ```bash

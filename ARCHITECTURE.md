@@ -8,6 +8,10 @@ A aplicação prioriza o armazenamento local. Ela não utiliza banco de dados em
 
 ## Execução e composição
 
+A interface requer Streamlit 1.52.0 ou superior, conforme `pyproject.toml`. Esse mínimo
+suporta `width="stretch"` e `height="content"`, usados para dimensionar os componentes
+e exibir todos os registros da página do histórico sem rolagem interna.
+
 O `app.py` é a raiz de composição. Ele:
 
 1. seleciona e inicializa o banco de dados da carteira ativa;
@@ -264,7 +268,7 @@ somente leitura e pode ser substituído por uma nova versão sem migração.
 | --- | --- |
 | `transactions` | Registro das movimentações da carteira: `id`, `date`, `ticker`, `transaction_type`, `quantity`, `unit_price`, `fees` e `cost_status` (`KNOWN`, `PENDING`, `CORRECTED`). Os tipos persistidos são `BUY`, `SELL` e `GROUP`; entradas de custódia usam o efeito de quantidade de `BUY`, mas sua origem as exclui de aportes e metas de compras. |
 | `b3_import_records` | Identidade SHA-256 dos campos normalizados da movimentação, registro original normalizado em JSON, natureza do evento, vínculo único à transação e decisão de importação. Transferências ignoradas permanecem registradas sem transação. |
-| `dividends` | Proventos recebidos: `id`, `date`, `ticker`, `dividend_type` e `total_value`; os tipos são `DIVIDEND`, `JCP` e `YIELD`. |
+| `dividends` | Proventos recebidos: `id`, `date`, `ticker`, `dividend_type`, `total_value` e os campos opcionais `quantity` e `unit_price` (`REAL`); os tipos são `DIVIDEND`, `JCP` e `YIELD`. |
 | `tracked_market_assets` | Tickers acompanhados manualmente. Os ativos em carteira são combinados com essa lista no monitor de mercado. |
 | `dividend_corrections` | Ajustes de dividendos por ticker e por ano, identificados por `(ticker, year)`. |
 | `planning_configuration` | Configuração única (`id = 1`): data de nascimento, idade de aposentadoria, dados de renda, taxa de juros anual, salário mínimo, patrimônio inicial, modalidade de renda, parâmetros do modelo de Bazin e data opcional de início do planejamento. |
@@ -278,6 +282,11 @@ O SQLite não declara chaves estrangeiras entre esses armazenamentos. Os serviç
 A versão 2 do esquema permite metas de cotas iguais ou inferiores à base anual, inclusive zero. A migração automática substitui a restrição antiga e preserva os registros existentes. A versão 3 converte uma única vez as metas legadas por proventos ou percentual em quantidade fixa, usando o alvo já salvo e removendo o percentual persistido. Preserva a base, os pesos, a média de proventos, o estado ativo e a data de criação, usada como referência para os ajustes por eventos corporativos. Planejamento e Dashboard passam a usar o mesmo alvo independente da renda planejada; o crescimento exibido continua derivado da base de 01/01.
 
 ## Regras financeiras e de importação
+
+A versão 4 adiciona `dividends.quantity` e `dividends.unit_price` como campos opcionais, sem
+preencher estimativas no banco nem alterar os totais existentes. A migração é idempotente.
+O mecanismo de backup e restauração usa essa versão para migrar backups antigos e rejeitar
+esquemas futuros. Alterações de metadados dos proventos avançam a revisão das projeções locais.
 
 O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas colunas e datas e produz registros internos de transações e dividendos em inglês.
 
@@ -335,12 +344,67 @@ logs e overlays de catálogo não entram nos artefatos.
 
 O código, seus identificadores, o SQL e os comentários técnicos estão em inglês. A documentação, os textos da interface, os rótulos dos gráficos, as mensagens de ajuda e as tabelas renderizadas estão em português brasileiro. Valores em BRL exibidos ao usuário utilizam `Formatter.format_currency()`.
 
-- **Dashboard** apresenta o progresso dos aportes anuais, o resumo da carteira, os gráficos e as posições detalhadas.
+- **Dashboard** apresenta o progresso dos aportes anuais, o resumo da carteira, os gráficos, as posições detalhadas e as 10 últimas movimentações, mesmo sem posições atuais.
 - **Ativos** coordena três subtelas: detalhes da carteira, monitoramento de mercado e valuation de Bazin (incluindo a consulta Raio-X de todo o catálogo) e operações manuais/importadas da B3. Na tela Mercado, `MarketView` apenas controla a navegação secundária; `MarketMonitoringView` e `AssetDeepDiveView` renderizam uma aba cada.
 - **Planejamento** possui as abas internas `Aposentadoria` e `Metas`. `PlanningView` controla os parâmetros e projeções da aposentadoria; `GoalsView` controla a seleção de metas. O usuário pode ativar independentemente o reinvestimento de dividendos e as metas de quantidade por ação. A tabela de metas aparece apenas quando habilitada; cotas e crescimento anual são editáveis e sincronizados, com salvamento automático das alterações válidas no SQLite. O editor é um fragmento Streamlit: cada edição recalcula os indicadores usando um snapshot da tela, sem executar novamente o restante da página nem consultar mercado, posições ou simulação. O serviço valida e persiste apenas os tickers alterados em um lote atômico por `AccumulationGoalPort.upsert_accumulation_goals()`; entrada inválida ou falha de gravação preserva o snapshot anterior e mostra erro. Uma execução completa da página renova o snapshot. A participação no esforço financeiro é informativa.
 - **Metas no Dashboard** consolida o progresso das metas por ação em uma barra ponderada pelo esforço anual desde 01/01, recalculado ao carregar, sem depender dos pesos antigos persistidos. Metas concluídas mantêm sua participação; cotações incompletas levam a pesos iguais entre as metas de compra, com indicação na tela. O painel possui detalhes por ticker ao passar o cursor e em uma seção expansível. A barra usa azul até 100% e uma camada verde para o excedente.
 - **Backup local**, na barra lateral, permite selecionar uma ou mais carteiras, com todas marcadas por padrão, solicitar senha e baixar opcionalmente uma chave de recuperação separada. A mesma seção lista os pacotes locais mais recentes primeiro, permite enviar um `.rpb` externo, valida por senha ou `.key`, apresenta seus metadados, permite escolher uma carteira e exige confirmação explícita antes da restauração.
-- **`ChartThemeAdapter`** aplica aos gráficos do dashboard e do planejamento a paleta escura compartilhada do Plotly, tipografia, grade, legenda, margens, marcações monetárias e comportamento unificado ao passar o cursor. Cada componente de gráfico continua responsável por seus próprios dados e eixos específicos.
+- **`ChartThemeAdapter`** aplica aos gráficos do dashboard e do planejamento a paleta compartilhada do Plotly, tipografia, grade, legenda, margens, marcações monetárias e comportamento unificado ao passar o cursor. Também centraliza as cores de fundo e texto das movimentações para os temas claro e escuro. Cada componente de gráfico continua responsável por seus próprios dados e eixos específicos.
+
+O histórico unificado usa `AssetService.get_portfolio_activity(limit=10)` no Dashboard e
+`AssetService.get_activity_page()` em Ativos → Operações, com 25 registros por página.
+A porta `PortfolioPort.get_activity_records()` é implementada
+por uma consulta única de `PortfolioDAO`, com `UNION ALL` entre transações e proventos e os
+metadados B3 associados. A consulta lê somente o banco ativo, limita os registros no SQLite e
+ordena por data decrescente; empates apresentam transações antes de proventos e IDs decrescentes
+em cada origem. O vínculo único entre registro B3 e transação evita linhas duplicadas.
+O serviço interpreta custos pendentes, eventos societários, transferências de custódia e os
+valores com taxas. Não altera os cálculos de aporte líquido, patrimônio ou metas.
+`PortfolioPort.get_activity_page_records()` aplica filtros parametrizados por período inclusivo,
+evento e ticker antes de `LIMIT/OFFSET`; a contagem e a página usam a mesma transação de leitura.
+A página é ajustada ao intervalo disponível caso os resultados diminuam. A classificação pura
+de eventos em `core/activity.py` é compartilhada pelo serviço e por uma função registrada na
+conexão SQLite, preservando os mesmos rótulos ao filtrar e exibir, inclusive eventos societários.
+`get_activity_tickers()` consulta os tickers distintos das duas origens, sem depender das posições
+atuais ou carregar o histórico financeiro. O serviço valida os filtros e prepara valores e
+estimativas de quantidade somente para a página retornada. Não há alteração de esquema.
+`PortfolioActivityWidget` compartilha a apresentação e os estados vazio/erro entre as duas telas;
+valores conhecidos usam `Formatter.format_currency()`. A tabela usa `height="content"` para
+exibir todos os registros da página sem rolagem vertical interna.
+Não há novo cache de atividades: cada
+renderização consulta a carteira ativa, refletindo importações, regularizações e trocas de
+carteira. O botão do Dashboard usa um callback de sessão para selecionar Ativos e solicitar
+a aba Operações antes de instanciar os controles de navegação no rerun seguinte.
+O histórico de Operações é um fragmento Streamlit: filtros e navegação não reexecutam os
+formulários de lançamento/importação. Alterar filtros reinicia a página; trocar de carteira
+ou restaurar outra geração no mesmo caminho reinicia também os filtros. Períodos invertidos
+geram aviso; falhas de leitura geram erro sanitizado. A instrumentação de desenvolvimento
+detalha `manual_entry` nas etapas
+`manual_catalog`, `manual_ticker_options` e `manual_controls`, sem registrar dados financeiros.
+O tempo de `manual_controls` inclui o processamento quando o formulário é enviado.
+A apresentação destaca toda a linha com fundos adaptados ao tema em um `Styler`: compra em verde, venda
+em vermelho, dividendo em azul, JCP em lilás, rendimento em laranja e os demais em roxo, mantendo
+os nomes dos eventos visíveis. `ChartThemeAdapter.activity_row_colors()` centraliza as paletas
+e retorna as cores de fundo e texto por evento; a tabela apenas aplica o estilo a toda a linha.
+`ChartThemeAdapter.is_dark_theme()` identifica o tema ativo do
+cliente: o tema escuro usa fundos escuros com texto claro e o claro usa fundos suaves com texto
+escuro. O parser da B3 preserva
+quantidade e preço unitário positivos e finitos dos proventos; metadados ausentes ou inválidos
+não descartam o recebimento. `AssetService`
+prioriza a quantidade informada e, sem ela, calcula Total ÷ Unitário sem arredondamento prévio,
+marcando a quantidade como estimada. O unitário prioriza o preço importado, depois o total
+dividido pela quantidade informada e, por último, a posição histórica na data do pagamento,
+mantendo a regra antiga de Proventos recebidos. A apresentação diferencia quantidades estimadas
+e mostra — quando faltam dados; valores estimados não são persistidos.
+`AssetService.get_annual_dividends_metrics()` soma os unitários dos recebimentos do ano selecionado
+usando a mesma prioridade de `_receipt_unit_value()` da tabela detalhada: preço informado,
+total dividido pela quantidade informada e posição histórica como fallback legado.
+As quantidades no fim do ano e no fim do ano anterior continuam sendo posições históricas.
+`PortfolioDAO.insert_dividend()` usa uma transação com `BEGIN IMMEDIATE` para inserir ou preencher
+somente metadados ausentes de um recebimento identificado por data, ticker, tipo e total.
+Reimportações idênticas não duplicam registros. Dados já conhecidos não são sobrescritos;
+divergências e múltiplas correspondências antigas impedem a complementação. O retorno indica
+inserção ou complementação, refletida na contagem de proventos da mensagem de importação.
 
 ## Validação
 

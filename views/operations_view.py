@@ -18,6 +18,7 @@ from core.strings import (
 )
 from services.assets_service import AssetService
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
+from views.components.portfolio_activity import PortfolioActivityWidget
 
 
 class OperationsView:
@@ -53,6 +54,8 @@ class OperationsView:
 
         with measure_navigation("ativos.operacoes", "pending_costs"):
             self._render_pending_costs()
+
+        PortfolioActivityWidget().render_history()
 
     def _render_pending_costs(self):
         pending = AssetService.get_pending_costs()
@@ -116,25 +119,30 @@ class OperationsView:
         )
 
         # Load the assets catalog dynamically to construct the autocompleting ticker + name options
-        catalog = MarketData.load_assets_catalog()
+        with measure_navigation("ativos.operacoes", "manual_catalog"):
+            catalog = MarketData.load_assets_catalog()
 
         is_sale = "Venda" in entry_type
         is_earning = "Dividendo" in entry_type or "JCP" in entry_type or "Rendimento" in entry_type
         is_corp_event = "Desdobro" in entry_type or "Grupamento" in entry_type
-        available_tickers = self._get_available_tickers(entry_type, catalog)
+        with measure_navigation("ativos.operacoes", "manual_ticker_options"):
+            available_tickers = self._get_available_tickers(entry_type, catalog)
 
-        options = ["--- Selecione ---"]
-        for ticker in available_tickers:
-            if not catalog.empty and ticker in catalog.index:
-                catalog_row = catalog.loc[ticker]
-                if isinstance(catalog_row, pd.DataFrame):
-                    catalog_row = catalog_row.iloc[0]
-                name = catalog_row.get("NOME", "Nome não disponível")
-            else:
-                name = "Ativo não catalogado"
-            options.append(f"{ticker} - {name}")
+            options = ["--- Selecione ---"]
+            for ticker in available_tickers:
+                if not catalog.empty and ticker in catalog.index:
+                    catalog_row = catalog.loc[ticker]
+                    if isinstance(catalog_row, pd.DataFrame):
+                        catalog_row = catalog_row.iloc[0]
+                    name = catalog_row.get("NOME", "Nome não disponível")
+                else:
+                    name = "Ativo não catalogado"
+                options.append(f"{ticker} - {name}")
 
-        with st.form("form_unified_entry", clear_on_submit=True):
+        with (
+            measure_navigation("ativos.operacoes", "manual_controls"),
+            st.form("form_unified_entry", clear_on_submit=True),
+        ):
             date = st.date_input(
                 "Data do Negócio/Pagamento", datetime.date.today(), format="DD/MM/YYYY"
             )

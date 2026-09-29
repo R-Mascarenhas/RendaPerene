@@ -145,6 +145,9 @@ SESSION_UPDATE_CHECK_EXECUTOR = "update_check_executor"
 SESSION_UPDATE_CHECK_FUTURE = "update_check_future"
 SESSION_UPDATE_CHECK_DISMISSED = "update_check_dismissed"
 SESSION_UPDATE_CHECK_AVAILABLE = "update_check_available"
+SESSION_ASSETS_NAVIGATION_TARGET = "assets_navigation_target"
+WIDGET_MAIN_NAVIGATION = "main_navigation"
+WIDGET_ASSETS_NAVIGATION = "assets_navigation"
 
 # Streamlit Interactive Widget key constants (Safe Value-Binding Pattern keys)
 WIDGET_BIRTH_DATE = "birth_date_input"

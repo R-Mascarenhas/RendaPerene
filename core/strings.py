@@ -169,7 +169,7 @@ MSG_MANUAL_ENTRY_SUCCESS_TX = "Sucesso! {tx_type} de {qty}x {ticker} salva no ba
 MSG_MANUAL_ENTRY_SUCCESS_DIV = (
     "Sucesso! Recebimento de R$ {value} em {div_type} de {ticker} registrado!"
 )
-MSG_SMART_IMPORTER_SUCCESS = "Importação realizada com sucesso! Foram adicionadas {tx_count} novas transações e {div_count} registros de proventos no banco de dados local!"
+MSG_SMART_IMPORTER_SUCCESS = "Importação realizada com sucesso! Foram adicionadas {tx_count} novas transações e adicionados ou complementados {div_count} registros de proventos no banco de dados local!"
 MSG_SMART_IMPORTER_ERROR = "Erro ao processar arquivo B3. Certifique-se de que é o arquivo oficial da Área do Investidor. Detalhes: {e}"
 MSG_BCB_CONN_ERROR = "Erro ao conectar com a API do BCB: {e}"
 MSG_ASSET_INFO_CNPJ = "**CNPJ:** {cnpj}  \n**Setor:** {sector}  \n**Segmento:** {segment}"
@@ -195,7 +195,7 @@ TAB_PLANNING = "🎯 Planejamento"
 
 TAB_MY_ASSETS = "📁 Meus Ativos"
 TAB_MARKET = "📈 Mercado"
-TAB_IMPORT_LAUNCH = "📥 Importar & Lançar"
+TAB_IMPORT_LAUNCH = "📥 Operações"
 
 TAB_MARKET_MONITORING = "📊 Monitoramento"
 TAB_ASSET_DEEP_DIVE = "🔍 Raio-X"

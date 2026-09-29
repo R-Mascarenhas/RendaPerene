@@ -10,6 +10,7 @@ from views.components.annual_planning import AnnualPlanningWidget
 from views.components.charts import DashboardCharts
 from views.components.detailed_holdings import DetailedHoldingsWidget
 from views.components.patrimony_summary import PatrimonySummaryWidget
+from views.components.portfolio_activity import PortfolioActivityWidget
 
 
 class DashboardView:
@@ -48,3 +49,6 @@ class DashboardView:
             # 5. Render detailed holdings dataframe grid (At the bottom)
             with measure_navigation("dashboard", "detailed_holdings"):
                 DetailedHoldingsWidget().render(df_positions)
+
+        with measure_navigation("dashboard", "recent_activity"):
+            PortfolioActivityWidget().render()

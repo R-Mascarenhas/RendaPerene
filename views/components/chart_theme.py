@@ -1,11 +1,11 @@
-"""Shared Plotly appearance for the application's charts."""
+"""Shared theme-aware appearance for charts and portfolio activity tables."""
 
 import plotly.graph_objects as go
 import streamlit as st
 
 
 class ChartThemeAdapter:
-    """Applies the RendaPerene dark chart skin to Plotly figures."""
+    """Manage shared colors for Plotly figures and portfolio activity tables."""
 
     BLUE = "#1f77b4"
     GREEN = "#2ca02c"
@@ -34,6 +34,25 @@ class ChartThemeAdapter:
     YIELD_COLOR_SCALE = "Viridis"
     LEGEND = {"orientation": "h", "yanchor": "top", "y": -0.22, "xanchor": "left", "x": 0.0}
 
+    LIGHT_ACTIVITY_COLORS = {
+        "Compra": "#dcfce7",
+        "Venda": "#fee2e2",
+        "Dividendo": "#dbeafe",
+        "JCP": "#f3e8ff",
+        "Rendimento": "#ffedd5",
+    }
+    DARK_ACTIVITY_COLORS = {
+        "Compra": "#18392d",
+        "Venda": "#44272c",
+        "Dividendo": "#22374f",
+        "JCP": "#3a3048",
+        "Rendimento": "#463326",
+    }
+    LIGHT_ACTIVITY_OTHER_COLOR = "#e9d5ff"
+    DARK_ACTIVITY_OTHER_COLOR = "#342640"
+    LIGHT_ACTIVITY_FONT_COLOR = "#111827"
+    DARK_ACTIVITY_FONT_COLOR = "#e5e7eb"
+
     @staticmethod
     def current_theme_type() -> str:
         """Return the active client theme, falling back while its context loads."""
@@ -50,6 +69,23 @@ class ChartThemeAdapter:
     def is_dark_theme() -> bool:
         """Return whether the active Streamlit client theme is dark."""
         return ChartThemeAdapter.current_theme_type() == "dark"
+
+    @staticmethod
+    def activity_row_colors(event: str) -> tuple[str, str]:
+        """Return the activity background and text colors for the active client theme."""
+        if ChartThemeAdapter.is_dark_theme():
+            return (
+                ChartThemeAdapter.DARK_ACTIVITY_COLORS.get(
+                    event, ChartThemeAdapter.DARK_ACTIVITY_OTHER_COLOR
+                ),
+                ChartThemeAdapter.DARK_ACTIVITY_FONT_COLOR,
+            )
+        return (
+            ChartThemeAdapter.LIGHT_ACTIVITY_COLORS.get(
+                event, ChartThemeAdapter.LIGHT_ACTIVITY_OTHER_COLOR
+            ),
+            ChartThemeAdapter.LIGHT_ACTIVITY_FONT_COLOR,
+        )
 
     @staticmethod
     def annotation_background() -> str:

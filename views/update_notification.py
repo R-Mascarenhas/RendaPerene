@@ -59,13 +59,13 @@ def _render_update_dialog(update: AvailableUpdate) -> None:
     st.write(f"A versão {update.version} do Renda Perene está disponível.")
     if update.release_notes:
         st.text(update.release_notes)
-    if st.button("Baixar atualização", use_container_width=True):
+    if st.button("Baixar atualização", width="stretch"):
         if webbrowser.open(update.download_url):
             st.session_state[SESSION_UPDATE_CHECK_DISMISSED] = True
             st.rerun()
         else:
             logger.warning("update_check.browser_open_failed")
             st.error("Não foi possível abrir o navegador. Tente novamente.")
-    if st.button("Agora não", use_container_width=True):
+    if st.button("Agora não", width="stretch"):
         st.session_state[SESSION_UPDATE_CHECK_DISMISSED] = True
         st.rerun()

@@ -111,7 +111,13 @@ class PortfolioPort(Protocol):
     ) -> bool: ...
 
     def insert_dividend(
-        self, date: str, ticker: str, dividend_type: str, total_value: float
+        self,
+        date: str,
+        ticker: str,
+        dividend_type: str,
+        total_value: float,
+        quantity: float | None = None,
+        unit_price: float | None = None,
     ) -> bool: ...
 
     def get_quantity_on_date(self, ticker: str, date_str: str, conn: Any = None) -> int: ...
@@ -149,6 +155,19 @@ class PortfolioPort(Protocol):
     def get_dividends_by_ticker_since_date(self, ticker: str, limit_date: str) -> float: ...
 
     def get_all_dividends(self) -> pd.DataFrame: ...
+
+    def get_activity_records(self, limit: int | None = None) -> pd.DataFrame: ...
+
+    def get_activity_page_records(
+        self,
+        page: int,
+        start_date: str | None,
+        end_date: str | None,
+        event: str | None,
+        ticker: str | None,
+    ) -> dict: ...
+
+    def get_activity_tickers(self) -> list[str]: ...
 
     def get_local_projection_revision(self) -> int: ...
 

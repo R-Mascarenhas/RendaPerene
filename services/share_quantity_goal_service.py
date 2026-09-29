@@ -480,9 +480,12 @@ class ShareQuantityGoalService:
         self,
         targets: dict[str, float] | None = None,
         today_date: datetime.date | None = None,
+        ticker: str | None = None,
     ) -> dict:
         """Build an independent annual share target and financial estimate per asset."""
         positions = self._get_goal_positions(today_date)
+        if ticker is not None and not positions.empty:
+            positions = positions.loc[positions[TICKER] == ticker].copy()
         planned_dividends = (
             float(self._planning_provider.get_planned_annual_dividends())
             if self._planning_provider is not None
@@ -673,6 +676,37 @@ class ShareQuantityGoalService:
         )
 
     @hybridmethod
+    def save_asset_goal(
+        self, original_plan: dict, ticker: str, target_mode: str, target_value: float
+    ) -> dict:
+        """Save just one annual target using the displayed January baseline."""
+        rows = original_plan["rows"]
+        selected = rows.loc[rows[self.PLAN_TICKER] == ticker]
+        if selected.empty:
+            raise ValueError("Este ativo não está disponível para configurar uma meta.")
+        baseline = float(selected.iloc[0][self.PLAN_YEAR_START_QUANTITY])
+        if target_mode == self.MODE_PERCENTAGE:
+            if baseline <= 0:
+                raise ValueError("Informe a meta por cotas: não há posição em 01/01.")
+            target = self.calculate_percentage_target(baseline, float(target_value))
+        elif target_mode == self.MODE_QUANTITY:
+            target = float(target_value)
+        else:
+            raise ValueError("O tipo de meta de acumulação é inválido.")
+        targets = dict(zip(rows[self.PLAN_TICKER], rows[self.PLAN_TARGET_QUANTITY], strict=True))
+        targets[ticker] = target
+        updated = self.recalculate_goal_plan(original_plan, targets)
+        self.save_prepared_goal_plan(updated, {ticker})
+        return updated
+
+    @hybridmethod
+    def has_saved_goals(self) -> bool:
+        """Whether any active target exists, independently of dashboard tracking."""
+        return any(
+            bool(goal.get("is_active", 1)) for goal in self._goal_repo.list_accumulation_goals()
+        )
+
+    @hybridmethod
     def save_edited_goal_plan(self, original_plan: dict, targets: dict[str, float]) -> dict:
         """Recalculate and persist only edited targets using the displayed snapshot."""
         updated_plan = self.recalculate_goal_plan(original_plan, targets)
@@ -834,7 +868,9 @@ class ShareQuantityGoalService:
             goal["equal_progress_weights"] = not complete_quotes
 
     @hybridmethod
-    def list_goals_with_progress(self, today_date: datetime.date | None = None) -> list[dict]:
+    def list_goals_with_progress(
+        self, today_date: datetime.date | None = None, ticker: str | None = None
+    ) -> list[dict]:
         """Combines stored baselines and targets with current portfolio quantities."""
         positions = self._get_goal_positions(today_date)
         held_tickers = set(positions[TICKER].tolist()) if not positions.empty else set()
@@ -842,6 +878,7 @@ class ShareQuantityGoalService:
             goal
             for goal in self._goal_repo.list_accumulation_goals()
             if bool(goal.get("is_active", 1))
+            and (ticker is None or goal[TICKER] == ticker)
             and goal[TICKER] in held_tickers
             and (
                 goal["target_mode"] != self.MODE_DIVIDEND_INCOME or goal["average_dividend_5y"] > 0

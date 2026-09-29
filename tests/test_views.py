@@ -221,6 +221,11 @@ def test_portfolio_view_renders_missing_market_multiples_as_unavailable(monkeypa
     from core.strings import LABEL_PE_RATIO, LABEL_P_VP
     from views.cached_market_data import StreamlitCachedMarketData
     from views.portfolio_view import PortfolioView
+    from views.components.manual_entry import ManualEntryWidget
+    from views.components.asset_annual_goal import AssetAnnualGoalWidget
+
+    monkeypatch.setattr(ManualEntryWidget, "render", lambda self, ticker: None)
+    monkeypatch.setattr(AssetAnnualGoalWidget, "render", lambda self, ticker: None)
 
     class Container:
         def __enter__(self):

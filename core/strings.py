@@ -167,7 +167,7 @@ MSG_DIVIDEND_CORRECTION_SUCCESS = (
 )
 MSG_MANUAL_ENTRY_SUCCESS_TX = "Sucesso! {tx_type} de {qty}x {ticker} salva no banco de dados!"
 MSG_MANUAL_ENTRY_SUCCESS_DIV = (
-    "Sucesso! Recebimento de R$ {value} em {div_type} de {ticker} registrado!"
+    "Sucesso! Recebimento de {value} em {div_type} de {ticker} registrado!"
 )
 MSG_SMART_IMPORTER_SUCCESS = "Importação realizada com sucesso! Foram adicionadas {tx_count} novas transações e adicionados ou complementados {div_count} registros de proventos no banco de dados local!"
 MSG_SMART_IMPORTER_ERROR = "Erro ao processar arquivo B3. Certifique-se de que é o arquivo oficial da Área do Investidor. Detalhes: {e}"

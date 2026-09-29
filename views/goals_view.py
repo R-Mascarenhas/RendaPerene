@@ -25,7 +25,7 @@ class GoalsView:
             st.caption(
                 "A meta anual do Dashboard inclui os proventos recebidos como valor a reinvestir."
             )
-        if share_quantity_enabled:
+        if share_quantity_enabled or ShareQuantityGoalService.has_saved_goals():
             with measure_navigation("planejamento.metas", "accumulation_widget"):
                 AccumulationGoalPlanningWidget().render()
 

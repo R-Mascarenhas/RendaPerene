@@ -26,7 +26,7 @@ def test_measure_navigation_logs_technical_identifier_in_development(monkeypatch
 def test_operations_reports_separate_manual_form_timings(monkeypatch, caplog):
     import pandas as pd
     from streamlit.testing.v1 import AppTest
-    from views.operations_view import MarketData
+    from views.components.manual_entry import MarketData
 
     monkeypatch.setenv("APP_ENV", "dev")
     monkeypatch.setenv("RENDA_PERENE_NAVIGATION_METRICS", "true")

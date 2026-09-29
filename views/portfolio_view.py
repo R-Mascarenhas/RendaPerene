@@ -15,6 +15,8 @@ from core.utils.market_history import (
 from services.assets_service import AssetService
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
 from views.cached_market_data import StreamlitCachedPortfolioData
+from views.components.asset_annual_goal import AssetAnnualGoalWidget
+from views.components.manual_entry import ManualEntryWidget
 
 
 class PortfolioView:
@@ -64,6 +66,10 @@ class PortfolioView:
             details = AssetService.get_asset_market_analysis(ticker)
 
         self._render_header_metadata_block(ticker, metadata)
+        with st.expander("Registrar movimentação"):
+            ManualEntryWidget().render(ticker)
+        with st.expander("Meta anual deste ativo"):
+            AssetAnnualGoalWidget().render(ticker)
         self._render_behavior_chart(ticker, details)
         with measure_navigation("ativos.carteira", "dividends_projection"):
             df_div = AssetService.get_asset_dividends(ticker)

@@ -78,6 +78,21 @@ A direção das dependências é `views` → `services` → contratos e adaptado
 
 ### Portas e adaptadores
 
+O formulário manual `ManualEntryWidget`, em `views/components/manual_entry.py`, é compartilhado
+por Operações e pelo detalhamento da carteira. O detalhamento fornece um ticker fixo; o formulário
+não permite substituí-lo e encaminha os lançamentos às mesmas interfaces de `AssetService`.
+`AssetAnnualGoalWidget`, em `views/components/asset_annual_goal.py`, consulta o plano anual filtrado
+para o ticker exibido. `ShareQuantityGoalService.save_asset_goal()` converte o percentual pela base
+de 01/01 e reutiliza a validação e a persistência do plano, salvando somente esse ticker na tabela
+existente. Metas individuais salvas permanecem editáveis na aba Metas mesmo com o acompanhamento
+geral desativado. Os lançamentos usam a revisão persistida da carteira para invalidar projeções;
+lançamentos e alterações contextuais de metas descartam snapshots do editor antes do rerun.
+Os campos de cotas e percentual no detalhamento ficam lado a lado e salvam automaticamente por
+callback ao confirmar a edição, sem botão de salvar. Após cada tentativa, os dois campos são
+recriados a partir da meta persistida; falhas mantêm a meta anterior e exibem o erro. Sem posição
+em 01/01, o percentual fica desabilitado com uma explicação. Abrir o detalhamento não salva metas.
+O estado dos controles é separado por carteira e ticker e descartado na troca de carteira.
+
 O arquivo `core/ports.py` define as fronteiras para persistência da carteira, origens de backup, correções de proventos, snapshots remotos, análise final de mercado, acesso ao catálogo de ativos, configuração do planejamento, registro do esquema do banco, processamento das planilhas da B3 e comunicação entre serviços. Os adaptadores de produção são os DAOs SQLite, `SQLitePortfolioBackupSourceFactory`, `MarketData`, `StreamlitCachedMarketData` e `B3ExcelParserAdapter`. Nos testes, essas fronteiras são substituídas por bancos isolados, mocks ou adaptadores injetados.
 
 ## Persistência

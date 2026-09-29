@@ -1,18 +1,24 @@
-## Novidades em 0.10.0
+## Novidades em 0.11.0
 
-- Backups locais agora são publicados como pacotes `.rpb` criptografados por senha, com
-  AES-256-GCM e derivação de chave Argon2id. Uma chave de recuperação opcional pode ser baixada
-  separadamente e deve ser guardada fora do pacote.
-- A nova tela de restauração autentica e valida backups locais ou enviados pelo usuário antes de
-  restaurar uma carteira. Ela confere hashes, integridade SQLite, identidade e compatibilidade do
-  schema, permite prévia e confirmação explícita e preserva a versão anterior em
-  `backups/pre-restore/` antes de substituí-la.
-- O aplicativo verifica em segundo plano, uma vez por sessão, se há uma versão mais nova no
-  GitHub Releases e oferece o pacote compatível para Windows ou Ubuntu x64, sem enviar dados da
-  carteira.
-- O logging foi centralizado: a saída padrão registra eventos seguros da aplicação, e logs locais
-  rotacionados podem ser habilitados com `LOG_TO_FILE=true`. Dados financeiros, nomes de
-  carteiras e identificadores de sessão não são registrados.
+- O histórico de movimentações reúne transações e proventos da carteira, com filtros por período,
+  evento e ticker e páginas de até 25 registros. As cores acompanham o tema da interface.
+  A importação da B3 preserva a quantidade e o preço unitário dos proventos, usados também nos
+  indicadores anuais por cota.
+- As metas anuais por ativo agora são independentes dos proventos planejados e podem ser editadas
+  por cotas ou crescimento percentual sobre a posição de 1º de janeiro, com salvamento automático.
+  Metas antigas são convertidas em cotas fixas, preservando os alvos salvos. O acompanhamento
+  apresenta esforço anual estimado, valor restante e aporte externo necessário.
+- Em **Ativos → Carteira**, o detalhamento do ativo permite registrar movimentações e editar sua
+  meta anual diretamente. A meta individual fica sincronizada com a aba **Metas**, mesmo com o
+  acompanhamento geral desativado.
+- O histórico mensal e as metas anuais passam a considerar aportes líquidos: compras com taxas
+  menos vendas líquidas de taxas. Retiradas aparecem como valores negativos; transferências de
+  custódia ficam fora do cálculo.
+- O patrimônio inicial foi corrigido nos históricos de planejamento e na Simulação Rápida.
+  Os gráficos de projeção incluem o marcador **Hoje**, e as referências do mês zero foram ajustadas.
+- A navegação reutiliza projeções locais enquanto a carteira não muda, com invalidação por revisão
+  do banco e métricas de desempenho. Também foi corrigida a disputa de bloqueio durante migrações
+  concorrentes no Windows.
 
 ## Sistemas suportados
 

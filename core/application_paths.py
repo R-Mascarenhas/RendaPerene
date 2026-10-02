@@ -350,6 +350,11 @@ class ApplicationPaths:
         return self.data_root / "backups"
 
     @property
+    def screen_cache_file(self) -> Path:
+        """Discardable cache kept outside portfolio databases and backups."""
+        return self.data_root / "cache" / "screens.db"
+
+    @property
     def local_backups_dir(self) -> Path:
         return self.backups_dir / "local-backups"
 

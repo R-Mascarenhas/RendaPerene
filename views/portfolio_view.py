@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -41,24 +42,22 @@ class PortfolioView:
 
         tickers = sorted(df_positions["ticker"].tolist())
 
-        # Premium segmented control to isolate and lazy-load details for exactly one asset (extremely fast and matches tabs style!)
-        selected_ticker = st.segmented_control(
-            "Selecione o Ativo para Detalhar",
-            options=tickers,
-            default=tickers[0] if tickers else None,
-            label_visibility="collapsed",
+        portfolio_key, generation, _ = StreamlitCachedPortfolioData._context()
+        ticker_set_key = hashlib.sha256(repr(tickers).encode("utf-8")).hexdigest()[:12]
+        asset_tabs = st.tabs(
+            tickers,
+            key=f"asset_tabs_{portfolio_key}_{generation}_{ticker_set_key}",
+            on_change="rerun",
         )
-
-        if not selected_ticker and tickers:
-            selected_ticker = tickers[0]
-
-        if selected_ticker:
-            self._render_single_asset_subtab(selected_ticker, df_positions)
+        for ticker, tab in zip(tickers, asset_tabs, strict=True):
+            if tab.open:
+                with tab:
+                    self._render_single_asset_subtab(ticker, df_positions)
 
     def _render_single_asset_subtab(self, ticker, df_positions):
         row_pos = df_positions[df_positions["ticker"] == ticker].iloc[0]
+        portfolio_key, generation, _ = StreamlitCachedPortfolioData._context()
         metadata = AssetService.get_asset_metadata(ticker)
-
         with (
             st.spinner(f"Buscando cotações em tempo real para {ticker}..."),
             measure_navigation("ativos.carteira", "market_analysis"),
@@ -66,15 +65,33 @@ class PortfolioView:
             details = AssetService.get_asset_market_analysis(ticker)
 
         self._render_header_metadata_block(ticker, metadata)
-        with st.expander("Registrar movimentação"):
-            ManualEntryWidget().render(ticker)
-        with st.expander("Meta anual deste ativo"):
-            AssetAnnualGoalWidget().render(ticker)
+        st.markdown("---")
+        entry_key = f"asset_entry_{portfolio_key}_{generation}_{ticker}"
+        entry_expander = st.expander(
+            "Registrar movimentação",
+            expanded=False,
+            key=entry_key,
+            on_change="rerun",
+        )
+        with entry_expander:
+            if entry_expander.open:
+                ManualEntryWidget().render(ticker)
+
+        goal_key = f"asset_goal_{portfolio_key}_{generation}_{ticker}"
+        goal_expander = st.expander(
+            "Meta anual deste ativo",
+            expanded=False,
+            key=goal_key,
+            on_change="rerun",
+        )
+        with goal_expander:
+            if goal_expander.open:
+                AssetAnnualGoalWidget().render(ticker)
+        self._render_indicators_block(row_pos, details)
         self._render_behavior_chart(ticker, details)
         with measure_navigation("ativos.carteira", "dividends_projection"):
             df_div = AssetService.get_asset_dividends(ticker)
         self._render_proventos_pivot_table(ticker, df_div)
-        self._render_indicators_block(row_pos, details)
         self._render_transactions_and_dividends_tables(ticker, df_div)
 
     @instrument_screen("ativos.carteira.header")

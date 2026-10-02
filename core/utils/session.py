@@ -105,6 +105,9 @@ class SessionManager:
     def reset_portfolio_state():
         """Discard session values derived from the active portfolio database."""
         portfolio_keys = (
+            "market_minimum_wage_refresh",
+            "market_data_requests",
+            "market_data_poll_ready",
             "db_loaded",
             "processed_files",
             "b3_uploader_key",

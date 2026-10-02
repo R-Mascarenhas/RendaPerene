@@ -204,6 +204,35 @@ class MarketDataPort(Protocol):
     def get_current_minimum_wage(self) -> float: ...
 
 
+class RemoteMarketDataPort(MarketDataPort, Protocol):
+    """Remote source can reject failed indicator reads instead of returning defaults."""
+
+    def get_current_ipca_l12m(self, *, strict: bool = False) -> float: ...
+
+    def get_current_selic(self, *, strict: bool = False) -> float: ...
+
+    def get_current_minimum_wage(self, *, strict: bool = False) -> float: ...
+
+
+class CacheRecordPort(Protocol):
+    """Validated, decoded cache record with portable freshness metadata."""
+
+    value: Any
+    stale: bool
+    age_seconds: float
+    remaining_seconds: float
+
+
+class ScreenCachePort(Protocol):
+    """Optional discardable persistence for prepared data and remote snapshots."""
+
+    def get(self, namespace: str, key: tuple) -> CacheRecordPort | None: ...
+
+    def put(self, namespace: str, key: tuple, value: Any, *, ttl: float) -> bool: ...
+
+    def expire_many(self, namespace: str, keys: list[tuple]) -> None: ...
+
+
 class DividendCorrectionPort(Protocol):
     """Persistence seam for portfolio-specific annual dividend corrections."""
 
@@ -214,6 +243,8 @@ class MarketAnalysisPort(Protocol):
     """Public seam for final portfolio-aware market analysis."""
 
     def get_ticker_market_analysis(self, ticker: str, target_yield_pct: float = 6.0) -> dict: ...
+
+    def prefetch_tickers(self, tickers: list[str]) -> None: ...
 
 
 class PlanningConfigPort(Protocol):

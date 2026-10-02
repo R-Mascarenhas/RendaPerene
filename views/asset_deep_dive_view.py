@@ -81,8 +81,6 @@ class AssetDeepDiveView:
             st.caption(f"Setor: {metadata['sector']}")
         with measure_navigation("ativos.mercado.raio_x", "favorite"):
             self._render_favorite_button(ticker)
-        with measure_navigation("ativos.mercado.raio_x", "price_history"):
-            self._render_asset_price_history(ticker)
         with measure_navigation("ativos.mercado.raio_x", "quote_snapshot"):
             self._render_quote_snapshot(details.get("quote_snapshot", {}))
 
@@ -123,6 +121,8 @@ class AssetDeepDiveView:
             Formatter.format_market_value(details.get("net_margin"), "percentage_points"),
         )
 
+        with measure_navigation("ativos.mercado.raio_x", "price_history"):
+            self._render_asset_price_history(ticker)
         with measure_navigation("ativos.mercado.raio_x", "dividend_event_map"):
             self._render_dividend_event_map(details.get("dividend_events", []))
         with measure_navigation("ativos.mercado.raio_x", "dividend_history"):

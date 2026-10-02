@@ -1,3 +1,5 @@
+import math
+
 import pandas as pd
 import streamlit as st
 
@@ -69,10 +71,9 @@ class DetailedHoldingsWidget:
             pending_tickers = set(pending_costs["ticker"])
             df_positions.loc[df_positions[TICKER].isin(pending_tickers), "cost_pending"] = True
 
-        with st.spinner("Buscando informações do catálogo e preço teto..."):
-            df_display, ceilings = AssetService.get_detailed_holdings_dataframe(
-                df_positions, target_yield
-            )
+        df_display, ceilings = AssetService.get_detailed_holdings_dataframe(
+            df_positions, target_yield
+        )
 
         if df_display.empty:
             return
@@ -98,9 +99,10 @@ class DetailedHoldingsWidget:
                 ceiling = ceilings.get(ticker, 0.0)
 
                 # A. Cotação hoje: Style based on Bazin Price-to-Ceiling ratio using constants
-                style_df.loc[idx, DISPLAY_QUOTE_TODAY] = Formatter.get_colored_cell_style(
-                    price, ceiling
-                )
+                if math.isfinite(price) and math.isfinite(ceiling):
+                    style_df.loc[idx, DISPLAY_QUOTE_TODAY] = Formatter.get_colored_cell_style(
+                        price, ceiling
+                    )
 
                 # B. Rendimento %: Style based on positive/negative percentage return trend using constants
                 ret_pct = df_positions.loc[idx, RETURN_PCT_CUSTOM]

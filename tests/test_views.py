@@ -12,6 +12,21 @@ from views.planning_view import PlanningView
 from views.components.charts import DashboardCharts
 
 
+class _FakeAssetTab:
+    def __init__(self, open):
+        self.open = open
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+
+def _fake_tabs(labels, **_kwargs):
+    return [_FakeAssetTab(index == 0) for index, _ in enumerate(labels)]
+
+
 def test_views_and_services_sanity():
     """Automated SCM Sanity and View Import/Attribute Verification Test."""
     from services.assets_service import AssetService
@@ -91,6 +106,108 @@ def test_market_view_renders_only_the_selected_secondary_navigation(monkeypatch)
     assert rendered == ["deep_dive"]
 
 
+def test_asset_information_renders_without_opening_editors(monkeypatch):
+    from views.portfolio_view import PortfolioView
+    from views.components.manual_entry import ManualEntryWidget
+    from views.components.asset_annual_goal import AssetAnnualGoalWidget
+
+    calls = []
+    monkeypatch.setattr(st, "tabs", _fake_tabs)
+    monkeypatch.setattr(
+        StreamlitCachedPortfolioData,
+        "calculate_positions",
+        lambda *args, **kwargs: pd.DataFrame([{"ticker": "ABCD3"}]),
+    )
+    monkeypatch.setattr(AssetService, "get_pending_tickers", lambda: [])
+    monkeypatch.setattr(ManualEntryWidget, "render", lambda *args: calls.append("entry"))
+    monkeypatch.setattr(AssetAnnualGoalWidget, "render", lambda *args: calls.append("goal"))
+    monkeypatch.setattr(AssetService, "get_asset_metadata", lambda *args: {})
+    monkeypatch.setattr(AssetService, "get_asset_market_analysis", lambda *args: {})
+    monkeypatch.setattr(
+        AssetService, "get_asset_dividends", lambda *args: calls.append("dividends") or pd.DataFrame()
+    )
+    for name in (
+        "_render_header_metadata_block", "_render_behavior_chart", "_render_proventos_pivot_table",
+        "_render_indicators_block", "_render_transactions_and_dividends_tables",
+    ):
+        monkeypatch.setattr(PortfolioView, name, lambda *args, name=name: calls.append(name))
+
+    PortfolioView().render()
+
+    assert "entry" not in calls
+    assert "goal" not in calls
+    assert "_render_behavior_chart" in calls
+    assert "dividends" in calls
+    assert "_render_proventos_pivot_table" in calls
+    assert "_render_transactions_and_dividends_tables" in calls
+
+
+def test_asset_tabs_render_only_the_selected_ticker(monkeypatch):
+    from views.portfolio_view import PortfolioView
+
+    rendered = []
+    options = []
+    monkeypatch.setattr(
+        StreamlitCachedPortfolioData,
+        "calculate_positions",
+        lambda: pd.DataFrame({"ticker": ["CXSE3", "BBAS3"]}),
+    )
+    monkeypatch.setattr(AssetService, "get_pending_tickers", lambda: [])
+
+    def tabs(labels, **kwargs):
+        options.extend(labels)
+        assert kwargs["on_change"] == "rerun"
+        return [_FakeAssetTab(False), _FakeAssetTab(True)]
+
+    monkeypatch.setattr(st, "tabs", tabs)
+    monkeypatch.setattr(
+        PortfolioView,
+        "_render_single_asset_subtab",
+        lambda self, ticker, positions: rendered.append(ticker),
+    )
+
+    PortfolioView().render()
+
+    assert options == ["BBAS3", "CXSE3"]
+    assert rendered == ["CXSE3"]
+
+
+def test_native_asset_tabs_switch_without_rendering_hidden_tickers(monkeypatch):
+    import hashlib
+    import streamlit.env_util
+    from streamlit.testing.v1 import AppTest
+    from views.portfolio_view import PortfolioView
+
+    monkeypatch.setattr(streamlit.env_util, "is_repl", lambda: False)
+    monkeypatch.setattr(
+        StreamlitCachedPortfolioData,
+        "calculate_positions",
+        lambda: pd.DataFrame({"ticker": ["BBAS3", "CXSE3"]}),
+    )
+    monkeypatch.setattr(StreamlitCachedPortfolioData, "_context", lambda: ("portfolio", "gen", 1))
+    monkeypatch.setattr(AssetService, "get_pending_tickers", lambda: [])
+    rendered = []
+    monkeypatch.setattr(
+        PortfolioView,
+        "_render_single_asset_subtab",
+        lambda self, ticker, positions: rendered.append(ticker),
+    )
+
+    app = AppTest.from_string('''
+from views.portfolio_view import PortfolioView
+PortfolioView().render()
+''').run(timeout=15)
+    assert not app.exception
+    assert len(app.tabs) == 2
+    assert rendered == ["BBAS3"]
+
+    digest = hashlib.sha256(repr(["BBAS3", "CXSE3"]).encode("utf-8")).hexdigest()[:12]
+    app.session_state[f"asset_tabs_portfolio_gen_{digest}"] = "CXSE3"
+    app.run(timeout=15)
+    assert not app.exception
+    assert rendered == ["BBAS3", "CXSE3"]
+
+
 def test_chart_theme_adapter_uses_dark_empty_cells_for_heatmaps(monkeypatch):
     """Heatmaps must not introduce a light background in the dark application theme."""
     from views.components.chart_theme import ChartThemeAdapter
@@ -134,6 +251,38 @@ def test_asset_deep_dive_renders_cached_price_history(monkeypatch):
 
     assert len(calls) == 1
     assert calls[0].data[0].name == "Preço de Fechamento"
+
+
+def test_raio_x_information_renders_when_ticker_is_selected(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    import streamlit.env_util
+    from views.asset_deep_dive_view import AssetDeepDiveView
+
+    monkeypatch.setattr(streamlit.env_util, "is_repl", lambda: False)
+    monkeypatch.setattr(AssetService, "get_asset_catalog_entries", lambda: [("BBAS3", "Banco")])
+    monkeypatch.setattr(AssetService, "get_asset_market_analysis", lambda *args: {
+        "current_price": 25.0,
+        "metadata": {"name": "Banco", "sector": "Financeiro"},
+    })
+    monkeypatch.setattr(AssetDeepDiveView, "_get_current_target_yield", lambda self: 6.0)
+    rendered = []
+    for name in (
+        "_render_favorite_button", "_render_quote_snapshot", "_render_asset_price_history",
+        "_render_dividend_event_map", "_render_dividend_history", "_render_market_indicators",
+    ):
+        monkeypatch.setattr(AssetDeepDiveView, name, lambda *args, name=name: rendered.append(name))
+
+    app = AppTest.from_string('''
+from views.asset_deep_dive_view import AssetDeepDiveView
+AssetDeepDiveView().render()
+''').run(timeout=15)
+    app.selectbox[0].set_value("BBAS3 - Banco").run(timeout=15)
+
+    assert not app.exception
+    assert "_render_asset_price_history" in rendered
+    assert "_render_dividend_event_map" in rendered
+    assert "_render_dividend_history" in rendered
+    assert "_render_market_indicators" in rendered
 
 
 def test_dividend_event_hover_shows_monthly_total_per_share():
@@ -252,7 +401,7 @@ def test_portfolio_view_renders_missing_market_multiples_as_unavailable(monkeypa
     )
 
     monkeypatch.setattr(st, "subheader", lambda *args, **kwargs: None)
-    monkeypatch.setattr(st, "segmented_control", lambda *args, **kwargs: "BBAS3")
+    monkeypatch.setattr(st, "tabs", _fake_tabs)
     monkeypatch.setattr(st, "spinner", lambda *args, **kwargs: Container())
     monkeypatch.setattr(
         st,
@@ -470,16 +619,16 @@ def test_views_session_state_persistent_keys_sanity():
 def test_views_static_market_data_methods_sanity():
     """
     Statically analyzes all files inside views/ (including sub-folders) to ensure
-    any referenced 'MarketData.[method]' call corresponds to an actual, valid method
-    inside the core MarketData class. Completely prevents dynamic AttributeErrors.
+    any referenced market method corresponds to the presentation adapter actually
+    imported by the views, including its background-refresh status interface.
     """
-    from core.utils.market_data import MarketData
+    from views.cached_market_data import StreamlitCachedMarketData
 
     # 1. Dynamically retrieve all public/callable method names from MarketData
-    valid_methods = {name for name in dir(MarketData) if not name.startswith("_")}
+    valid_methods = {name for name in dir(StreamlitCachedMarketData) if not name.startswith("_")}
 
     # 2. Setup regex to capture 'MarketData.some_method' calls
-    call_pattern = re.compile(r"MarketData\.([a-zA-Z0-9_]+)")
+    call_pattern = re.compile(r"\b(?:MarketData|StreamlitCachedMarketData)\.([a-zA-Z0-9_]+)")
 
     views_dir = "views"
     assert os.path.exists(views_dir)
@@ -1031,6 +1180,65 @@ def test_local_projection_cache_reuses_only_the_same_portfolio_revision(monkeypa
     StreamlitCachedPortfolioData.calculate_historical_evolution()
     StreamlitCachedPortfolioData.calculate_historical_evolution()
     current_date[0] = current_date[0].replace(month=2, day=1)
+
+
+def test_positions_reopen_from_disk_but_new_revision_recalculates(monkeypatch, tmp_path):
+    import views.cached_market_data as cached_market_data
+
+    revisions = [1]
+    calculations = []
+    monkeypatch.setitem(cached_market_data._cache_configuration, "path", tmp_path / "screens.db")
+    monkeypatch.setattr(AssetService, "get_local_projection_revision", lambda: revisions[0])
+
+    def calculate(**_):
+        calculations.append(revisions[0])
+        return pd.DataFrame({"ticker": ["BBAS3"], "quantity": [revisions[0]]})
+
+    monkeypatch.setattr(AssetService, "calculate_positions", calculate)
+    StreamlitCachedPortfolioData._calculate_positions.clear()
+    first = StreamlitCachedPortfolioData.calculate_positions()
+    StreamlitCachedPortfolioData._calculate_positions.clear()  # Simulate a new process.
+    reopened = StreamlitCachedPortfolioData.calculate_positions()
+
+    assert first.equals(reopened)
+    assert calculations == [1]
+
+    revisions[0] = 2
+    updated = StreamlitCachedPortfolioData.calculate_positions()
+    assert updated.iloc[0]["quantity"] == 2
+    assert calculations == [1, 2]
+
+
+def test_disk_projection_does_not_cross_portfolios_or_restored_generation(monkeypatch, tmp_path):
+    import views.cached_market_data as cached_market_data
+    from core.application_paths import ApplicationPaths
+
+    current = [tmp_path / "a.db"]
+    generation = ["first"]
+    calculations = []
+    monkeypatch.setitem(cached_market_data._cache_configuration, "path", tmp_path / "screens.db")
+    monkeypatch.setattr(db, "get_personal_database_path", lambda: current[0])
+    monkeypatch.setattr(ApplicationPaths, "database_generation", lambda path: generation[0])
+    monkeypatch.setattr(AssetService, "get_local_projection_revision", lambda: 1)
+
+    def calculate(**_):
+        label = f"{current[0].stem}-{generation[0]}"
+        calculations.append(label)
+        return pd.DataFrame({"ticker": [label]})
+
+    monkeypatch.setattr(AssetService, "calculate_positions", calculate)
+    StreamlitCachedPortfolioData._calculate_positions.clear()
+    assert StreamlitCachedPortfolioData.calculate_positions().iloc[0]["ticker"] == "a-first"
+    StreamlitCachedPortfolioData._calculate_positions.clear()
+    current[0] = tmp_path / "b.db"
+    assert StreamlitCachedPortfolioData.calculate_positions().iloc[0]["ticker"] == "b-first"
+    StreamlitCachedPortfolioData._calculate_positions.clear()
+    current[0] = tmp_path / "a.db"
+    assert StreamlitCachedPortfolioData.calculate_positions().iloc[0]["ticker"] == "a-first"
+    generation[0] = "restored"
+    StreamlitCachedPortfolioData._calculate_positions.clear()
+    assert StreamlitCachedPortfolioData.calculate_positions().iloc[0]["ticker"] == "a-restored"
+    assert calculations == ["a-first", "b-first", "a-restored"]
 
 
 @pytest.mark.parametrize("initial_equity", [0.0, 100_000.0])

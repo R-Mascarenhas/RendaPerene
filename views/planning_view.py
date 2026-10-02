@@ -1,4 +1,5 @@
 import datetime
+import sqlite3
 
 import streamlit as st
 
@@ -45,7 +46,6 @@ from core.strings import (
     HELP_PLANNING_AUTOMATED,
     HELP_PLANNING_START_DATE_ENABLED,
     HELP_UPDATE_MW,
-    MSG_BCB_CONN_ERROR,
     MSG_BCB_FETCH_ERROR,
     MSG_PLANNING_DESC,
     MSG_PLANNING_INVESTED_CAPITAL,
@@ -86,6 +86,7 @@ class PlanningView:
 
     def _render_retirement_planning(self):
         """Renders retirement inputs and projections inside the planning tab."""
+        self._finish_minimum_wage_refresh()
         st.write(MSG_PLANNING_DESC)
 
         # Renders the Sandbox Simulation expander (in-memory play zone)
@@ -125,6 +126,7 @@ class PlanningView:
 
     def _on_mw_value_change(self):
         """Syncs the custom widget key-input back to the core session state and saves it."""
+        st.session_state.pop("market_minimum_wage_refresh", None)
         # Retrieve value from dynamic state key
         dynamic_key = f"{WIDGET_MW_VALUE_PREFIX}{st.session_state[SESSION_MW_VALUE]}"
         if dynamic_key in st.session_state:
@@ -226,6 +228,40 @@ class PlanningView:
         if computed_initial is not None and current_initial != computed_initial:
             st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
             self._save_params()
+
+    def _finish_minimum_wage_refresh(self):
+        """Apply a user-requested valid reply in the UI thread before widgets render."""
+        pending = st.session_state.get("market_minimum_wage_refresh")
+        if pending is None:
+            return
+        portfolio, revision = pending
+        if portfolio != st.session_state.get("active_db", "portfolio.db"):
+            st.session_state.pop("market_minimum_wage_refresh", None)
+            return
+        status = MarketData.status(("minimum_wage",))
+        if status.revision == revision or status.updating:
+            MarketData.get_current_minimum_wage()
+            return
+        st.session_state.pop("market_minimum_wage_refresh", None)
+        if status.failed or not status.available:
+            st.error(MSG_BCB_FETCH_ERROR)
+            return
+        live_mw = MarketData.get_current_minimum_wage()
+        if not 1000 <= live_mw <= 5000:
+            st.error(MSG_BCB_FETCH_ERROR)
+            return
+        previous_mw = st.session_state[SESSION_MW_VALUE]
+        st.session_state[SESSION_MW_VALUE] = live_mw
+        try:
+            self._save_params()
+        except (sqlite3.Error, RuntimeError, ValueError):
+            st.session_state[SESSION_MW_VALUE] = previous_mw
+            st.error("Não foi possível salvar o salário mínimo. Tente novamente.")
+            return
+        st.toast(
+            f"Salário Mínimo atualizado pelo BCB: {Formatter.format_currency(live_mw)}!",
+            icon="🎉",
+        )
 
     def _save_params(self):
         """Callback to save the current session state parameters to the database."""
@@ -377,25 +413,14 @@ class PlanningView:
                 st.write("")  # Spacer label alignment
                 st.write("")
                 if st.button(MSG_UPDATE_MW_BTN, help=HELP_UPDATE_MW):
-                    with st.spinner("BCB..."):
-                        try:
-                            # Clear cache and force live HTTP fetch
-                            MarketData.get_current_minimum_wage.clear()
-                            live_mw = MarketData.get_current_minimum_wage()
-                            if live_mw > 1000.0:
-                                # CRITICAL: Update BOTH the core state AND the active input widget state
-                                # to prevent Streamlit from rolling back our fresh cloud value!
-                                st.session_state[SESSION_MW_VALUE] = live_mw
-                                self._save_params()
-                                st.toast(
-                                    f"Salário Mínimo atualizado com sucesso direto do BCB: {Formatter.format_currency(live_mw)}!",
-                                    icon="🎉",
-                                )
-                                st.rerun()
-                            else:
-                                st.error(MSG_BCB_FETCH_ERROR)
-                        except Exception as e:
-                            st.error(MSG_BCB_CONN_ERROR.format(e=e))
+                    MarketData.get_current_minimum_wage.clear()
+                    st.session_state["market_minimum_wage_refresh"] = (
+                        st.session_state.get("active_db", "portfolio.db"),
+                        MarketData.status(("minimum_wage",)).revision,
+                    )
+                    MarketData.get_current_minimum_wage()
+                if "market_minimum_wage_refresh" in st.session_state:
+                    st.caption("Consultando o BCB. O valor atual será mantido até a confirmação.")
 
         # Renders the custom start date parameters on a small second row
         st.write("")  # Spacer row

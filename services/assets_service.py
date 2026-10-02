@@ -1112,6 +1112,9 @@ class AssetService:
 
         catalog = self._market_data_api.load_assets_catalog()
         market_rows = []
+        prefetch = getattr(self._market_analysis_api, "prefetch_tickers", None)
+        if callable(prefetch):
+            prefetch(tracked_tickers)
         for t in tracked_tickers:
             details = self._market_analysis_api.get_ticker_market_analysis(
                 t, target_yield_pct=target_yield
@@ -1195,7 +1198,8 @@ class AssetService:
         tickers = df_positions[TICKER].tolist()
         quote_map = self._market_data_api.get_batch_quotes(tickers)
 
-        df_positions[CURRENT_PRICE] = df_positions[TICKER].map(quote_map)
+        prices = pd.to_numeric(df_positions[TICKER].map(quote_map), errors="coerce")
+        df_positions[CURRENT_PRICE] = prices.where(prices.map(lambda x: math.isfinite(x) and x > 0))
         df_positions[CURRENT_VALUE] = df_positions[QUANTITY] * df_positions[CURRENT_PRICE]
         df_positions[PROFIT_LOSS] = df_positions[CURRENT_VALUE] - df_positions[INVESTED_AMOUNT]
 
@@ -1213,7 +1217,8 @@ class AssetService:
             df_positions.get("cost_pending", pd.Series(False, index=df_positions.index)).any()
         )
         total_invested_init = df_positions[INVESTED_AMOUNT].sum(skipna=False)
-        total_equity = df_positions[CURRENT_VALUE].sum()
+        market_complete = bool(df_positions[CURRENT_PRICE].notna().all())
+        total_equity = df_positions[CURRENT_VALUE].sum(skipna=False)
 
         total_dividends = df_positions[TOTAL_DIVIDENDS].sum()
         l12m_dividends = df_positions[L12M_DIVIDENDS].sum()
@@ -1232,6 +1237,8 @@ class AssetService:
         )
         if cost_pending:
             overall_return = overall_yoc = overall_l12m_yoc = float("nan")
+        if not market_complete:
+            overall_return = float("nan")
 
         # Pull the invested capital parameter used in PMT calculations from the planning service if available
         if self._planning_provider is not None:
@@ -1243,6 +1250,7 @@ class AssetService:
         return df_positions, {
             "total_equity": total_equity,
             "cost_pending": cost_pending,
+            "market_complete": market_complete,
             "total_invested": total_invested_sim,
             "total_dividends": total_dividends,
             "l12m_dividends": l12m_dividends,
@@ -1303,7 +1311,7 @@ class AssetService:
         if df_positions.empty:
             return pd.DataFrame(), {}
 
-        total_equity = df_positions[CURRENT_VALUE].sum()
+        total_equity = df_positions[CURRENT_VALUE].sum(skipna=False)
 
         df_positions[ADJUSTED_PRICE] = (
             df_positions[INVESTED_AMOUNT] - df_positions[TOTAL_DIVIDENDS]
@@ -1313,15 +1321,22 @@ class AssetService:
         df_positions[YOC_CUSTOM] = df_positions[TOTAL_DIVIDENDS] / invested_base * 100
         df_positions[YOC_12_CUSTOM] = df_positions[L12M_DIVIDENDS] / invested_base * 100
         df_positions[WEIGHT_PCT] = (
-            (df_positions[CURRENT_VALUE] / total_equity * 100) if total_equity > 0 else 0.0
+            (df_positions[CURRENT_VALUE] / total_equity * 100)
+            if total_equity > 0
+            else float("nan")
+            if pd.isna(total_equity)
+            else 0.0
         )
 
         ceilings = {}
+        prefetch = getattr(self._market_analysis_api, "prefetch_tickers", None)
+        if callable(prefetch):
+            prefetch(df_positions[TICKER].tolist())
         for t in df_positions[TICKER]:
             details = self._market_analysis_api.get_ticker_market_analysis(
                 t, target_yield_pct=target_yield
             )
-            ceilings[t] = details.get("ceiling_price", 0.0) if details else 0.0
+            ceilings[t] = details.get("ceiling_price", float("nan")) if details else float("nan")
 
         df_positions[CEILING_PRICE_GRID] = df_positions[TICKER].map(lambda t: ceilings.get(t, 0.0))
 
@@ -1362,5 +1377,24 @@ class AssetService:
                 DISPLAY_YOC_12,
             ):
                 df_display.loc[pending, column] = "Custo pendente"
+
+        # Missing remote inputs are never rendered as zero or literal "nan".
+        for display_column, source_column in (
+            (DISPLAY_WEIGHT, WEIGHT_PCT),
+            (DISPLAY_CEILING, CEILING_PRICE_GRID),
+            (DISPLAY_QUOTE_TODAY, CURRENT_PRICE),
+            (DISPLAY_CURRENT, CURRENT_VALUE),
+            (DISPLAY_RETURN_PCT, RETURN_PCT_CUSTOM),
+            (DISPLAY_RESULT, PROFIT_LOSS),
+        ):
+            missing = df_positions[source_column].isna() & ~pending
+            df_display.loc[missing, display_column] = "N/D"
+        for display_column, source_column in (
+            (DISPLAY_WEIGHT, WEIGHT_PCT),
+            (DISPLAY_CEILING, CEILING_PRICE_GRID),
+            (DISPLAY_QUOTE_TODAY, CURRENT_PRICE),
+            (DISPLAY_CURRENT, CURRENT_VALUE),
+        ):
+            df_display.loc[df_positions[source_column].isna(), display_column] = "N/D"
 
         return df_display, ceilings

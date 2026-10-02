@@ -8,9 +8,9 @@ A aplicação prioriza o armazenamento local. Ela não utiliza banco de dados em
 
 ## Execução e composição
 
-A interface requer Streamlit 1.52.0 ou superior, conforme `pyproject.toml`. Esse mínimo
-suporta `width="stretch"` e `height="content"`, usados para dimensionar os componentes
-e exibir todos os registros da página do histórico sem rolagem interna.
+A interface requer Streamlit 1.55.0 ou superior, conforme `pyproject.toml`. Esse mínimo
+suporta abas com `on_change="rerun"` e estado `.open`, além de `width="stretch"` e
+`height="content"` para dimensionar os componentes e o histórico.
 
 O `app.py` é a raiz de composição. Ele:
 
@@ -61,7 +61,7 @@ O repositório possui três camadas principais:
 
 - **`core/`** contém a infraestrutura técnica e os contratos compartilhados. Inclui o `DatabaseManager`, os protocolos de `core/ports.py`, DAOs SQLite, constantes, textos localizados, formatação, gerenciamento de sessão, processamento da B3 e a integração de dados de mercado desacoplada da interface.
 - **`services/`** contém as regras de aplicação e de domínio. Os serviços dependem de portas, e não do código de apresentação.
-- **`views/`** contém a renderização e as interações do Streamlit. `StreamlitCachedMarketData` é o adaptador da camada de apresentação que adiciona o cache do Streamlit à implementação de dados de mercado desacoplada da interface.
+- **`views/`** contém a renderização e as interações do Streamlit. `StreamlitCachedMarketData` conecta a apresentação ao cache remoto não bloqueante; o catálogo e as projeções locais usam `st.cache_data`, com recuperação opcional das projeções em arquivo local.
 
 A direção das dependências é `views` → `services` → contratos e adaptadores de `core`. A raiz de composição seleciona os adaptadores concretos. As views não devem conter cálculos de negócio, SQL direto ou regras de processamento das planilhas da B3.
 
@@ -322,6 +322,7 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
 - Posições com custo pendente mantêm quantidade, valor de mercado e o capital investido de custo conhecido até então; preço médio e indicadores de rentabilidade dependentes do custo ficam indisponíveis. As telas exibem o capital conhecido junto de um aviso explícito de custos pendentes. A regularização fica em Ativos → Operações e invalida o cache da interface.
 - Os cálculos dos aportes para aposentadoria usam pagamentos de anuidade antecipada (`type = 1`) por meio de `SimulationService.pmt_annuity_due()`. Posições com custo pendente são desconsideradas na soma do capital investido até a regularização, sem bloquear o planejamento das demais posições.
 - As projeções locais descartáveis do Dashboard e de Ativos usam uma revisão monotônica armazenada no SQLite. Gatilhos avançam a revisão após mudanças de transações, proventos, ativos acompanhados e correções anuais; a chave também inclui a geração publicada do arquivo, impedindo reutilização entre carteiras ou após restauração. Os caches remotos Yahoo e BCB não são limpos por essas mutações.
+- `core/screen_cache.py` guarda apenas dados reconstruíveis em `cache/screens.db`, fora de `database/` e `backups/`. O arquivo tem esquema próprio versionado, payload JSON tipado com checksum e limites de 8 MiB por entrada e 128 MiB de payload total; nunca recebe operações ou credenciais como fonte autoritativa. Erro de leitura, gravação ou versão desconhecida desativa apenas aquele acesso ao cache. As projeções locais persistidas incluem identidade e geração da carteira, revisão monotônica, parâmetros e data de cálculo; posições incluem a identidade do catálogo. Resultados que combinam mercado e carteira continuam calculados pelos serviços a partir das duas fontes, sem persistir uma composição potencialmente desatualizada.
 
 ## Integrações externas
 
@@ -329,6 +330,43 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
 - A integração calcula médias de proventos usando os anos disponíveis desde a listagem; anos listados sem pagamento contam como zero. Sem histórico utilizável, o planejamento mostra uma observação e não inventa uma meta de cotas.
 - Os endpoints SGS do Banco Central do Brasil (BCB) fornecem valores de IPCA, Selic e salário mínimo. A integração desacoplada da interface utiliza valores alternativos quando uma requisição falha.
 - O adaptador do Streamlit mantém cotações e snapshots remotos dos ativos em cache por 10 minutos, históricos de preço por uma hora e indicadores do BCB por 30 dias. O snapshot é identificado somente pelo ticker normalizado e pelo ano de referência; não contém carteira, sessão, correções locais nem parâmetros do modelo de Bazin. Ele inclui até dez anos completos do histórico anual de dividendos e dos fechamentos não ajustados necessários para a consulta Raio-X.
+- `BackgroundMarketData`, em `core/background_market_data.py`, implementa as leituras remotas sobre
+  `MarketDataCache`. A leitura retorna imediatamente uma cópia do último dado válido; cache vazio
+  retorna indisponibilidade para ativos e referências provisórias para indicadores econômicos.
+  `app.py` inicializa o recurso compartilhado por processo, mantido por `st.cache_resource`.
+  `st.cache_data(refresh_mode="background")` não está disponível no Streamlit 1.58 instalado e,
+  isoladamente, não garante leitura imediata de cache vazio.
+- O cache remoto possui locks, limite de 512 entradas, fila de 128 atualizações e dois workers
+  daemon. Chaves iguais compartilham a atualização; cotações são identificadas por ticker para
+  reutilização entre listas diferentes. A medição de oito operações de I/O controladas de 50 ms
+  levou aproximadamente 401 ms em série e 202 ms com dois workers; isso valida o agendamento,
+  sem representar um benchmark de latência do Yahoo. Snapshots são agendados juntos antes de
+  preparar o detalhamento. Workers consultam a fonte remota e gravam somente respostas válidas
+  no arquivo de cache; não acessam o SQLite da carteira, `st.session_state` ou comandos de apresentação.
+- Expiração e atualização manual preservam o dado anterior. Respostas inválidas ou falhas não
+  substituem valores válidos; novas tentativas após falha respeitam 30 segundos. Uma revisão por
+  entrada descarta respostas anteriores à atualização manual. A capacidade limitada pode remover
+  entradas antigas; elas voltarão a ser carregadas em background quando solicitadas. O cache é
+  descartável. Na abertura, entradas remotas válidas no arquivo local são recuperadas; entradas
+  vencidas continuam legíveis com sua idade e são atualizadas em segundo plano. A atualização
+  manual marca também a cópia persistida como vencida.
+- `views/market_data_status.py` acompanha somente as entradas solicitadas pela sessão. Um fragmento
+  verifica suas revisões a cada dois segundos e solicita rerun na thread Streamlit após uma resposta.
+  A interface informa idade, atualização, referências provisórias e falhas. Sem todas as cotações,
+  patrimônio total, rentabilidade e pesos mostram `N/D`; os gráficos de composição aguardam dados
+  completos. Capital e proventos locais continuam disponíveis. A atualização manual do salário
+  mínimo mantém o parâmetro atual e salva somente uma resposta válida do BCB na carteira solicitante.
+- Em Ativos → Carteira, cada ticker possui uma aba nativa com estado: somente a aba ativa
+  executa seu detalhamento, inclusive ao trocar de carteira ou alterar a lista de ativos.
+  Em Carteira e no Raio-X, gráficos, históricos e indicadores são preparados
+  automaticamente para o ticker selecionado. Os formulários de edição em Carteira ficam em
+  expansores independentes, `Registrar movimentação` e `Meta anual deste ativo`, inicialmente
+  recolhidos; cada formulário só é preparado quando seu expansor é aberto.
+- Os indicadores remotos são consultados com validação estrita no background; consumidores
+  headless mantêm os fallbacks anteriores. Cotações/snapshots/intraday usam TTL de 600 segundos,
+  históricos de 3600 segundos e indicadores de 2592000 segundos. O modo de diagnóstico existente
+  registra durações separadas `atualizacao.mercado.remote_*`, sem chaves nem dados financeiros,
+  com `APP_ENV=dev` e `RENDA_PERENE_NAVIGATION_METRICS=true`.
 - A cada análise, `MarketAnalysisService` relê do SQLite as correções anuais da carteira ativa fora do cache remoto, mescla-as aos históricos de cinco e dez anos e depois aplica `ValuationService`. Por isso, trocar de carteira ou salvar uma correção altera a chamada seguinte sem nova consulta ao Yahoo Finance e sem limpeza global do cache. Os eventos individuais de proventos continuam representando somente o histórico fornecido pelo Yahoo.
 - O dividend yield histórico de cada ano utiliza o último preço de fechamento não ajustado daquele ano, e não a cotação atual.
 - `UpdateChecker` consulta o endpoint público de latest release do GitHub uma vez por sessão, em uma thread de fundo. Ele compara somente versões semânticas, seleciona o asset pelo nome padronizado para Windows ou Ubuntu x64 e não acessa nem transmite dados locais. Falhas de rede, resposta e asset apenas geram logs seguros e não interrompem a interface.

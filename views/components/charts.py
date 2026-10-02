@@ -34,7 +34,10 @@ class DashboardCharts:
     """Displays all interactive Plotly figures on the Dashboard."""
 
     def render(self, df_positions):
-        self._render_top_charts(df_positions)
+        if df_positions[CURRENT_VALUE].notna().all():
+            self._render_top_charts(df_positions)
+        else:
+            st.caption("Os gráficos de composição do patrimônio aguardam cotações completas.")
         self._render_evolution_chart()
         self._render_monthly_contributions_chart()
 

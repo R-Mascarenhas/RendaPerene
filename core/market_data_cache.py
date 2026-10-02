@@ -36,6 +36,9 @@ class _Entry:
     failed: bool = False
     generation: int = 0
     revision: int = 0
+    loader: Callable[[], Any] | None = None
+    ttl: float = 0.0
+    valid: Callable[[Any], bool] | None = None
 
 
 class MarketDataCache:
@@ -107,6 +110,9 @@ class MarketDataCache:
                             entry.revision = self._revision
                 self._entries[key] = entry
             self._entries.move_to_end(key)
+            entry.loader = loader
+            entry.ttl = ttl
+            entry.valid = valid
             now = self._clock()
             if (
                 not self._closed.is_set()
@@ -126,6 +132,34 @@ class MarketDataCache:
                 self._entries.popitem(last=False)
             value = entry.value if entry.available else default
         return copy.deepcopy(value)
+
+    def retry_due(self, keys: set[tuple] | None = None) -> int:
+        """Reschedule failed reads whose backoff expired without waiting for a UI rerun."""
+        scheduled = 0
+        now = self._clock()
+        with self._condition:
+            for key, entry in self._entries.items():
+                if keys is not None and key not in keys:
+                    continue
+                if (
+                    not entry.failed
+                    or entry.updating
+                    or now < entry.retry_at
+                    or entry.loader is None
+                    or entry.valid is None
+                ):
+                    continue
+                try:
+                    self._queue.put_nowait(
+                        (key, entry, entry.generation, entry.loader, entry.ttl, entry.valid)
+                    )
+                except queue.Full:
+                    continue
+                entry.updating = True
+                entry.failed = False
+                self._jobs += 1
+                scheduled += 1
+        return scheduled
 
     def status(self, key: tuple) -> MarketDataStatus:
         """Inspect availability without scheduling another request."""

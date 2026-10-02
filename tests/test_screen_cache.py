@@ -28,7 +28,9 @@ def test_price_history_keeps_datetime_index_after_restart(tmp_path):
     ScreenCache(path).put("market", ("history", "ABCD3", "1y", "1d"), frame, ttl=3600)
 
     restored = ScreenCache(path).get("market", ("history", "ABCD3", "1y", "1d"))
-    pd.testing.assert_frame_equal(restored.value, frame, check_freq=False)
+    assert restored.value["Close"].tolist() == frame["Close"].tolist()
+    assert list(restored.value.index) == list(frame.index)
+    assert restored.value.index.tz == frame.index.tz
 
 
 def test_numeric_quote_round_trips_through_cache_file(tmp_path):

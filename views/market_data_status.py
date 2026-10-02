@@ -10,6 +10,7 @@ def render_market_data_status() -> None:
     requests = st.session_state.get("market_data_requests", {})
     if not requests:
         return
+    StreamlitCachedMarketData.retry_due(set(requests))
     statuses = [(key, StreamlitCachedMarketData.status(key)) for key in requests]
     poll_ready = st.session_state.get("market_data_poll_ready", False)
     st.session_state["market_data_poll_ready"] = True

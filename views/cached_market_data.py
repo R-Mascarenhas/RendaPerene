@@ -127,6 +127,10 @@ class StreamlitCachedMarketData:
     def refresh(prefix: tuple):
         get_background_market_data().cache.refresh(prefix)
 
+    @staticmethod
+    def retry_due(keys: set[tuple] | None = None) -> int:
+        return get_background_market_data().cache.retry_due(keys)
+
 
 for _method, _prefix in (
     ("get_batch_quotes", "quote"),

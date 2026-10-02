@@ -44,7 +44,7 @@ Arquivos alterados:
   `tests/test_views.py`.
 - Documentação: `README.md`, `ARCHITECTURE.md` e este plano.
 
-Validação final: `venv/bin/pytest` (635 testes passaram), `venv/bin/ruff check .`,
+Validação final: `venv/bin/pytest` (636 testes passaram), `venv/bin/ruff check .`,
 `venv/bin/ruff format --check .` e `git diff --check` sem erros.
 O Dashboard e a atualização do salário mínimo foram exercitados com AppTest e fontes controladas.
 Não foi executada uma sessão manual de `streamlit run app.py`, para não inicializar ou migrar

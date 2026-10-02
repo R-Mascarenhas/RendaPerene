@@ -113,6 +113,33 @@ def test_expired_cache_retains_last_value_when_refresh_fails():
         cache.close()
 
 
+def test_failed_refresh_is_retried_automatically_when_backoff_expires():
+    now = [0.0]
+    calls = []
+
+    def load():
+        calls.append(True)
+        if len(calls) == 1:
+            raise TimeoutError("temporary provider failure")
+        return 30.0
+
+    cache = MarketDataCache(clock=lambda: now[0], retry_seconds=30)
+    try:
+        assert cache.read(("quote", "TEST3"), load, ttl=600, default=None) is None
+        assert cache.wait_idle(2)
+        assert cache.status(("quote", "TEST3")).failed
+
+        now[0] = 31
+        assert cache.retry_due({("quote", "TEST3")}) == 1
+        assert cache.wait_idle(2)
+        assert cache.status(("quote", "TEST3")).available
+        assert not cache.status(("quote", "TEST3")).failed
+        assert cache.read(("quote", "TEST3"), load, ttl=600, default=None) == 30.0
+        assert calls == [True, True]
+    finally:
+        cache.close()
+
+
 def test_duplicate_reads_and_manual_refresh_discard_old_reply():
     started = threading.Event()
     release = threading.Event()

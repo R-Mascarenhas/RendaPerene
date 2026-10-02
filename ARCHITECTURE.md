@@ -344,8 +344,9 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
   preparar o detalhamento. Workers consultam a fonte remota e gravam somente respostas válidas
   no arquivo de cache; não acessam o SQLite da carteira, `st.session_state` ou comandos de apresentação.
 - Expiração e atualização manual preservam o dado anterior. Respostas inválidas ou falhas não
-  substituem valores válidos; novas tentativas após falha respeitam 30 segundos. Uma revisão por
-  entrada descarta respostas anteriores à atualização manual. A capacidade limitada pode remover
+  substituem valores válidos; o fragmento agenda automaticamente uma nova tentativa após o
+  backoff de 30 segundos para entradas ainda acompanhadas pela sessão. Uma revisão por entrada
+  descarta respostas anteriores à atualização manual. A capacidade limitada pode remover
   entradas antigas; elas voltarão a ser carregadas em background quando solicitadas. O cache é
   descartável. Na abertura, entradas remotas válidas no arquivo local são recuperadas; entradas
   vencidas continuam legíveis com sua idade e são atualizadas em segundo plano. A atualização

@@ -881,7 +881,7 @@ def test_file_lock_serializes_active_writers(tmp_path):
     assert not second.is_alive()
 
 
-def test_migration_copy_failures_return_only_localized_user_text(tmp_path, monkeypatch):
+def test_migration_copy_failures_return_only_localized_user_text(tmp_path, monkeypatch, caplog):
     resource_root = tmp_path / "application"
     paths = ApplicationPaths(resource_root, tmp_path / "user-data", resource_root)
     source = resource_root / "database" / "portfolio_family.db"
@@ -901,6 +901,8 @@ def test_migration_copy_failures_return_only_localized_user_text(tmp_path, monke
         "Verifique as permissões de armazenamento e tente novamente."
     )
     assert "copied file" not in result.message
+    assert "legacy_migration.copy_failed error_type=ValueError" in caplog.text
+    assert "SQLite validation" not in caplog.text
 
 
 def test_invalid_legacy_database_is_rejected_before_copy(tmp_path):

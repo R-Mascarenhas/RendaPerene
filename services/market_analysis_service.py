@@ -91,3 +91,9 @@ class MarketAnalysisService:
             "complete" if average_years == 5 else "partial" if average_years > 0 else "unavailable"
         )
         return ValuationService.apply_bazin_valuation(analysis, target_yield_pct)
+
+    def prefetch_tickers(self, tickers: list[str]) -> None:
+        """Schedule independent remote snapshots together when the adapter supports it."""
+        prefetch = getattr(self._remote_market_data, "prefetch_ticker_market_snapshots", None)
+        if callable(prefetch):
+            prefetch(tickers, datetime.date.today().year)

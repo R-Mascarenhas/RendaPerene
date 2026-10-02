@@ -153,8 +153,32 @@ proventos permanecem no SQLite local, são relidas a cada análise e aplicadas a
 dividend yield histórico e do preço-teto de Bazin. Assim, trocar de carteira ou salvar uma correção
 atualiza a análise seguinte sem enviar dados pessoais ao Yahoo nem limpar o cache remoto.
 
+Consultas de mercado ocorrem em segundo plano: a carteira abre com dados locais e o último dado
+remoto válido, inclusive após a expiração do cache ou uma falha de rede. No primeiro acesso,
+campos dependentes de cotações mostram `N/D` até a resposta; patrimônio total, rentabilidade,
+pesos e gráficos de composição aguardam cotações completas. Os indicadores econômicos usam
+referências provisórias quando ainda não há resposta, identificadas na tela. A interface acompanha
+as atualizações a cada dois segundos e mostra a idade dos dados usados.
 
-Posições e agregados locais reutilizam uma projeção temporária enquanto a carteira não muda. Cada alteração relevante avança uma revisão interna do SQLite; por isso, dados de uma carteira, ou de uma versão restaurada dela, não são reutilizados em outra. Essa projeção não substitui o banco local nem altera os backups.
+Cotações e análises têm validade de 10 minutos, históricos de uma hora e indicadores econômicos
+de 30 dias. O último dado válido também fica em um arquivo SQLite local e descartável na pasta
+`cache` dos dados da aplicação. Ao reabrir, dados vencidos permanecem visíveis com sua idade
+enquanto uma atualização ocorre em segundo plano. O arquivo não é uma carteira nem entra nos
+backups; se estiver indisponível, a aplicação continua usando o cache em memória.
+O botão de atualização do salário mínimo consulta o BCB sem bloquear a tela e mantém o valor
+atual até receber uma resposta válida; somente essa resposta é salva no planejamento.
+Para medir consultas remotas separadamente em desenvolvimento, use `APP_ENV=dev` e
+`RENDA_PERENE_NAVIGATION_METRICS=true`. As métricas não contêm dados da carteira.
+
+Posições e agregados locais reutilizam projeções temporárias, inclusive após reiniciar a aplicação.
+Cada alteração relevante avança uma revisão interna do SQLite; por isso, dados de uma carteira,
+ou de uma versão restaurada dela, não são reutilizados em outra. Essas projeções não substituem
+o banco local nem alteram os backups. Em **Ativos → Carteira** e no **Raio-X**, gráficos,
+históricos e indicadores detalhados aparecem automaticamente para o ativo selecionado.
+Na Carteira, cada ticker tem uma aba; só o conteúdo da aba ativa é calculado.
+As informações, gráficos e históricos aparecem automaticamente; os formulários **Registrar
+movimentação** e **Meta anual deste ativo** ficam em blocos expansíveis e só são preparados
+quando abertos.
 A importação da B3 é iniciada pelo usuário: baixe a planilha oficial no Portal do Investidor da B3 e envie-a pela aplicação. Bancos locais e planilhas pessoais são ignorados pelo Git; não faça commit desses arquivos.
 
 Entradas de aquisição ou subscrição com valor financeiro zero ou ausente ficam com
@@ -245,8 +269,9 @@ Também reduz o aporte mensal necessário. Os valores dessa simulação não alt
 
 ## Instalação
 
-O Streamlit mínimo suportado é 1.52.0, necessário para `width="stretch"` nos componentes
-e `height="content"` no histórico de movimentações. A instalação abaixo garante esse mínimo.
+O Streamlit mínimo suportado é 1.55.0, necessário para abas com carregamento apenas da
+aba ativa, `width="stretch"` nos componentes e `height="content"` no histórico de
+movimentações. A instalação abaixo garante esse mínimo.
 Para atualizar um ambiente existente, execute `python -m pip install --upgrade .`.
 
 Clone o repositório, crie um ambiente virtual e instale a aplicação:

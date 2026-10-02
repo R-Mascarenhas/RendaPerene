@@ -149,6 +149,10 @@ def test_market_analysis_isolates_portfolio_corrections_while_reusing_remote_sna
     monkeypatch.setattr(MarketData, "get_ticker_market_snapshot", get_remote_snapshot)
     StreamlitCachedMarketData.get_ticker_market_snapshot.clear()
 
+    StreamlitCachedMarketData.get_ticker_market_snapshot("TEST3", current_year)
+    from views.cached_market_data import get_background_market_data
+    assert get_background_market_data().cache.wait_idle(2)
+
     first_manager = DatabaseManager(tmp_path / "first_portfolio.db")
     second_manager = DatabaseManager(tmp_path / "second_portfolio.db")
     first_manager.init_personal_db()
@@ -196,9 +200,12 @@ def test_remote_snapshot_cache_normalizes_ticker_before_building_its_key(monkeyp
     StreamlitCachedMarketData.get_ticker_market_snapshot.clear()
 
     first_snapshot = StreamlitCachedMarketData.get_ticker_market_snapshot(" test3 ", current_year)
+    from views.cached_market_data import get_background_market_data
+    assert get_background_market_data().cache.wait_idle(2)
     second_snapshot = StreamlitCachedMarketData.get_ticker_market_snapshot("TEST3", current_year)
 
-    assert first_snapshot == second_snapshot
+    assert first_snapshot == {}
+    assert second_snapshot == {"current_price": 20.0}
     assert remote_calls == [("TEST3", current_year)]
 
 
@@ -470,7 +477,10 @@ def test_streamlit_cached_market_data_delegation(monkeypatch):
     monkeypatch.setattr(MarketData, "get_batch_quotes", mock_get_batch_quotes)
 
     result = StreamlitCachedMarketData.get_batch_quotes(["MOCK3"])
-    assert result == {"MOCK3": 10.0}
+    assert result == {}
+    from views.cached_market_data import get_background_market_data
+    assert get_background_market_data().cache.wait_idle(2)
+    assert StreamlitCachedMarketData.get_batch_quotes(["MOCK3"]) == {"MOCK3": 10.0}
     assert "get_batch_quotes" in calls
 
 
@@ -647,32 +657,22 @@ def test_market_analysis_uses_annual_close_for_manual_dividend_correction(monkey
     assert analysis["dividend_yields_history"][2024] == 10.0
 
 
-def test_load_assets_catalog_instantiation(monkeypatch, tmp_path):
+def test_load_assets_catalog_instantiation(monkeypatch, tmp_path, mock_db):
     """
     Verifies that load_assets_catalog correctly compiles and executes, avoiding
     missing 'self' positional argument TypeError by properly instantiating the DAO.
     """
-    import importlib
-    import sys
-    import core.utils.market_data
-
-    # Reload to get the original unpatched class
-    importlib.reload(core.utils.market_data)
-    OriginalMarketData = core.utils.market_data.MarketData
-
     catalog_path = tmp_path / "assets.csv"
     catalog_path.write_text(
         "CÓDIGO,NOME,IMAGEM,CNPJ,SETOR ECONÔMICO,SUBSETOR ,SEGMENTO / ADM / PAÍS,TIPO,SEGMENTO\n",
         encoding="utf-8-sig",
     )
     monkeypatch.setattr(
-        OriginalMarketData,
+        MarketData,
         "resolve_catalog_path",
         staticmethod(lambda: catalog_path),
     )
 
-    try:
-        catalog = OriginalMarketData.load_assets_catalog()
-        assert isinstance(catalog, pd.DataFrame)
-    finally:
-        importlib.reload(core.utils.market_data)
+    # Exercise the real loader without replacing the class used by other adapters.
+    catalog = mock_db["original_load_assets_catalog"]()
+    assert isinstance(catalog, pd.DataFrame)

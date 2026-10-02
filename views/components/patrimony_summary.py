@@ -19,13 +19,19 @@ class PatrimonySummaryWidget:
     """Displays the 5 main portfolio KPI metrics (Patrimônio, Capital, YoC, Dividends)."""
 
     def render(self, df_positions):
-        with st.spinner("Buscando cotações em tempo real na B3..."):
-            df_positions, metrics = AssetService.get_portfolio_summary_metrics(df_positions)
+        df_positions, metrics = AssetService.get_portfolio_summary_metrics(df_positions)
 
         if not metrics:
             return
 
-        st.session_state.calculated_equity_cache = metrics["total_equity"]
+        market_complete = metrics.get("market_complete", True)
+        if market_complete:
+            st.session_state.calculated_equity_cache = metrics["total_equity"]
+        else:
+            st.session_state.pop("calculated_equity_cache", None)
+            st.caption(
+                "Cotações incompletas: patrimônio total e rentabilidade aguardam dados de mercado."
+            )
         pending_tickers = AssetService.get_pending_tickers()
         pending = metrics.get("cost_pending", False) or bool(pending_tickers)
         ratios_available = metrics.get("ratios_available", True)
@@ -37,12 +43,12 @@ class PatrimonySummaryWidget:
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric(
             LABEL_PATRIMONY_TOTAL,
-            Formatter.format_currency(metrics["total_equity"]),
+            Formatter.format_currency(metrics["total_equity"]) if market_complete else "N/D",
             "Custo pendente"
             if pending
             else (
                 HELP_PATRIMONY_RETURN.format(val=metrics["overall_return"])
-                if ratios_available
+                if ratios_available and market_complete
                 else "N/D"
             ),
         )

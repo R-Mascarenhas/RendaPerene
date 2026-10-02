@@ -22,12 +22,14 @@ def mock_db(monkeypatch, tmp_path):
     )
     test_catalog.write_text(test_csv_content, encoding="utf-8-sig")
     catalog_repo = AssetsCatalogDAO(test_catalog)
+    original_load_assets_catalog = MarketData.load_assets_catalog
 
     def mock_load_catalog():
         return catalog_repo.load_catalog()
 
     # Redirect global db instance to use the test database
     monkeypatch.setattr(db, "get_personal_connection", test_db.get_personal_connection)
+    monkeypatch.setattr(db, "get_personal_database_path", test_db.get_personal_database_path)
     monkeypatch.setattr(MarketData, "load_assets_catalog", mock_load_catalog)
 
     # Wire default test adapters at the test environment composition edge
@@ -61,4 +63,29 @@ def mock_db(monkeypatch, tmp_path):
         planning_provider=SimulationService.get_default(),
     )
 
-    yield {"catalog_path": test_catalog, "database_path": test_database}
+    # Each test owns its background cache; no job may outlive monkeypatched sources.
+    from core.background_market_data import BackgroundMarketData
+    from core.market_data_cache import MarketDataCache
+    import views.cached_market_data as cached_market_data
+
+    monkeypatch.setitem(cached_market_data._cache_configuration, "path", None)
+
+    background_instances = []
+
+    def get_test_background_market_data():
+        if not background_instances:
+            background_instances.append(BackgroundMarketData(MarketData, MarketDataCache()))
+        return background_instances[0]
+
+    monkeypatch.setattr(cached_market_data, "get_background_market_data", get_test_background_market_data)
+
+    yield {
+        "catalog_path": test_catalog,
+        "database_path": test_database,
+        "original_load_assets_catalog": original_load_assets_catalog,
+    }
+    for background in background_instances:
+        try:
+            assert background.cache.wait_idle(10), "Background source did not finish before test teardown"
+        finally:
+            background.cache.close()

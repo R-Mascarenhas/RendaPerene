@@ -416,9 +416,18 @@ from services.goals_service import GoalService
 from services.market_analysis_service import MarketAnalysisService
 from services.planning_service import SimulationService
 from services.share_quantity_goal_service import ShareQuantityGoalService
-from views.cached_market_data import StreamlitCachedMarketData
+from views.cached_market_data import (
+    StreamlitCachedMarketData,
+    configure_screen_cache,
+    get_background_market_data,
+)
+from views.market_data_status import render_market_data_status
 
 portfolio_repo = PortfolioDAO()
+configure_screen_cache(app_paths.screen_cache_file)
+get_background_market_data()
+st.session_state["market_data_requests"] = {}
+st.session_state["market_data_poll_ready"] = False
 market_analysis = MarketAnalysisService(StreamlitCachedMarketData, portfolio_repo)
 
 AssetService.set_adapters(
@@ -467,3 +476,5 @@ elif selected_tab == TAB_ASSETS:
     AssetsView().render()
 elif selected_tab == TAB_PLANNING:
     PlanningView().render()
+
+render_market_data_status()

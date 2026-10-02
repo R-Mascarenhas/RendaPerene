@@ -301,71 +301,43 @@ class MarketData:
         return AssetsCatalogDAO(MarketData.resolve_catalog_path()).load_catalog()
 
     @staticmethod
-    def get_current_ipca_l12m() -> float:
+    def get_current_ipca_l12m(*, strict: bool = False) -> float:
         """Dynamically fetches the official 12-month accumulated IPCA index from the Banco Central (BCB) SGS API Series 13522."""
-        import requests
-
-        url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.13522/dados/ultimos/1?formato=json"
-        try:
-            response = requests.get(url, timeout=5)
-            data = response.json()
-            if data and len(data) > 0 and "valor" in data[0]:
-                return float(data[0]["valor"])
-        except Exception as error:
-            logger.warning(
-                "market_data.fallback provider=bcb indicator=ipca error_type=%s",
-                type(error).__name__,
-            )
-        else:
-            logger.warning(
-                "market_data.fallback provider=bcb indicator=ipca error_type=InvalidResponse"
-            )
-        return 4.50  # Highly realistic Brazilian fallback IPCA proxy if the BCB API is temporarily down
+        return MarketData._get_bcb_indicator("ipca", "13522", 4.50, strict=strict)
 
     @staticmethod
-    def get_current_selic() -> float:
+    def get_current_selic(*, strict: bool = False) -> float:
         """Dynamically fetches the official annualized SELIC Target rate from the Banco Central (BCB) SGS API Series 1178."""
-        import requests
-
-        url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1178/dados/ultimos/1?formato=json"
-        try:
-            response = requests.get(url, timeout=5)
-            data = response.json()
-            if data and len(data) > 0 and "valor" in data[0]:
-                return float(data[0]["valor"])
-        except Exception as error:
-            logger.warning(
-                "market_data.fallback provider=bcb indicator=selic error_type=%s",
-                type(error).__name__,
-            )
-        else:
-            logger.warning(
-                "market_data.fallback provider=bcb indicator=selic error_type=InvalidResponse"
-            )
-        return 10.50  # Highly realistic Brazilian fallback SELIC proxy if the BCB API is temporarily down
+        return MarketData._get_bcb_indicator("selic", "1178", 10.50, strict=strict)
 
     @staticmethod
-    def get_current_minimum_wage() -> float:
+    def get_current_minimum_wage(*, strict: bool = False) -> float:
         """Dynamically fetches the current Brazilian minimum wage from the Banco Central (BCB) API Series 1619."""
+        return MarketData._get_bcb_indicator("minimum_wage", "1619", 1621.0, strict=strict)
+
+    @staticmethod
+    def _get_bcb_indicator(indicator: str, series: str, fallback: float, *, strict: bool) -> float:
+        """Keep headless fallbacks while allowing refreshers to reject failed responses."""
         import requests
 
-        url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1619/dados/ultimos/1?formato=json"
+        url = f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series}/dados/ultimos/1?formato=json"
         try:
             response = requests.get(url, timeout=5)
+            response.raise_for_status()
             data = response.json()
-            if data and len(data) > 0 and "valor" in data[0]:
-                return float(data[0]["valor"])
+            value = float(data[0]["valor"])
+            if not math.isfinite(value) or (indicator != "ipca" and value <= 0):
+                raise ValueError("Invalid indicator value.")
+            return value
         except Exception as error:
             logger.warning(
-                "market_data.fallback provider=bcb indicator=minimum_wage error_type=%s",
+                "market_data.fallback provider=bcb indicator=%s error_type=%s",
+                indicator,
                 type(error).__name__,
             )
-        else:
-            logger.warning(
-                "market_data.fallback provider=bcb indicator=minimum_wage "
-                "error_type=InvalidResponse"
-            )
-        return 1621.0
+            if strict:
+                raise ValueError("Market indicator unavailable.") from None
+        return fallback
 
 
 # Attach direct clear dummy functions for backwards compatibility in headless environments

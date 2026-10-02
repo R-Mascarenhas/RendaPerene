@@ -1,6 +1,7 @@
 import errno
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -17,6 +18,8 @@ from pathlib import Path
 
 from platformdirs.unix import Unix
 from platformdirs.windows import Windows
+
+logger = logging.getLogger(__name__)
 
 APP_NAME = "RendaPerene"
 DEFAULT_PORTFOLIO = "portfolio.db"
@@ -1382,7 +1385,14 @@ class ApplicationPaths:
                 rollback_generation.unlink()
             with suppress(FileNotFoundError):
                 rollback_marker.unlink()
-        except (OSError, sqlite3.DatabaseError, ValueError):
+        except (OSError, sqlite3.DatabaseError, ValueError) as error:
+            logger.warning(
+                "legacy_migration.copy_failed error_type=%s errno=%s winerror=%s sqlite_errorname=%s",
+                type(error).__name__,
+                getattr(error, "errno", None),
+                getattr(error, "winerror", None),
+                getattr(error, "sqlite_errorname", None),
+            )
             return MigrationResult(
                 source,
                 destination,

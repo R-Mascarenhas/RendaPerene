@@ -184,6 +184,9 @@ A importação da B3 é iniciada pelo usuário: baixe a planilha oficial no Port
 Durante a revisão, alterar uma escolha atualiza apenas o bloco de importação e reutiliza a
 planilha e as sugestões já preparadas. Se o arquivo ou a carteira mudar, as sugestões são
 renovadas e as escolhas anteriores são limpas. Todos os vínculos são revalidados ao confirmar.
+Quando várias linhas da B3 podem ser conciliadas sem reutilizar lançamentos manuais, as opções
+preservam uma combinação compatível entre essas linhas. Você continua escolhendo cada uma
+individualmente, sem seleção automática.
 
 Se houver combinações demais para concluir a comparação com segurança, a aplicação interrompe
 a importação e pede a revisão dos lançamentos. Nenhuma linha dessa planilha é gravada nesse caso.

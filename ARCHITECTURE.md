@@ -336,6 +336,12 @@ e visitas a estados parciais,
 e a validação admite até 65.536 pares por linha B3. Se algum limite for atingido, a busca gera
 um erro explícito na etapa de sugestões, antes de importar qualquer linha da planilha. Uma busca
 incompleta nunca é tratada como ausência de correspondência.
+A preparação compara também as linhas que disputam os mesmos lançamentos manuais. Se houver
+uma combinação válida para todas essas linhas sem reutilizar lançamentos, um grupo dessa
+combinação é preservado no início das opções de cada linha, mesmo quando ficaria fora das
+primeiras 25 sugestões independentes. Nenhuma opção é selecionada automaticamente. A busca
+conjunta é feita uma vez por preparação e tem um orçamento de 524.288 passos; atingir esse
+limite interrompe a importação explicitamente, em vez de descartar silenciosamente combinações.
 A versão 6 cria `b3_manual_reconciliations` para associar uma linha agregada da B3 a várias
 operações manuais sem fundir seus registros.
 O vínculo registra a confirmação com a B3 sem mudar `transaction_origin='MANUAL'`.

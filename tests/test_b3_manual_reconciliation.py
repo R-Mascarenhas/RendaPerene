@@ -232,6 +232,49 @@ def test_equivalent_subset_states_keep_distinct_valid_suggestions():
     assert all(len(group["ids"]) == 10 for group in groups)
 
 
+@pytest.mark.parametrize(
+    ("prices", "first_quantity", "second_quantity", "second_price"),
+    [([20.0] * 20, 10, 10, 20.0), ([20.0] * 8 + [19.0] * 2 + [21.0] * 2, 6, 2, 21.0)],
+)
+def test_multiple_b3_rows_offer_a_disjoint_manual_assignment(
+    prices, first_quantity, second_quantity, second_price
+):
+    for index, price in enumerate(prices):
+        assert AssetService.add_transaction("BBAS3", "2026-10-02", "BUY", 1, price, index / 100)
+    first = b3_trade("2026-10-06", quantity=first_quantity)
+    second = b3_trade("2026-10-06", price=second_price, quantity=second_quantity)
+    second.loc[0, "Instituição"] = "Outra Corretora"
+    frame = pd.concat([first, second], ignore_index=True)
+
+    candidates = AssetService.find_b3_manual_trade_candidates(frame)
+
+    assert len(candidates) == 2
+    assert set(candidates[0]["manual_groups"][0]["ids"]).isdisjoint(
+        candidates[1]["manual_groups"][0]["ids"]
+    )
+    assert all(len(candidate["manual_groups"]) <= 25 for candidate in candidates)
+    assignment = next(
+        (
+            (first_group, second_group)
+            for first_group in candidates[0]["manual_groups"]
+            for second_group in candidates[1]["manual_groups"]
+            if set(first_group["ids"]).isdisjoint(second_group["ids"])
+        ),
+        None,
+    )
+    assert assignment is not None
+    assert AssetService.process_b3_import(
+        frame,
+        manual_trade_links={
+            candidate["source_key"]: group["ids"]
+            for candidate, group in zip(candidates, assignment, strict=True)
+        },
+    ) == (2, 0)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == len(prices)
+        assert conn.execute("SELECT COUNT(*) FROM b3_import_records").fetchone()[0] == 2
+
+
 def test_distinct_price_search_does_not_store_every_full_subset():
     rows = [
         {"id": index, "date": "2026-10-02", "quantity": 1, "unit_price": 20 + 2**index / 10**7}

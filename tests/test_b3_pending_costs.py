@@ -74,9 +74,7 @@ def test_zero_basis_returns_are_unavailable(monkeypatch):
     api = AssetService.get_default()._market_data_api
     analysis_api = AssetService.get_default()._market_analysis_api
     monkeypatch.setattr(api, "get_batch_quotes", lambda tickers: {"BBAS3": 30})
-    monkeypatch.setattr(
-        analysis_api, "get_ticker_market_analysis", lambda *args, **kwargs: {}
-    )
+    monkeypatch.setattr(analysis_api, "get_ticker_market_analysis", lambda *args, **kwargs: {})
 
     positions, metrics = AssetService.get_portfolio_summary_metrics(
         AssetService.calculate_positions()
@@ -604,19 +602,19 @@ def test_known_deposit_reconciles_legacy_zero_cost_deposit():
         assert conn.execute("SELECT COUNT(*) FROM b3_import_records").fetchone()[0] == 1
 
 
-def test_known_b3_adoption_reconciles_legacy_origin_after_value_change():
+def test_same_date_manual_trade_is_not_automatically_adopted_by_b3_import():
     AssetService.add_transaction("BBAS3", "2024-01-02", "BUY", 100, 20)
     first_import = pd.DataFrame([movement(value=2000, price=20)])
     second_import = pd.DataFrame([movement(value=2100, price=20)])
 
-    assert AssetService.process_b3_import(first_import) == (0, 0)
+    assert AssetService.process_b3_import(first_import) == (1, 0)
     assert AssetService.process_b3_import(second_import) == (0, 0)
 
     with closing(PortfolioDAO().get_personal_connection()) as conn:
-        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 2
         assert conn.execute(
-            "SELECT transaction_origin, cost_status FROM transactions"
-        ).fetchone() == ("MANUAL", "KNOWN")
+            "SELECT transaction_origin, cost_status FROM transactions ORDER BY id"
+        ).fetchall() == [("MANUAL", "KNOWN"), ("B3", "KNOWN")]
 
 
 def test_known_import_reconciles_derived_price_with_official_price():
@@ -812,9 +810,7 @@ def test_pending_cost_hides_portfolio_profit_and_holdings_metrics(monkeypatch):
     api = AssetService.get_default()._market_data_api
     analysis_api = AssetService.get_default()._market_analysis_api
     monkeypatch.setattr(api, "get_batch_quotes", lambda tickers: {"BBAS3": 30})
-    monkeypatch.setattr(
-        analysis_api, "get_ticker_market_analysis", lambda *args, **kwargs: {}
-    )
+    monkeypatch.setattr(analysis_api, "get_ticker_market_analysis", lambda *args, **kwargs: {})
     positions, metrics = AssetService.get_portfolio_summary_metrics(
         AssetService.calculate_positions()
     )

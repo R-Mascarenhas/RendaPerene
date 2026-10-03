@@ -1606,6 +1606,7 @@ class ApplicationPaths:
                 }
                 expected_tables = {
                     "b3_import_records",
+                    "b3_manual_reconciliations",
                     "transactions",
                     "dividends",
                     "tracked_market_assets",
@@ -1630,6 +1631,7 @@ class ApplicationPaths:
 
                 user_data_tables = (
                     "b3_import_records",
+                    "b3_manual_reconciliations",
                     "transactions",
                     "dividends",
                     "tracked_market_assets",

@@ -59,9 +59,19 @@ class B3ExcelParserAdapter:
                 movement = str(row.get("Tipo de Movimentação", row.get("Movimentação", ""))).strip()
                 raw_entry_exit = row.get("Entrada/Saída", "")
                 entry_exit = "" if pd.isna(raw_entry_exit) else str(raw_entry_exit).strip().lower()
-                date_str = str(row.get("Data do Negócio", row.get("Data", ""))).strip()
-
-                date = pd.to_datetime(date_str, dayfirst="/" in date_str).strftime("%Y-%m-%d")
+                date_column = next(
+                    (
+                        column
+                        for column in ("Data do Negócio", "Data", "Data de Liquidação")
+                        if pd.notna(row.get(column))
+                        and str(row.get(column)).strip() not in ("", "-")
+                    ),
+                    None,
+                )
+                if date_column is None:
+                    continue
+                date_text = str(row[date_column]).strip()
+                date = pd.to_datetime(date_text, dayfirst="/" in date_text).strftime("%Y-%m-%d")
 
                 raw_product = str(row.get("Código de Negociação", row.get("Produto", ""))).strip()
                 try:
@@ -191,6 +201,7 @@ class B3ExcelParserAdapter:
                         {
                             "ticker": ticker,
                             "date": date,
+                            "date_is_business": date_column == "Data do Negócio",
                             "transaction_type": t_type,
                             "quantity": quantity,
                             "unit_price": t_price,
@@ -230,6 +241,7 @@ class B3ExcelParserAdapter:
                 columns=[
                     "ticker",
                     "date",
+                    "date_is_business",
                     "transaction_type",
                     "quantity",
                     "unit_price",
@@ -243,7 +255,14 @@ class B3ExcelParserAdapter:
             )
             if transactions_list
             else pd.DataFrame(
-                columns=["ticker", "date", "transaction_type", "quantity", "unit_price", "fees"]
+                columns=[
+                    "ticker",
+                    "date",
+                    "transaction_type",
+                    "quantity",
+                    "unit_price",
+                    "fees",
+                ]
             )
         )
         if not transactions_df.empty:

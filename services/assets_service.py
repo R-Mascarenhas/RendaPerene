@@ -161,7 +161,12 @@ class AssetService:
         return success
 
     @hybridmethod
-    def process_b3_import(self, df: pd.DataFrame, progress_callback=None) -> tuple[int, int]:
+    def process_b3_import(
+        self,
+        df: pd.DataFrame,
+        progress_callback=None,
+        manual_trade_links: dict[str, int | list[int]] | None = None,
+    ) -> tuple[int, int]:
         """Processes a DataFrame imported from B3, routing and translating row categories to English."""
         if self._excel_parser is None:
             raise RuntimeError("No ExcelParserPort adapter was injected into AssetService.")
@@ -196,6 +201,8 @@ class AssetService:
             if row.get("source_key"):
                 record = row.to_dict()
                 record["_reconciliation_context"] = reconciliation_context
+                if manual_trade_links:
+                    record["_manual_transaction_id"] = manual_trade_links.get(record["source_key"])
                 if not record.get("source_record"):
                     continue
                 source = json.loads(record["source_record"])
@@ -249,6 +256,93 @@ class AssetService:
             processed_dividends,
         )
         return processed_transactions, processed_dividends
+
+    @hybridmethod
+    def find_b3_manual_trade_candidates(self, df: pd.DataFrame) -> list[dict]:
+        """Find reviewable manual trade candidates without changing the portfolio."""
+        if self._excel_parser is None:
+            raise RuntimeError("No ExcelParserPort adapter was injected into AssetService.")
+        transactions, _ = self._excel_parser.parse_b3_excel(df)
+        candidates = []
+        for record in transactions.to_dict("records"):
+            if record.get("event_kind") != "TRADE" or record.get("cost_status") != "KNOWN":
+                continue
+            source = json.loads(record["source_record"])
+            manual_records = self._portfolio_repo.get_manual_trade_candidates(record)
+            groups = self._find_matching_manual_groups(manual_records, record, source)
+            if groups:
+                candidates.append(
+                    {
+                        "source_key": record["source_key"],
+                        "b3": {
+                            "date": record["date"],
+                            "ticker": record["ticker"],
+                            "transaction_type": record["transaction_type"],
+                            "quantity": record["quantity"],
+                            "unit_price": record["unit_price"],
+                            "value": source.get("value"),
+                            "institution": source.get("institution", ""),
+                        },
+                        "manual_candidates": [
+                            group["transactions"][0]
+                            for group in groups
+                            if len(group["transactions"]) == 1
+                        ],
+                        "manual_groups": groups,
+                    }
+                )
+        return candidates
+
+    @staticmethod
+    def _find_matching_manual_groups(manual_records, record, source):
+        """Find manual trade subsets matching the B3 aggregate quantity and rounded average."""
+        ordered = sorted(manual_records, key=lambda item: (item["date"], item["id"]))
+        quantity = int(record["quantity"])
+        groups = []
+        visited_states = 0
+
+        def visit(start, selected, selected_quantity, selected_value):
+            nonlocal visited_states
+            visited_states += 1
+            if selected_quantity == quantity:
+                average = selected_value / quantity
+                if abs(average - float(record["unit_price"])) <= 0.0005 + 1e-12:
+                    reported_value = source.get("value")
+                    tolerance = max(0.02, quantity * 0.0005 + 0.01)
+                    if (
+                        reported_value is None
+                        or abs(float(reported_value) - selected_value) <= tolerance
+                    ):
+                        rows = list(selected)
+                        groups.append(
+                            {
+                                "ids": [int(item["id"]) for item in rows],
+                                "transactions": rows,
+                                "quantity": quantity,
+                                "weighted_unit_price": average,
+                                "total_value": selected_value,
+                            }
+                        )
+                return
+            if selected_quantity > quantity or len(groups) >= 25 or visited_states >= 25_000:
+                return
+            for index in range(start, len(ordered)):
+                if visited_states >= 25_000 or len(groups) >= 25:
+                    break
+                item = ordered[index]
+                item_quantity = int(item["quantity"])
+                if selected_quantity + item_quantity <= quantity:
+                    if selected and item["date"] != selected[0]["date"]:
+                        continue
+                    visit(
+                        index + 1,
+                        (*selected, item),
+                        selected_quantity + item_quantity,
+                        selected_value + item_quantity * float(item["unit_price"]),
+                    )
+
+        visit(0, (), 0, 0.0)
+        return groups
 
     @staticmethod
     def _has_sufficient_cost_history(history: pd.DataFrame, required_quantity: int) -> bool:

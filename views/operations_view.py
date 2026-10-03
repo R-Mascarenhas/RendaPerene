@@ -9,6 +9,7 @@ from core.strings import (
     MSG_SMART_IMPORTER_SUCCESS,
     MSG_SMART_IMPORTER_TITLE,
 )
+from core.utils.formatter import Formatter
 from services.assets_service import AssetService
 from views.components.manual_entry import ManualEntryWidget
 from views.components.portfolio_activity import PortfolioActivityWidget
@@ -108,36 +109,117 @@ class OperationsView:
             if file_key not in st.session_state.processed_files:
                 try:
                     st.session_state.b3_import_success_msg = None
-                    progress_bar = st.progress(0.0, text="Lendo arquivo Excel da B3...")
                     df_excel = pd.read_excel(b3_file)
-
-                    last_pct = -1.0
-
-                    def update_progress(current: int, total: int):
-                        nonlocal last_pct
-                        pct = current / total if total > 0 else 0.0
-                        clamped_pct = max(0.0, min(1.0, float(pct)))
-                        # Throttle updates: only update progress bar if percentage increases by >= 5% or it's the last row
-                        if (clamped_pct - last_pct) >= 0.05 or current == total:
-                            progress_bar.progress(
-                                clamped_pct,
-                                text=f"📊 Processando linha {current} de {total}... ({int(clamped_pct * 100)}%)",
+                    reconciliation_candidates = AssetService.find_b3_manual_trade_candidates(
+                        df_excel
+                    )
+                    if reconciliation_candidates:
+                        st.info(
+                            "Encontramos operações manuais que podem corresponder a linhas da B3. "
+                            "Confira cada sugestão; a importação só vincula operações que você confirmar."
+                        )
+                        links = {}
+                        choices_complete = True
+                        with st.container():
+                            for index, candidate in enumerate(reconciliation_candidates):
+                                b3 = candidate["b3"]
+                                st.markdown(
+                                    f"**{b3['ticker']} · "
+                                    f"{'Compra' if b3['transaction_type'] == 'BUY' else 'Venda'} · "
+                                    f"{b3['quantity']} cotas · "
+                                    rf"R\$ {b3['unit_price']:.2f} · "
+                                    rf"total R\$ {b3['value']:.2f}**"
+                                )
+                                st.caption(
+                                    f"Data na planilha B3: {pd.Timestamp(b3['date']).strftime('%d/%m/%Y')}"
+                                )
+                                if b3["institution"]:
+                                    st.caption(f"Instituição na B3: {b3['institution']}")
+                                options = [
+                                    "Importar como nova operação",
+                                    *candidate["manual_groups"],
+                                ]
+                                selected = st.selectbox(
+                                    "Lançamento manual correspondente",
+                                    options,
+                                    index=None,
+                                    placeholder="Selecione uma opção",
+                                    key=f"b3_match_{file_key}_{index}",
+                                    format_func=lambda item: (
+                                        item
+                                        if isinstance(item, str)
+                                        else (
+                                            f"{len(item['transactions'])} "
+                                            f"{'Lançamento' if len(item['transactions']) == 1 else 'Lançamentos'}: "
+                                            f"{pd.Timestamp(item['transactions'][0]['date']).strftime('%d/%m/%Y')} · "
+                                            + " + ".join(
+                                                f"{tx['quantity']} × "
+                                                f"{Formatter.format_currency(tx['unit_price'])}"
+                                                + (
+                                                    f" + taxa {Formatter.format_currency(tx['fees'])}"
+                                                    if tx["fees"] != 0
+                                                    else ""
+                                                )
+                                                for tx in item["transactions"]
+                                            )
+                                        )
+                                    ),
+                                )
+                                if selected is None:
+                                    choices_complete = False
+                                elif isinstance(selected, dict):
+                                    links[candidate["source_key"]] = selected["ids"]
+                            linked_transaction_ids = [
+                                transaction_id
+                                for transaction_ids in links.values()
+                                for transaction_id in transaction_ids
+                            ]
+                            duplicate_links = len(set(linked_transaction_ids)) != len(
+                                linked_transaction_ids
                             )
-                            last_pct = clamped_pct
-
-                    processed_tx, processed_div = AssetService.process_b3_import(
-                        df_excel, progress_callback=update_progress
-                    )
-
-                    progress_bar.progress(1.0, text="✅ Importação concluída!")
-                    success_text = MSG_SMART_IMPORTER_SUCCESS.format(
-                        tx_count=processed_tx, div_count=processed_div
-                    )
-                    st.session_state.b3_import_success_msg = success_text
-                    st.session_state.processed_files.add(file_key)
-                    st.session_state.b3_uploader_key += 1
-                    st.rerun()
+                            if duplicate_links:
+                                st.error(
+                                    "Cada lançamento manual pode corresponder a apenas uma linha B3."
+                                )
+                            submitted = st.button(
+                                "Confirmar e importar planilha",
+                                key=f"b3_reconciliation_{file_key}",
+                                disabled=not choices_complete or duplicate_links,
+                            )
+                        if submitted and choices_complete and not duplicate_links:
+                            self._process_b3_frame(df_excel, file_key, links)
+                    else:
+                        self._process_b3_frame(df_excel, file_key, {})
                 except Exception as e:
                     st.error(MSG_SMART_IMPORTER_ERROR.format(e=e))
             else:
                 pass
+
+    @staticmethod
+    def _process_b3_frame(df_excel, file_key, manual_trade_links):
+        progress_bar = st.progress(0.0, text="Lendo arquivo Excel da B3...")
+        last_pct = -1.0
+
+        def update_progress(current: int, total: int):
+            nonlocal last_pct
+            pct = current / total if total > 0 else 0.0
+            clamped_pct = max(0.0, min(1.0, float(pct)))
+            if (clamped_pct - last_pct) >= 0.05 or current == total:
+                progress_bar.progress(
+                    clamped_pct,
+                    text=f"📊 Processando linha {current} de {total}... ({int(clamped_pct * 100)}%)",
+                )
+                last_pct = clamped_pct
+
+        processed_tx, processed_div = AssetService.process_b3_import(
+            df_excel,
+            progress_callback=update_progress,
+            manual_trade_links=manual_trade_links,
+        )
+        progress_bar.progress(1.0, text="✅ Importação concluída!")
+        st.session_state.b3_import_success_msg = MSG_SMART_IMPORTER_SUCCESS.format(
+            tx_count=processed_tx, div_count=processed_div
+        )
+        st.session_state.processed_files.add(file_key)
+        st.session_state.b3_uploader_key += 1
+        st.rerun()

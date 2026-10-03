@@ -37,6 +37,52 @@ class PortfolioDAO:
         finally:
             conn.close()
 
+    def get_manual_trade_candidates(self, record: dict) -> list[dict]:
+        """Return unlinked manual trades with matching identity and a plausible settlement gap."""
+        matching_date = record["date"]
+        minimum_gap = 0 if record.get("date_is_business") else 2
+        maximum_gap = 0 if record.get("date_is_business") else 6
+        conn = self.get_personal_connection()
+        try:
+            already_imported = self._find_imported_source(conn, record)
+            if already_imported:
+                return []
+            rows = conn.execute(
+                """
+                SELECT id, date, ticker, transaction_type, quantity, unit_price, fees
+                FROM transactions
+                WHERE transaction_origin='MANUAL' AND ticker=? AND transaction_type=?
+                  AND julianday(?) - julianday(date) BETWEEN ? AND ?
+                  AND id NOT IN (
+                      SELECT transaction_id FROM b3_import_records
+                      WHERE transaction_id IS NOT NULL
+                  )
+                  AND id NOT IN (
+                      SELECT transaction_id FROM b3_manual_reconciliations
+                  )
+                ORDER BY date, id
+                """,
+                (
+                    record["ticker"],
+                    record["transaction_type"],
+                    matching_date,
+                    minimum_gap,
+                    maximum_gap,
+                ),
+            ).fetchall()
+            columns = (
+                "id",
+                "date",
+                "ticker",
+                "transaction_type",
+                "quantity",
+                "unit_price",
+                "fees",
+            )
+            return [dict(zip(columns, row, strict=True)) for row in rows]
+        finally:
+            conn.close()
+
     @staticmethod
     def _canonical_source_text(value) -> str:
         return (
@@ -46,19 +92,57 @@ class PortfolioDAO:
             .casefold()
         )
 
+    @staticmethod
+    def _find_imported_source(conn, record: dict):
+        """Keep existing reconciliations idempotent when obsolete date metadata is removed."""
+        existing = conn.execute(
+            "SELECT transaction_id FROM b3_import_records WHERE source_key=?",
+            (record["source_key"],),
+        ).fetchone()
+        if existing is not None:
+            return existing
+        source = json.loads(record["source_record"])
+
+        def comparable(source_record):
+            return {
+                key: PortfolioDAO._canonical_source_text(value)
+                if key in ("movement", "direction", "institution")
+                else value
+                for key, value in source_record.items()
+                if key not in ("trade_date", "settlement_date")
+            }
+
+        expected_source = comparable(source)
+        previous_sources = conn.execute(
+            "SELECT transaction_id, source_record FROM b3_import_records WHERE status='RECONCILED'"
+        ).fetchall()
+        for transaction_id, previous_source in previous_sources:
+            if comparable(json.loads(previous_source)) == expected_source:
+                return (transaction_id,)
+        return None
+
     def import_b3_transaction(self, record: dict, transfer_classifier) -> bool:
         """Persist source identity and ledger effect together under a SQLite write lock."""
         conn = self.get_personal_connection()
         try:
             conn.execute("BEGIN IMMEDIATE")
-            existing_source = conn.execute(
-                "SELECT transaction_id FROM b3_import_records WHERE source_key = ?",
-                (record["source_key"],),
-            ).fetchone()
+            existing_source = self._find_imported_source(conn, record)
             if existing_source:
                 if existing_source[0] is not None:
                     record.get("_reconciliation_context", set()).add(existing_source[0])
                 return False
+            manual_transaction_id = record.get("_manual_transaction_id")
+            if manual_transaction_id is not None:
+                manual_ids = (
+                    [int(value) for value in manual_transaction_id]
+                    if isinstance(manual_transaction_id, (list, tuple, set))
+                    else [int(manual_transaction_id)]
+                )
+                if not self._link_manual_trade_group(conn, record, manual_ids):
+                    conn.rollback()
+                    raise ValueError("A seleção manual não corresponde mais à linha B3.")
+                conn.commit()
+                return True
             ignored = record["transaction_type"] == "TRANSFER_OUT" or record.get(
                 "matched_custody_transfer", False
             )
@@ -96,11 +180,10 @@ class PortfolioDAO:
                     WHERE date=? AND ticker=? AND transaction_type=? AND quantity=?
                       AND unit_price=? AND fees=?
                       AND id NOT IN (SELECT transaction_id FROM b3_import_records WHERE transaction_id IS NOT NULL)
+                      AND id NOT IN (SELECT transaction_id FROM b3_manual_reconciliations)
                 """
-                if record["event_kind"] == "TRADE" and record["cost_status"] == "KNOWN":
-                    exact_query += (
-                        " AND NOT (transaction_origin='MANUAL' AND unit_price=0 AND fees=0)"
-                    )
+                if record["event_kind"] == "TRADE":
+                    exact_query += " AND transaction_origin != 'MANUAL'"
                 if record["cost_status"] == "PENDING":
                     exact_query += " AND transaction_origin NOT IN ('MANUAL', 'LEGACY')"
                 existing = conn.execute(exact_query, values).fetchone()
@@ -162,8 +245,15 @@ class PortfolioDAO:
                         )
                 else:
                     cursor = conn.execute(
-                        "INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees, cost_status, transaction_origin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        (*values, record["cost_status"], "B3"),
+                        """INSERT INTO transactions
+                        (date, ticker, transaction_type, quantity, unit_price, fees,
+                         cost_status, transaction_origin)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            *values,
+                            record["cost_status"],
+                            "B3",
+                        ),
                     )
                     transaction_id = cursor.lastrowid
                     created = True
@@ -208,6 +298,69 @@ class PortfolioDAO:
             return created
         finally:
             conn.close()
+
+    @staticmethod
+    def _link_manual_trade_group(conn, record: dict, manual_ids: list[int]) -> bool:
+        """Validate and link a B3 aggregate to its original manual trade rows atomically."""
+        if not manual_ids or len(set(manual_ids)) != len(manual_ids):
+            return False
+        placeholders = ",".join("?" for _ in manual_ids)
+        rows = conn.execute(
+            f"""SELECT id, date, ticker, transaction_type, quantity, unit_price,
+                       transaction_origin
+                FROM transactions WHERE id IN ({placeholders})""",
+            manual_ids,
+        ).fetchall()
+        if len(rows) != len(manual_ids):
+            return False
+        matching_date = record["date"]
+        minimum_gap = 0 if record.get("date_is_business") else 2
+        maximum_gap = 0 if record.get("date_is_business") else 6
+        if (
+            any(
+                row[2] != record["ticker"]
+                or row[3] != record["transaction_type"]
+                or row[6] != "MANUAL"
+                or not minimum_gap
+                <= (pd.Timestamp(matching_date) - pd.Timestamp(row[1])).days
+                <= maximum_gap
+                for row in rows
+            )
+            or len({row[1] for row in rows}) != 1
+        ):
+            return False
+        total_quantity = sum(int(row[4]) for row in rows)
+        if total_quantity != int(record["quantity"]):
+            return False
+        weighted_price = sum(int(row[4]) * float(row[5]) for row in rows) / total_quantity
+        if abs(weighted_price - float(record["unit_price"])) > 0.0005 + 1e-12:
+            return False
+        source_value = json.loads(record["source_record"]).get("value")
+        expected_value = sum(int(row[4]) * float(row[5]) for row in rows)
+        tolerance = max(0.02, total_quantity * 0.0005 + 0.01)
+        if source_value is not None and abs(float(source_value) - expected_value) > tolerance:
+            return False
+        if conn.execute(
+            f"""SELECT transaction_id FROM b3_manual_reconciliations
+                WHERE transaction_id IN ({placeholders})
+                UNION ALL
+                SELECT transaction_id FROM b3_import_records
+                WHERE transaction_id IN ({placeholders})
+                LIMIT 1""",
+            manual_ids * 2,
+        ).fetchone():
+            return False
+        conn.execute(
+            """INSERT INTO b3_import_records
+               (source_key, source_record, event_kind, transaction_id, status)
+               VALUES (?, ?, ?, NULL, 'RECONCILED')""",
+            (record["source_key"], record["source_record"], record["event_kind"]),
+        )
+        conn.executemany(
+            "INSERT INTO b3_manual_reconciliations (source_key, transaction_id) VALUES (?, ?)",
+            [(record["source_key"], transaction_id) for transaction_id in manual_ids],
+        )
+        return True
 
     @staticmethod
     def _find_legacy_custody_transaction(conn, record: dict) -> int | None:
@@ -465,7 +618,9 @@ class PortfolioDAO:
         try:
             cursor.execute(
                 """
-                INSERT INTO transactions (date, ticker, transaction_type, quantity, unit_price, fees, transaction_origin)
+                INSERT INTO transactions
+                (date, ticker, transaction_type, quantity, unit_price, fees,
+                 transaction_origin)
                 VALUES (?, ?, ?, ?, ?, ?, 'MANUAL')
             """,
                 (date, ticker, transaction_type, quantity, unit_price, fees),
@@ -926,7 +1081,22 @@ class PortfolioDAO:
                 status TEXT NOT NULL
             )
         """)
-
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS b3_manual_reconciliations (
+                source_key TEXT NOT NULL,
+                transaction_id INTEGER NOT NULL UNIQUE,
+                PRIMARY KEY (source_key, transaction_id)
+            )
+        """)
+        cursor.execute("""
+            UPDATE transactions SET transaction_origin='MANUAL'
+            WHERE transaction_origin='B3' AND id IN (
+                SELECT m.transaction_id
+                FROM b3_manual_reconciliations m
+                JOIN b3_import_records b ON b.source_key=m.source_key
+                WHERE b.status='RECONCILED' AND b.event_kind='TRADE'
+            )
+        """)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tracked_market_assets (
                 ticker TEXT PRIMARY KEY

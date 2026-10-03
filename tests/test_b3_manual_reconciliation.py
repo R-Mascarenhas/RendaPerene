@@ -199,6 +199,38 @@ def test_b3_aggregate_can_be_reconciled_to_multiple_manual_trades():
         ).fetchone()[0] == 2
 
 
+def test_late_matching_group_is_found_without_duplicate_financial_effect():
+    for index, price in enumerate([21.0] * 10 + [20.0] * 10):
+        assert AssetService.add_transaction("BBAS3", "2026-10-02", "BUY", 1, price, index / 100)
+    frame = b3_trade("2026-10-06", quantity=10)
+
+    candidates = AssetService.find_b3_manual_trade_candidates(frame)
+
+    assert len(candidates) == 1
+    group = candidates[0]["manual_groups"][0]
+    assert len(group["ids"]) == 10
+    assert all(row["unit_price"] == 20.0 for row in group["transactions"])
+    assert AssetService.process_b3_import(
+        frame, manual_trade_links={candidates[0]["source_key"]: group["ids"]}
+    ) == (1, 0)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT SUM(quantity), COUNT(*) FROM transactions").fetchone() == (20, 20)
+
+
+def test_equivalent_subset_states_keep_distinct_valid_suggestions():
+    for index in range(20):
+        assert AssetService.add_transaction("BBAS3", "2026-10-02", "BUY", 1, 20, index / 100)
+
+    candidate = AssetService.find_b3_manual_trade_candidates(
+        b3_trade("2026-10-06", quantity=10)
+    )[0]
+
+    groups = candidate["manual_groups"]
+    assert len(groups) == 25
+    assert len({tuple(group["ids"]) for group in groups}) == 25
+    assert all(len(group["ids"]) == 10 for group in groups)
+
+
 def test_manual_group_is_revalidated_on_import():
     assert AssetService.add_transaction("CMIG4", "2026-10-02", "BUY", 200, 10.86)
     assert AssetService.add_transaction("CMIG4", "2026-10-02", "BUY", 5, 10.93)

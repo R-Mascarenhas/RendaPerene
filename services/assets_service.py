@@ -2,6 +2,8 @@ import datetime
 import json
 import logging
 import math
+from decimal import Decimal
+from itertools import groupby
 
 import pandas as pd
 
@@ -299,49 +301,60 @@ class AssetService:
         ordered = sorted(manual_records, key=lambda item: (item["date"], item["id"]))
         quantity = int(record["quantity"])
         groups = []
-        visited_states = 0
-
-        def visit(start, selected, selected_quantity, selected_value):
-            nonlocal visited_states
-            visited_states += 1
-            if selected_quantity == quantity:
-                average = selected_value / quantity
-                if abs(average - float(record["unit_price"])) <= 0.0005 + 1e-12:
-                    reported_value = source.get("value")
-                    tolerance = max(0.02, quantity * 0.0005 + 0.01)
-                    if (
-                        reported_value is None
-                        or abs(float(reported_value) - selected_value) <= tolerance
-                    ):
-                        rows = list(selected)
-                        groups.append(
-                            {
-                                "ids": [int(item["id"]) for item in rows],
-                                "transactions": rows,
-                                "quantity": quantity,
-                                "weighted_unit_price": average,
-                                "total_value": selected_value,
-                            }
-                        )
-                return
-            if selected_quantity > quantity or len(groups) >= 25 or visited_states >= 25_000:
-                return
-            for index in range(start, len(ordered)):
-                if visited_states >= 25_000 or len(groups) >= 25:
-                    break
-                item = ordered[index]
+        for _, dated_records in groupby(ordered, key=lambda item: item["date"]):
+            rows = list(dated_records)
+            remaining_quantity = sum(int(item["quantity"]) for item in rows)
+            states = {(0, Decimal(0)): [()]}
+            for item in rows:
                 item_quantity = int(item["quantity"])
-                if selected_quantity + item_quantity <= quantity:
-                    if selected and item["date"] != selected[0]["date"]:
+                item_value = item_quantity * Decimal(str(item["unit_price"]))
+                remaining_quantity -= item_quantity
+                next_states = {
+                    key: selections
+                    for key, selections in states.items()
+                    if key[0] + remaining_quantity >= quantity
+                }
+                for (selected_quantity, selected_value), selections in states.items():
+                    combined_quantity = selected_quantity + item_quantity
+                    if combined_quantity > quantity:
                         continue
-                    visit(
-                        index + 1,
-                        (*selected, item),
-                        selected_quantity + item_quantity,
-                        selected_value + item_quantity * float(item["unit_price"]),
-                    )
-
-        visit(0, (), 0, 0.0)
+                    combined_value = selected_value + item_value
+                    if combined_quantity == quantity:
+                        for selected in selections:
+                            transactions = [*selected, item]
+                            total_value = sum(
+                                int(tx["quantity"]) * float(tx["unit_price"]) for tx in transactions
+                            )
+                            average = total_value / quantity
+                            reported_value = source.get("value")
+                            tolerance = max(0.02, quantity * 0.0005 + 0.01)
+                            if abs(average - float(record["unit_price"])) > 0.0005 + 1e-12:
+                                continue
+                            if (
+                                reported_value is not None
+                                and abs(float(reported_value) - total_value) > tolerance
+                            ):
+                                continue
+                            groups.append(
+                                {
+                                    "ids": [int(tx["id"]) for tx in transactions],
+                                    "transactions": transactions,
+                                    "quantity": quantity,
+                                    "weighted_unit_price": average,
+                                    "total_value": total_value,
+                                }
+                            )
+                            if len(groups) == 25:
+                                return groups
+                    elif combined_quantity + remaining_quantity >= quantity:
+                        key = (combined_quantity, combined_value)
+                        # Equal quantity/value states have identical possible completions.
+                        # Keep enough paths for the UI limit without discarding a reachable state.
+                        paths = next_states.get(key, [])
+                        next_states[key] = (paths + [(*selected, item) for selected in selections])[
+                            :25
+                        ]
+                states = next_states
         return groups
 
     @staticmethod

@@ -1,24 +1,25 @@
-## Novidades em 0.11.0
+## Novidades em 0.11.1
 
-- O histórico de movimentações reúne transações e proventos da carteira, com filtros por período,
-  evento e ticker e páginas de até 25 registros. As cores acompanham o tema da interface.
-  A importação da B3 preserva a quantidade e o preço unitário dos proventos, usados também nos
-  indicadores anuais por cota.
-- As metas anuais por ativo agora são independentes dos proventos planejados e podem ser editadas
-  por cotas ou crescimento percentual sobre a posição de 1º de janeiro, com salvamento automático.
-  Metas antigas são convertidas em cotas fixas, preservando os alvos salvos. O acompanhamento
-  apresenta esforço anual estimado, valor restante e aporte externo necessário.
-- Em **Ativos → Carteira**, o detalhamento do ativo permite registrar movimentações e editar sua
-  meta anual diretamente. A meta individual fica sincronizada com a aba **Metas**, mesmo com o
-  acompanhamento geral desativado.
-- O histórico mensal e as metas anuais passam a considerar aportes líquidos: compras com taxas
-  menos vendas líquidas de taxas. Retiradas aparecem como valores negativos; transferências de
-  custódia ficam fora do cálculo.
-- O patrimônio inicial foi corrigido nos históricos de planejamento e na Simulação Rápida.
-  Os gráficos de projeção incluem o marcador **Hoje**, e as referências do mês zero foram ajustadas.
-- A navegação reutiliza projeções locais enquanto a carteira não muda, com invalidação por revisão
-  do banco e métricas de desempenho. Também foi corrigida a disputa de bloqueio durante migrações
-  concorrentes no Windows.
+- Cotações, históricos e indicadores econômicos são atualizados em segundo plano, sem bloquear
+  a navegação. A carteira abre com os dados locais e o último dado de mercado válido; a interface
+  informa a idade dos dados, as atualizações em andamento e eventuais falhas de conexão.
+- Enquanto faltam cotações, campos dependentes delas mostram **N/D**, e patrimônio total,
+  rentabilidade, pesos e gráficos de composição aguardam dados completos. Indicadores econômicos
+  sem resposta usam referências provisórias identificadas na tela. A atualização do salário mínimo
+  pelo BCB mantém o valor atual até receber e salvar uma resposta válida.
+- O cache de mercado e as projeções locais passam a ser reutilizados após reiniciar a aplicação,
+  reduzindo consultas e recálculos. O cache é local, descartável e fica fora dos backups da carteira.
+- Em **Ativos → Carteira**, cada ticker tem uma aba, e apenas o ativo selecionado é carregado.
+  Os formulários **Registrar movimentação** e **Meta anual deste ativo** são preparados ao abrir
+  seus blocos expansíveis; indicadores, gráficos e históricos aparecem automaticamente.
+- A importação da B3 permite conciliar uma operação consolidada com um ou mais lançamentos
+  manuais correspondentes, evitando duplicidade mediante confirmação. As sugestões comparam
+  ticker, tipo, datas, quantidade total e preço médio ponderado. Você escolhe os lançamentos
+  existentes ou **Importar como nova operação** antes de confirmar; datas, taxas e origem manual
+  são preservadas, e um lançamento não pode ser vinculado a mais de uma linha B3.
+- As escolhas da conciliação reutilizam a prévia da planilha e são revalidadas na confirmação.
+  Sugestões são renovadas ao mudar o arquivo ou a carteira. Se houver combinações demais para
+  comparar com segurança, a importação é interrompida antes de gravar a planilha.
 
 ## Sistemas suportados
 

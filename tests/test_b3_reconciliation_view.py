@@ -75,6 +75,21 @@ def test_import_requires_explicit_choice_for_every_candidate(monkeypatch, first_
         )
 
 
+def test_search_limit_stops_the_upload_before_any_rows_are_imported(monkeypatch):
+    monkeypatch.setattr("services.assets_service._MAX_B3_SUBSET_STATES", 4)
+    for index in range(6):
+        assert AssetService.add_transaction("BBAS3", "2026-10-02", "BUY", 1, 20, index / 100)
+    frame = pd.DataFrame([trade("CXSE3", 10, 15), trade("BBAS3", 3, 20)])
+
+    app = import_app(monkeypatch, frame)
+
+    assert not app.exception
+    assert any("muitos lançamentos manuais" in error.value for error in app.error)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM b3_import_records").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 6
+
+
 def test_confirmation_is_disabled_when_two_lines_reuse_the_same_manual_trade(monkeypatch):
     assert AssetService.add_transaction("BBAS3", "2026-10-02", "BUY", 100, 20)
     frame = pd.DataFrame(

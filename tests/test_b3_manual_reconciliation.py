@@ -1,4 +1,5 @@
 import json
+import tracemalloc
 from contextlib import closing
 
 import pandas as pd
@@ -229,6 +230,24 @@ def test_equivalent_subset_states_keep_distinct_valid_suggestions():
     assert len(groups) == 25
     assert len({tuple(group["ids"]) for group in groups}) == 25
     assert all(len(group["ids"]) == 10 for group in groups)
+
+
+def test_distinct_price_search_does_not_store_every_full_subset():
+    rows = [
+        {"id": index, "date": "2026-10-02", "quantity": 1, "unit_price": 20 + 2**index / 10**7}
+        for index in range(20)
+    ]
+    tracemalloc.start()
+    try:
+        groups = AssetService._find_matching_manual_groups(
+            rows, {"quantity": 10, "unit_price": 100}, {"value": 1000}
+        )
+        _, peak_bytes = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert groups == []
+    assert peak_bytes < 10 * 1024 * 1024
 
 
 def test_manual_group_is_revalidated_on_import():

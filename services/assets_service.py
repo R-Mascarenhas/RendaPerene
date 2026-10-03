@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import math
+from bisect import bisect_left, bisect_right
 from decimal import Decimal
 from itertools import groupby
 
@@ -23,6 +24,7 @@ from core.utils.ticker import normalize_b3_ticker
 from services.valuation_service import ValuationService
 
 logger = logging.getLogger(__name__)
+_MAX_B3_SUBSET_STATES = 65_536
 
 
 class AssetService:
@@ -297,64 +299,100 @@ class AssetService:
 
     @staticmethod
     def _find_matching_manual_groups(manual_records, record, source):
-        """Find manual trade subsets matching the B3 aggregate quantity and rounded average."""
+        """Match bounded half-subsets; abort rather than report an incomplete search as unmatched."""
         ordered = sorted(manual_records, key=lambda item: (item["date"], item["id"]))
         quantity = int(record["quantity"])
         groups = []
-        for _, dated_records in groupby(ordered, key=lambda item: item["date"]):
-            rows = list(dated_records)
-            remaining_quantity = sum(int(item["quantity"]) for item in rows)
-            states = {(0, Decimal(0)): [()]}
+        reported_value = source.get("value")
+        tolerance = max(0.02, quantity * 0.0005 + 0.01)
+        price = Decimal(str(record["unit_price"]))
+        price_margin = Decimal("0.0005") + Decimal("1e-12")
+        lower_value = quantity * (price - price_margin)
+        upper_value = quantity * (price + price_margin)
+        if reported_value is not None:
+            value = Decimal(str(reported_value))
+            lower_value = max(lower_value, value - Decimal(str(tolerance)))
+            upper_value = min(upper_value, value + Decimal(str(tolerance)))
+        # Widen only the lookup range; final validation uses the DAO's float comparisons.
+        lower_value -= Decimal("1e-8")
+        upper_value += Decimal("1e-8")
+
+        def search_limit_reached():
+            raise ValueError(
+                "Há muitos lançamentos manuais para comparar com segurança. "
+                "A importação foi interrompida antes de gravar qualquer linha. "
+                "Revise os lançamentos desse ativo antes de tentar novamente."
+            )
+
+        def subsets(rows):
+            states = [(0, Decimal(0), ())]
+            visited_states = 0
             for item in rows:
                 item_quantity = int(item["quantity"])
                 item_value = item_quantity * Decimal(str(item["unit_price"]))
-                remaining_quantity -= item_quantity
-                next_states = {
-                    key: selections
-                    for key, selections in states.items()
-                    if key[0] + remaining_quantity >= quantity
-                }
-                for (selected_quantity, selected_value), selections in states.items():
+                previous_count = len(states)
+                for index in range(previous_count):
+                    visited_states += 1
+                    if visited_states > _MAX_B3_SUBSET_STATES:
+                        search_limit_reached()
+                    selected_quantity, selected_value, selected = states[index]
                     combined_quantity = selected_quantity + item_quantity
                     if combined_quantity > quantity:
                         continue
-                    combined_value = selected_value + item_value
-                    if combined_quantity == quantity:
-                        for selected in selections:
-                            transactions = [*selected, item]
-                            total_value = sum(
-                                int(tx["quantity"]) * float(tx["unit_price"]) for tx in transactions
-                            )
-                            average = total_value / quantity
-                            reported_value = source.get("value")
-                            tolerance = max(0.02, quantity * 0.0005 + 0.01)
-                            if abs(average - float(record["unit_price"])) > 0.0005 + 1e-12:
-                                continue
-                            if (
-                                reported_value is not None
-                                and abs(float(reported_value) - total_value) > tolerance
-                            ):
-                                continue
-                            groups.append(
-                                {
-                                    "ids": [int(tx["id"]) for tx in transactions],
-                                    "transactions": transactions,
-                                    "quantity": quantity,
-                                    "weighted_unit_price": average,
-                                    "total_value": total_value,
-                                }
-                            )
-                            if len(groups) == 25:
-                                return groups
-                    elif combined_quantity + remaining_quantity >= quantity:
-                        key = (combined_quantity, combined_value)
-                        # Equal quantity/value states have identical possible completions.
-                        # Keep enough paths for the UI limit without discarding a reachable state.
-                        paths = next_states.get(key, [])
-                        next_states[key] = (paths + [(*selected, item) for selected in selections])[
-                            :25
-                        ]
-                states = next_states
+                    if len(states) >= _MAX_B3_SUBSET_STATES:
+                        search_limit_reached()
+                    states.append(
+                        (combined_quantity, selected_value + item_value, (*selected, item))
+                    )
+            return states
+
+        inspected_pairs = 0
+        for _, dated_records in groupby(ordered, key=lambda item: item["date"]):
+            rows = [item for item in dated_records if int(item["quantity"]) <= quantity]
+            middle = len(rows) // 2
+            left_states = subsets(rows[:middle])
+            right_by_quantity = {}
+            for selected_quantity, selected_value, selected in subsets(rows[middle:]):
+                right_by_quantity.setdefault(selected_quantity, []).append(
+                    (selected_value, selected)
+                )
+            right_values = {}
+            for selected_quantity, selections in right_by_quantity.items():
+                selections.sort(key=lambda selection: selection[0])
+                right_values[selected_quantity] = [selection[0] for selection in selections]
+            for selected_quantity, selected_value, selected in left_states:
+                complementary_quantity = quantity - selected_quantity
+                selections = right_by_quantity.get(complementary_quantity, [])
+                values = right_values.get(complementary_quantity, [])
+                start = bisect_left(values, lower_value - selected_value)
+                end = bisect_right(values, upper_value - selected_value)
+                for index in range(start, end):
+                    inspected_pairs += 1
+                    if inspected_pairs > _MAX_B3_SUBSET_STATES:
+                        search_limit_reached()
+                    transactions = [*selected, *selections[index][1]]
+                    total_value = sum(
+                        int(tx["quantity"]) * float(tx["unit_price"]) for tx in transactions
+                    )
+                    average = total_value / quantity
+                    if abs(average - float(record["unit_price"])) > 0.0005 + 1e-12:
+                        continue
+                    if (
+                        reported_value is not None
+                        and abs(float(reported_value) - total_value) > tolerance
+                    ):
+                        continue
+                    groups.append(
+                        {
+                            "ids": [int(tx["id"]) for tx in transactions],
+                            "transactions": transactions,
+                            "quantity": quantity,
+                            "weighted_unit_price": average,
+                            "total_value": total_value,
+                        }
+                    )
+                    if len(groups) == 25:
+                        return groups
         return groups
 
     @staticmethod

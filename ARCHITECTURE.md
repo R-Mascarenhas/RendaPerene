@@ -323,6 +323,12 @@ O DAO revalida o grupo e grava os vínculos e
 o registro de origem na mesma transação SQLite, sem criar ou apagar operações financeiras. As
 reimportações mantêm a identidade B3 e não duplicam o efeito na carteira. O histórico de
 movimentações continua mostrando apenas a data da operação.
+A busca divide os lançamentos de cada data em duas metades e combina subconjuntos por quantidade
+e intervalo de valor, exibindo até 25 grupos válidos. Cada metade admite até 65.536 subconjuntos
+e visitas a estados parciais,
+e a validação admite até 65.536 pares por linha B3. Se algum limite for atingido, a busca gera
+um erro explícito na etapa de sugestões, antes de importar qualquer linha da planilha. Uma busca
+incompleta nunca é tratada como ausência de correspondência.
 A versão 6 cria `b3_manual_reconciliations` para associar uma linha agregada da B3 a várias
 operações manuais sem fundir seus registros.
 O vínculo registra a confirmação com a B3 sem mudar `transaction_origin='MANUAL'`.

@@ -319,6 +319,13 @@ uma escolha explícita entre o lançamento existente e importar como nova opera�
 usam widgets fora de formulário para atualizar o botão a cada seleção; a confirmação fica
 desabilitada até todas as sugestões terem uma escolha válida, sem reutilizar uma operação manual
 em duas linhas B3. Ao escolher importar como nova, a operação B3 é importada separadamente.
+O bloco de importação usa um fragmento Streamlit para que as seleções não executem novamente
+as demais telas. A planilha lida e suas sugestões ficam somente na sessão atual, identificadas
+pelo conteúdo do arquivo, carteira ativa, geração do banco e revisão das movimentações. Alterar
+uma escolha reutiliza essa preparação; trocar o arquivo ou alterar a carteira renova as sugestões
+e limpa as escolhas anteriores. A preparação é descartada após importar, retirar o arquivo,
+trocar/restaurar a carteira ou ocorrer um erro. A confirmação continua revalidando os vínculos
+no DAO antes de gravar, inclusive se outra sessão tiver alterado a conciliação.
 O DAO revalida o grupo e grava os vínculos e
 o registro de origem na mesma transação SQLite, sem criar ou apagar operações financeiras. As
 reimportações mantêm a identidade B3 e não duplicam o efeito na carteira. O histórico de

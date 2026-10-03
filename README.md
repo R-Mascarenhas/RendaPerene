@@ -181,6 +181,10 @@ movimentação** e **Meta anual deste ativo** ficam em blocos expansíveis e só
 quando abertos.
 A importação da B3 é iniciada pelo usuário: baixe a planilha oficial no Portal do Investidor da B3 e envie-a pela aplicação. Quando houver operações manuais do mesmo ticker, tipo e data cuja quantidade total e média ponderada correspondam à linha consolidada da B3, a aplicação pede confirmação se a data B3 estiver dois a seis dias corridos depois, ou na mesma data quando a planilha explicitar o negócio. A instituição B3 aparece como referência para a decisão. Cada sugestão começa sem seleção: escolha o lançamento existente ou **Importar como nova operação** em todas as linhas antes de confirmar. O botão permanece desabilitado enquanto houver escolhas pendentes ou um lançamento manual repetido entre linhas. Os lançamentos, datas e taxas individuais são preservados na conciliação; a data da planilha fica no registro de origem da importação. Ao escolher importar como nova, a linha B3 entra como operação separada com a data informada pela B3. Bancos locais e planilhas pessoais são ignorados pelo Git; não faça commit desses arquivos.
 
+Durante a revisão, alterar uma escolha atualiza apenas o bloco de importação e reutiliza a
+planilha e as sugestões já preparadas. Se o arquivo ou a carteira mudar, as sugestões são
+renovadas e as escolhas anteriores são limpas. Todos os vínculos são revalidados ao confirmar.
+
 Se houver combinações demais para concluir a comparação com segurança, a aplicação interrompe
 a importação e pede a revisão dos lançamentos. Nenhuma linha dessa planilha é gravada nesse caso.
 

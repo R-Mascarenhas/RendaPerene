@@ -441,6 +441,7 @@ def test_b3_parser_adapter_isolation():
     assert list(transactions_df.columns) == [
         "ticker",
         "date",
+        "date_is_business",
         "transaction_type",
         "quantity",
         "unit_price",
@@ -453,6 +454,7 @@ def test_b3_parser_adapter_isolation():
     ]
     assert transactions_df.loc[0, "ticker"] == "BBAS3"
     assert transactions_df.loc[0, "date"] == "2024-07-10"
+    assert not transactions_df.loc[0, "date_is_business"]
     assert transactions_df.loc[0, "transaction_type"] == "BUY"
     assert transactions_df.loc[0, "quantity"] == 100
     assert transactions_df.loc[0, "unit_price"] == 26.25

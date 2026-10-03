@@ -281,8 +281,9 @@ somente leitura e pode ser substituído por uma nova versão sem migração.
 
 | Armazenamento | Finalidade |
 | --- | --- |
-| `transactions` | Registro das movimentações da carteira: `id`, `date`, `ticker`, `transaction_type`, `quantity`, `unit_price`, `fees` e `cost_status` (`KNOWN`, `PENDING`, `CORRECTED`). Os tipos persistidos são `BUY`, `SELL` e `GROUP`; entradas de custódia usam o efeito de quantidade de `BUY`, mas sua origem as exclui de aportes e metas de compras. |
-| `b3_import_records` | Identidade SHA-256 dos campos normalizados da movimentação, registro original normalizado em JSON, natureza do evento, vínculo único à transação e decisão de importação. Transferências ignoradas permanecem registradas sem transação. |
+| `transactions` | Registro das movimentações da carteira: `id`, `date`, `ticker`, `transaction_type`, `quantity`, `unit_price`, `fees`, `transaction_origin` e `cost_status` (`KNOWN`, `PENDING`, `CORRECTED`). `date` mantém a data manual nas operações conciliadas e recebe a data da planilha nas novas importações. `transaction_origin` identifica a origem do cadastro: operações manuais permanecem `MANUAL` após a conciliação; novas importações são `B3`. Os tipos persistidos são `BUY`, `SELL` e `GROUP`; entradas de custódia usam o efeito de quantidade de `BUY`, mas sua origem as exclui de aportes e metas de compras. |
+| `b3_import_records` | Identidade SHA-256 dos campos normalizados da movimentação, registro original normalizado em JSON, natureza do evento, vínculo opcional à transação e decisão de importação. Transferências ignoradas e conciliações de grupos permanecem registradas sem uma transação agregada. |
+| `b3_manual_reconciliations` | Liga uma linha B3 a uma ou mais operações manuais preservadas individualmente. Cada operação manual só pode integrar uma conciliação. |
 | `dividends` | Proventos recebidos: `id`, `date`, `ticker`, `dividend_type`, `total_value` e os campos opcionais `quantity` e `unit_price` (`REAL`); os tipos são `DIVIDEND`, `JCP` e `YIELD`. |
 | `tracked_market_assets` | Tickers acompanhados manualmente. Os ativos em carteira são combinados com essa lista no monitor de mercado. |
 | `dividend_corrections` | Ajustes de dividendos por ticker e por ano, identificados por `(ticker, year)`. |
@@ -303,6 +304,51 @@ preencher estimativas no banco nem alterar os totais existentes. A migração é
 O mecanismo de backup e restauração usa essa versão para migrar backups antigos e rejeitar
 esquemas futuros. Alterações de metadados dos proventos avançam a revisão das projeções locais.
 
+As operações mantêm apenas `transactions.date`. Uma conciliação confirmada preserva a data,
+o preço e as taxas dos lançamentos manuais; a data original da B3 fica no JSON de origem em
+`b3_import_records.source_record`. Novas operações usam a data da planilha. O parser prioriza
+`Data do Negócio`, quando disponível, e aceita `Data` ou `Data de Liquidação`. A classificação
+da coluna serve somente à comparação durante a importação, sem criar outras datas no banco.
+Ao importar uma planilha, `AssetService` sugere grupos de operações manuais compatíveis pelo ticker,
+tipo, soma das quantidades, preço médio ponderado arredondado a três casas e valor da operação. As
+operações de cada grupo devem ser da mesma data e estar no intervalo de dois a seis dias corridos
+antes da liquidação, ou na mesma data quando só há data de negócio. Como a planilha não informa
+taxas nem a corretora das operações manuais, elas não entram na comparação; a instituição da B3 é
+exibida para orientar a decisão humana. `OperationsView` inicia cada sugestão sem seleção e exige
+uma escolha explícita entre o lançamento existente e importar como nova operação. As escolhas
+usam widgets fora de formulário para atualizar o botão a cada seleção; a confirmação fica
+desabilitada até todas as sugestões terem uma escolha válida, sem reutilizar uma operação manual
+em duas linhas B3. Ao escolher importar como nova, a operação B3 é importada separadamente.
+O bloco de importação usa um fragmento Streamlit para que as seleções não executem novamente
+as demais telas. A planilha lida e suas sugestões ficam somente na sessão atual, identificadas
+pelo conteúdo do arquivo, carteira ativa, geração do banco e revisão das movimentações. Alterar
+uma escolha reutiliza essa preparação; trocar o arquivo ou alterar a carteira renova as sugestões
+e limpa as escolhas anteriores. A preparação é descartada após importar, retirar o arquivo,
+trocar/restaurar a carteira ou ocorrer um erro. A confirmação continua revalidando os vínculos
+no DAO antes de gravar, inclusive se outra sessão tiver alterado a conciliação.
+O DAO revalida o grupo e grava os vínculos e
+o registro de origem na mesma transação SQLite, sem criar ou apagar operações financeiras. As
+reimportações mantêm a identidade B3 e não duplicam o efeito na carteira. O histórico de
+movimentações continua mostrando apenas a data da operação.
+A busca divide os lançamentos de cada data em duas metades e combina subconjuntos por quantidade
+e intervalo de valor, exibindo até 25 grupos válidos. Cada metade admite até 65.536 subconjuntos
+e visitas a estados parciais,
+e a validação admite até 65.536 pares por linha B3. Se algum limite for atingido, a busca gera
+um erro explícito na etapa de sugestões, antes de importar qualquer linha da planilha. Uma busca
+incompleta nunca é tratada como ausência de correspondência.
+A preparação compara também as linhas que disputam os mesmos lançamentos manuais. Se houver
+uma combinação válida para todas essas linhas sem reutilizar lançamentos, um grupo dessa
+combinação é preservado no início das opções de cada linha, mesmo quando ficaria fora das
+primeiras 25 sugestões independentes. Nenhuma opção é selecionada automaticamente. A busca
+conjunta é feita uma vez por preparação e tem um orçamento de 524.288 passos; atingir esse
+limite interrompe a importação explicitamente, em vez de descartar silenciosamente combinações.
+A versão 6 cria `b3_manual_reconciliations` para associar uma linha agregada da B3 a várias
+operações manuais sem fundir seus registros.
+O vínculo registra a confirmação com a B3 sem mudar `transaction_origin='MANUAL'`.
+Na inicialização, operações marcadas anteriormente como `B3` que possuem esse vínculo comprovado
+com uma negociação conciliada voltam a `MANUAL`. Essa correção é idempotente e preserva os valores,
+datas e registros de importação; operações importadas sem vínculo manual mantêm sua origem `B3`.
+
 O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas colunas e datas e produz registros internos de transações e dividendos em inglês.
 
 - Compras atualizam o preço médio ponderado, incluindo as taxas.
@@ -318,6 +364,7 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
 - O parser distingue custódia, negociação e evento corporativo. Pares de `Transferência` com o mesmo ticker, data e quantidade, nas direções débito e crédito, representam troca de corretora e são marcados para serem ignorados. `Depósito` é uma aquisição recebida e é registrado como compra conhecida a custo zero. `Transferência - Liquidação` segue a direção de crédito ou débito como negociação; uma liquidação de crédito sem valor financeiro gera aquisição com custo pendente.
 - Para entradas de custódia sem par, `AssetService` avalia cronologicamente a quantidade com custo conhecido de dias anteriores; vendas reduzem essa cobertura proporcionalmente e grupamentos a ajustam. Custódia de saída é ignorada. Entradas com cobertura suficiente são ignoradas; as demais geram posição com custo pendente. A análise ocorre sob o mesmo bloqueio de escrita SQLite que registra a decisão.
 - `PortfolioDAO` grava origem e efeito na posição atomicamente (`BEGIN IMMEDIATE`). A identidade de origem é independente do custo corrigido. A regularização valida valores finitos, positivos e taxas não negativas, atualiza apenas operações pendentes e preserva a origem; os cálculos são refeitos no próximo carregamento.
+- Operações manuais não são conciliadas automaticamente por igualdade exata. A importação sugere grupos de compras/vendas do mesmo ticker, tipo e data, cuja quantidade total e média ponderada arredondada a três casas correspondem à linha B3. O usuário escolhe se cada linha B3 corresponde ao grupo ou deve ser importada separadamente. Cada operação manual só pode integrar uma conciliação; a confirmação preserva datas, taxas e preços individuais e guarda a data B3 no registro de origem, sem adicionar evento financeiro duplicado. Dados financeiros pessoais continuam apenas no SQLite local e na sessão atual.
 - A migração adiciona o status sem alterar custos antigos. Uma reimportação associa automaticamente apenas registros que já possuem origem B3 ou correções específicas reconhecidas pela assinatura completa do parser anterior; operações legadas sem proveniência permanecem separadas para não reclassificar silenciosamente uma compra manual. Quando a planilha não informa o custo de uma correção reconhecida, a operação existente é preservada e marcada como pendente. A regra atual de importação não atribui preços por ticker ou data. Decisões persistidas não são reclassificadas por importações posteriores de históricos mais antigos.
 - Posições com custo pendente mantêm quantidade, valor de mercado e o capital investido de custo conhecido até então; preço médio e indicadores de rentabilidade dependentes do custo ficam indisponíveis. As telas exibem o capital conhecido junto de um aviso explícito de custos pendentes. A regularização fica em Ativos → Operações e invalida o cache da interface.
 - Os cálculos dos aportes para aposentadoria usam pagamentos de anuidade antecipada (`type = 1`) por meio de `SimulationService.pmt_annuity_due()`. Posições com custo pendente são desconsideradas na soma do capital investido até a regularização, sem bloquear o planejamento das demais posições.

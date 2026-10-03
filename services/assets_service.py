@@ -2,6 +2,9 @@ import datetime
 import json
 import logging
 import math
+from bisect import bisect_left, bisect_right
+from decimal import Decimal
+from itertools import groupby, islice
 
 import pandas as pd
 
@@ -21,6 +24,7 @@ from core.utils.ticker import normalize_b3_ticker
 from services.valuation_service import ValuationService
 
 logger = logging.getLogger(__name__)
+_MAX_B3_SUBSET_STATES = 65_536
 
 
 class AssetService:
@@ -161,7 +165,12 @@ class AssetService:
         return success
 
     @hybridmethod
-    def process_b3_import(self, df: pd.DataFrame, progress_callback=None) -> tuple[int, int]:
+    def process_b3_import(
+        self,
+        df: pd.DataFrame,
+        progress_callback=None,
+        manual_trade_links: dict[str, int | list[int]] | None = None,
+    ) -> tuple[int, int]:
         """Processes a DataFrame imported from B3, routing and translating row categories to English."""
         if self._excel_parser is None:
             raise RuntimeError("No ExcelParserPort adapter was injected into AssetService.")
@@ -196,6 +205,8 @@ class AssetService:
             if row.get("source_key"):
                 record = row.to_dict()
                 record["_reconciliation_context"] = reconciliation_context
+                if manual_trade_links:
+                    record["_manual_transaction_id"] = manual_trade_links.get(record["source_key"])
                 if not record.get("source_record"):
                     continue
                 source = json.loads(record["source_record"])
@@ -249,6 +260,240 @@ class AssetService:
             processed_dividends,
         )
         return processed_transactions, processed_dividends
+
+    @hybridmethod
+    def find_b3_manual_trade_candidates(self, df: pd.DataFrame) -> list[dict]:
+        """Find reviewable manual trade candidates without changing the portfolio."""
+        if self._excel_parser is None:
+            raise RuntimeError("No ExcelParserPort adapter was injected into AssetService.")
+        transactions, _ = self._excel_parser.parse_b3_excel(df)
+        candidates = []
+        search_inputs = []
+        for record in transactions.to_dict("records"):
+            if record.get("event_kind") != "TRADE" or record.get("cost_status") != "KNOWN":
+                continue
+            source = json.loads(record["source_record"])
+            manual_records = self._portfolio_repo.get_manual_trade_candidates(record)
+            groups = self._find_matching_manual_groups(manual_records, record, source)
+            if groups:
+                candidates.append(
+                    {
+                        "source_key": record["source_key"],
+                        "b3": {
+                            "date": record["date"],
+                            "ticker": record["ticker"],
+                            "transaction_type": record["transaction_type"],
+                            "quantity": record["quantity"],
+                            "unit_price": record["unit_price"],
+                            "value": source.get("value"),
+                            "institution": source.get("institution", ""),
+                        },
+                        "manual_candidates": [
+                            group["transactions"][0]
+                            for group in groups
+                            if len(group["transactions"]) == 1
+                        ],
+                        "manual_groups": groups,
+                    }
+                )
+                search_inputs.append((manual_records, record, source))
+        self._preserve_disjoint_manual_groups(candidates, search_inputs)
+        return candidates
+
+    @staticmethod
+    def _find_matching_manual_groups(manual_records, record, source):
+        return list(
+            islice(AssetService._iter_matching_manual_groups(manual_records, record, source), 25)
+        )
+
+    @staticmethod
+    def _raise_b3_search_limit():
+        raise ValueError(
+            "Há muitos lançamentos manuais para comparar com segurança. "
+            "A importação foi interrompida antes de gravar qualquer linha. "
+            "Revise os lançamentos desse ativo antes de tentar novamente."
+        )
+
+    @staticmethod
+    def _consume_b3_search_work(work_budget):
+        if work_budget is not None:
+            work_budget[0] -= 1
+            if work_budget[0] < 0:
+                AssetService._raise_b3_search_limit()
+
+    @staticmethod
+    def _preserve_disjoint_manual_groups(candidates, search_inputs):
+        """Keep a jointly feasible choice in each bounded list of overlapping suggestions."""
+        parents = list(range(len(candidates)))
+
+        def root(index):
+            while parents[index] != index:
+                parents[index] = parents[parents[index]]
+                index = parents[index]
+            return index
+
+        owners = {}
+        for index, (manual_records, _, _) in enumerate(search_inputs):
+            for row in manual_records:
+                previous = owners.setdefault(row["id"], index)
+                parents[root(index)] = root(previous)
+        components = {}
+        for index in range(len(candidates)):
+            components.setdefault(root(index), []).append(index)
+        work_budget = [_MAX_B3_SUBSET_STATES * 8]
+        for indices in components.values():
+            if len(indices) < 2:
+                continue
+            indices.sort(key=lambda index: len(candidates[index]["manual_groups"]))
+            pool = {row["id"]: row for index in indices for row in search_inputs[index][0]}
+            if sum(int(row["quantity"]) for row in pool.values()) < sum(
+                int(search_inputs[index][1]["quantity"]) for index in indices
+            ):
+                continue
+            assignment = []
+            used_ids = set()
+            for index in indices:
+                group = next(
+                    (
+                        group
+                        for group in candidates[index]["manual_groups"]
+                        if used_ids.isdisjoint(group["ids"])
+                    ),
+                    None,
+                )
+                if group is None:
+                    assignment = []
+                    break
+                assignment.append(group)
+                used_ids.update(group["ids"])
+            if not assignment:
+                used_ids = set()
+
+                def available_groups(index):
+                    rows, record, source = search_inputs[index]
+                    remaining = [row for row in rows if row["id"] not in used_ids]
+                    if sum(int(row["quantity"]) for row in remaining) < int(record["quantity"]):
+                        return iter(())
+                    return AssetService._iter_matching_manual_groups(
+                        remaining, record, source, work_budget
+                    )
+
+                # Stream full searches only when the displayed lists cannot form an assignment.
+                # Exhaustion means no joint match; exhausting the work budget raises explicitly.
+                searches = [available_groups(indices[0])]
+                while searches:
+                    AssetService._consume_b3_search_work(work_budget)
+                    group = next(searches[-1], None)
+                    if group is None:
+                        searches.pop()
+                        if assignment:
+                            used_ids.difference_update(assignment.pop()["ids"])
+                        continue
+                    assignment.append(group)
+                    used_ids.update(group["ids"])
+                    if len(assignment) == len(indices):
+                        break
+                    searches.append(available_groups(indices[len(assignment)]))
+            if len(assignment) != len(indices):
+                continue
+            for index, group in zip(indices, assignment, strict=True):
+                existing = candidates[index]["manual_groups"]
+                candidates[index]["manual_groups"] = [
+                    group,
+                    *(item for item in existing if item["ids"] != group["ids"]),
+                ][:25]
+                candidates[index]["manual_candidates"] = [
+                    item["transactions"][0]
+                    for item in candidates[index]["manual_groups"]
+                    if len(item["transactions"]) == 1
+                ]
+
+    @staticmethod
+    def _iter_matching_manual_groups(manual_records, record, source, work_budget=None):
+        """Match bounded half-subsets; abort rather than report an incomplete search as unmatched."""
+        ordered = sorted(manual_records, key=lambda item: (item["date"], item["id"]))
+        quantity = int(record["quantity"])
+        reported_value = source.get("value")
+        tolerance = max(0.02, quantity * 0.0005 + 0.01)
+        price = Decimal(str(record["unit_price"]))
+        price_margin = Decimal("0.0005") + Decimal("1e-12")
+        lower_value = quantity * (price - price_margin)
+        upper_value = quantity * (price + price_margin)
+        if reported_value is not None:
+            value = Decimal(str(reported_value))
+            lower_value = max(lower_value, value - Decimal(str(tolerance)))
+            upper_value = min(upper_value, value + Decimal(str(tolerance)))
+        # Widen only the lookup range; final validation uses the DAO's float comparisons.
+        lower_value -= Decimal("1e-8")
+        upper_value += Decimal("1e-8")
+
+        def subsets(rows):
+            states = [(0, Decimal(0), ())]
+            visited_states = 0
+            for item in rows:
+                item_quantity = int(item["quantity"])
+                item_value = item_quantity * Decimal(str(item["unit_price"]))
+                previous_count = len(states)
+                for index in range(previous_count):
+                    AssetService._consume_b3_search_work(work_budget)
+                    visited_states += 1
+                    if visited_states > _MAX_B3_SUBSET_STATES:
+                        AssetService._raise_b3_search_limit()
+                    selected_quantity, selected_value, selected = states[index]
+                    combined_quantity = selected_quantity + item_quantity
+                    if combined_quantity > quantity:
+                        continue
+                    if len(states) >= _MAX_B3_SUBSET_STATES:
+                        AssetService._raise_b3_search_limit()
+                    states.append(
+                        (combined_quantity, selected_value + item_value, (*selected, item))
+                    )
+            return states
+
+        inspected_pairs = 0
+        for _, dated_records in groupby(ordered, key=lambda item: item["date"]):
+            rows = [item for item in dated_records if int(item["quantity"]) <= quantity]
+            middle = len(rows) // 2
+            left_states = subsets(rows[:middle])
+            right_by_quantity = {}
+            for selected_quantity, selected_value, selected in subsets(rows[middle:]):
+                right_by_quantity.setdefault(selected_quantity, []).append(
+                    (selected_value, selected)
+                )
+            right_values = {}
+            for selected_quantity, selections in right_by_quantity.items():
+                selections.sort(key=lambda selection: selection[0])
+                right_values[selected_quantity] = [selection[0] for selection in selections]
+            for selected_quantity, selected_value, selected in left_states:
+                complementary_quantity = quantity - selected_quantity
+                selections = right_by_quantity.get(complementary_quantity, [])
+                values = right_values.get(complementary_quantity, [])
+                start = bisect_left(values, lower_value - selected_value)
+                end = bisect_right(values, upper_value - selected_value)
+                for index in range(start, end):
+                    AssetService._consume_b3_search_work(work_budget)
+                    inspected_pairs += 1
+                    if inspected_pairs > _MAX_B3_SUBSET_STATES:
+                        AssetService._raise_b3_search_limit()
+                    transactions = [*selected, *selections[index][1]]
+                    total_value = sum(
+                        int(tx["quantity"]) * float(tx["unit_price"]) for tx in transactions
+                    )
+                    average = total_value / quantity
+                    if abs(average - float(record["unit_price"])) > 0.0005 + 1e-12:
+                        continue
+                    if (
+                        reported_value is not None
+                        and abs(float(reported_value) - total_value) > tolerance
+                    ):
+                        continue
+                    yield {
+                        "ids": [int(tx["id"]) for tx in transactions],
+                        "transactions": transactions,
+                        "quantity": quantity,
+                        "weighted_unit_price": average,
+                        "total_value": total_value,
+                    }
 
     @staticmethod
     def _has_sufficient_cost_history(history: pd.DataFrame, required_quantity: int) -> bool:

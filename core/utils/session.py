@@ -112,6 +112,8 @@ class SessionManager:
             "processed_files",
             "b3_uploader_key",
             "b3_import_success_msg",
+            "b3_import_preview",
+            "b3_import_preview_serial",
             SESSION_BIRTH_DATE,
             SESSION_RETIREMENT_AGE,
             SESSION_DESIRED_INCOME_MW,
@@ -152,6 +154,8 @@ class SessionManager:
             SESSION_ACTIVE_DATABASE_GENERATION,
         )
         portfolio_prefixes = (
+            "b3_match_",
+            "b3_reconciliation_",
             WIDGET_MANUAL_ENTRY_PREFIX,
             WIDGET_ASSET_ANNUAL_GOAL_PREFIX,
             WIDGET_REINVESTMENT_GOAL_PREFIX,

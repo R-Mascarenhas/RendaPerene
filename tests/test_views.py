@@ -29,6 +29,34 @@ def _fake_tabs(labels, **_kwargs):
     return [_FakeAssetTab(index == 0) for index, _ in enumerate(labels)]
 
 
+@pytest.mark.parametrize("transaction_date", [None, "2024-01-10"])
+def test_planning_time_metric_uses_effective_start_date(monkeypatch, transaction_date):
+    from views.components.time_metrics import TimeMetricsWidget
+
+    SimulationService.save_configuration(
+        birth_date="1992-12-15",
+        retirement_age=60,
+        desired_income_mw=5.0,
+        annual_interest_rate=6.0,
+        mw_value=1412.0,
+        initial_equity_input=0.0,
+    )
+    if transaction_date:
+        AssetService.add_transaction("BBAS3", transaction_date, "BUY", 10, 20.0)
+    sim = SimulationService.get_current_simulation()
+    metrics = []
+    column = SimpleNamespace(metric=lambda *args: metrics.append(args))
+    monkeypatch.setattr(st, "subheader", lambda *args: None)
+    monkeypatch.setattr(st, "columns", lambda *args: [column, column])
+    TimeMetricsWidget().render(sim)
+    expected_description = (
+        "Planejamento iniciado aos 31 anos"
+        if transaction_date
+        else "Planejamento iniciado Hoje"
+    )
+    assert metrics[0][2] == expected_description
+
+
 def test_views_and_services_sanity():
     """Automated SCM Sanity and View Import/Attribute Verification Test."""
     for name in ("read_portfolio", "read_asset", "read_history", "read_planning"):

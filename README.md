@@ -259,6 +259,11 @@ negativos e aumentam o valor restante para atingir a meta anual. Eventos de cust
 desse cálculo; custos pendentes de negociação no período mantêm os totais indisponíveis até a
 regularização.
 
+Sem operações e sem uma data de início escolhida, o planejamento usa a data de hoje e exibe
+**Planejamento iniciado Hoje**. Os prazos e aportes são recalculados a partir do dia atual até
+o registro de uma operação; depois, o início automático usa a primeira data do histórico.
+Uma data de início escolhida manualmente continua sendo respeitada.
+
 Ao selecionar uma data de início do planejamento, o capital real acumulado nos gráficos inclui
 o **Patrimônio Inicial** e os aportes líquidos registrados a partir da data escolhida. O valor
 inicial pode ser calculado automaticamente ou informado manualmente, inclusive como zero.

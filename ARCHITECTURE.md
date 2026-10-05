@@ -79,6 +79,12 @@ A direção das dependências é `views` → `services` → contratos e adaptado
 
 ### Portas e adaptadores
 
+`PlanningConfigPort.get_min_transaction_date()` retorna `None` quando não há transações.
+Nesse caso, sem data de início explícita, `SimulationService` usa o dia atual a cada cálculo,
+sem persistir uma data provisória. Com transações, usa a primeira data do histórico; uma data
+escolhida pelo usuário tem prioridade. A simulação fornece `effective_planning_start_date`
+para que o indicador de tempo exiba **Planejamento iniciado Hoje** quando o início é hoje.
+
 O formulário manual `ManualEntryWidget`, em `views/components/manual_entry.py`, é compartilhado
 por Operações e pelo detalhamento da carteira. O detalhamento fornece um ticker fixo; o formulário
 não permite substituí-lo e encaminha os lançamentos às mesmas interfaces de `AssetService`.

@@ -9,6 +9,52 @@ from services.assets_service import AssetService
 from services.planning_service import SimulationService
 
 
+def test_empty_portfolio_planning_tracks_today_until_first_transaction(monkeypatch):
+    class FrozenDate(datetime.date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 10, 5)
+
+    monkeypatch.setattr(datetime, "date", FrozenDate)
+    SimulationService.save_configuration(
+        birth_date="1992-12-15",
+        retirement_age=60,
+        desired_income_mw=5.0,
+        annual_interest_rate=6.0,
+        mw_value=1412.0,
+        initial_equity_input=0.0,
+    )
+    for day in (5, 16):
+        monkeypatch.setattr(FrozenDate, "today", classmethod(lambda cls: cls(2026, 10, day)))
+        sim = SimulationService.get_current_simulation()
+        assert sim["start_age_years"] == sim["current_age"]
+        assert sim["total_time_months"] == sim["remaining_time_months"]
+        assert sim["required_monthly_contribution"] == sim["updated_monthly_contribution"]
+        assert sim["effective_planning_start_date"] == f"2026-10-{day:02d}"
+
+    AssetService.add_transaction("BBAS3", "2024-01-10", "BUY", 10, 20.0)
+    sim = SimulationService.get_current_simulation()
+    assert sim["effective_planning_start_date"] == "2024-01-10"
+    assert sim["start_age_years"] == 31.0
+    assert sim["total_time_months"] > sim["remaining_time_months"]
+
+
+def test_empty_portfolio_respects_explicit_planning_start_date():
+    SimulationService.save_configuration(
+        birth_date="1992-12-15",
+        retirement_age=60,
+        desired_income_mw=5.0,
+        annual_interest_rate=6.0,
+        mw_value=1412.0,
+        initial_equity_input=1000.0,
+        planning_start_date="2024-01-10",
+    )
+    sim = SimulationService.get_current_simulation()
+    assert sim["effective_planning_start_date"] == "2024-01-10"
+    assert sim["start_age_years"] == 31.0
+    assert sim["total_invested"] == 1000.0
+
+
 def test_get_current_simulation_math():
     """Verifies that the core retirement simulation correctly loads DB config and runs the correct PMT math."""
     SimulationService.save_configuration(

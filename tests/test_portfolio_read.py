@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from core.daos.portfolio_dao import PortfolioDAO
+from core.strings import DISPLAY_AVG_PRICE
 from core.utils.market_data import MarketData
 from services.assets_service import AssetService
 from services.portfolio_read_service import PortfolioReadService
@@ -39,6 +40,42 @@ def test_portfolio_replays_fees_sales_split_and_group_into_one_read():
     assert position["current_value"] == 120
     assert result.summary["total_equity"] == 120
     assert not result.holdings.empty
+
+
+@pytest.mark.parametrize("sold_quantity, pending", [(40, True), (100, False)])
+def test_pending_cost_flags_follow_the_remaining_position_after_repurchase(
+    sold_quantity, pending
+):
+    AssetService.process_b3_import(pd.DataFrame([{
+        "Movimentação": "Aquisição",
+        "Data": "02/01/2024",
+        "Produto": "BBAS3",
+        "Quantidade": 100,
+        "Preço unitário": None,
+        "Valor da Operação": None,
+        "Entrada/Saída": "Crédito",
+    }]))
+    AssetService.add_transaction("BBAS3", "2024-01-03", "SELL", sold_quantity, 25)
+    AssetService.add_transaction("BBAS3", "2024-01-04", "BUY", 5, 20)
+
+    reads = reader()
+    planning = reads.read_planning()
+    portfolio = reads.read_portfolio()
+    expected_tickers = ("BBAS3",) if pending else ()
+    assert planning.pending_tickers == expected_tickers
+    assert portfolio.pending_tickers == expected_tickers
+    assert bool(planning.positions.iloc[0]["cost_pending"]) == pending
+    assert bool(portfolio.positions.iloc[0]["cost_pending"]) == pending
+    assert portfolio.summary["cost_pending"] == pending
+    if pending:
+        assert pd.isna(portfolio.summary["overall_return"])
+        assert portfolio.holdings.iloc[0][DISPLAY_AVG_PRICE] == "Custo pendente"
+    else:
+        assert portfolio.positions.iloc[0]["quantity"] == 5
+        assert portfolio.positions.iloc[0]["average_price"] == 20
+        assert portfolio.summary["overall_return"] == pytest.approx(50)
+        assert portfolio.holdings.iloc[0][DISPLAY_AVG_PRICE] == "R$ 20,00"
+    assert len(AssetService.get_pending_costs()) == 1
 
 
 def test_asset_receipts_and_planning_share_historical_ledger_rules():

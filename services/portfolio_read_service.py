@@ -62,11 +62,10 @@ class PortfolioReadService:
         )
 
     @staticmethod
-    def _pending_tickers(projection, positions):
-        transactions = projection._ledger.transactions
-        pending = set(transactions.loc[transactions["cost_status"].eq("PENDING"), "ticker"])
-        owned = set(positions["ticker"]) if not positions.empty else set()
-        return tuple(sorted(pending & owned))
+    def _pending_tickers(positions):
+        if positions.empty:
+            return ()
+        return tuple(sorted(positions.loc[positions["cost_pending"], "ticker"]))
 
     @hybridmethod
     def read_portfolio(
@@ -74,9 +73,7 @@ class PortfolioReadService:
     ) -> PortfolioOverview:
         projection = self._projection()
         positions = projection.calculate_positions(today_date, start_date)
-        pending = self._pending_tickers(projection, positions)
-        if not positions.empty:
-            positions.loc[positions["ticker"].isin(pending), "cost_pending"] = True
+        pending = self._pending_tickers(positions)
         positions, summary = projection.get_portfolio_summary_metrics(positions)
         holdings, ceilings = projection.get_detailed_holdings_dataframe(positions, target_yield)
         sectors = self._sectors(positions)
@@ -132,7 +129,7 @@ class PortfolioReadService:
             projection.get_ytd_contributions(year or datetime.date.today().year),
             {ticker: projection.quantity_on_date(ticker, date) for ticker in tickers},
             {ticker: self._transaction_history(projection, ticker) for ticker in tickers},
-            self._pending_tickers(projection, positions),
+            self._pending_tickers(positions),
         )
 
     @staticmethod

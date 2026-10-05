@@ -69,3 +69,20 @@ uma sobrescrita na agregação anual; a implementação agora acumula todos os t
 
 `venv/bin/streamlit run app.py` não foi executado para inspeção manual no navegador.
 As telas e os reruns foram verificados pela suíte com AppTest e persistência isolada.
+
+## Correção após revisão da PR #87
+
+O aviso de custo pendente passa a usar o estado da posição reconstruída. Uma aquisição
+pendente totalmente vendida não contamina uma recompra com custo informado; vendas
+parciais continuam preservando a pendência. O lançamento histórico permanece disponível
+para regularização em Operações.
+
+A regressão parametrizada em `tests/test_portfolio_read.py` reproduziu a falha antes
+da correção e foi mantida como cobertura durável de `read_portfolio()` e
+`read_planning()`, incluindo preço médio, rentabilidade e apresentação de holdings.
+
+- `venv/bin/pytest tests/test_portfolio_read.py tests/test_b3_pending_costs.py -q --tb=short`:
+  84 testes passaram.
+- `venv/bin/pytest -q --tb=short`: 675 testes passaram.
+- `venv/bin/ruff check .` e `venv/bin/ruff format --check .`: passaram.
+- `git diff --check`: passou.

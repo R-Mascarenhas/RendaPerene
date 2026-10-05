@@ -1,3 +1,5 @@
+import datetime
+
 import streamlit as st
 
 from core.constants import (
@@ -26,11 +28,16 @@ class TimeMetricsWidget:
 
         start_age_years = int(sim[SIM_START_AGE_YEARS])
         current_age_years = int(sim[SIM_CURRENT_AGE])
+        start_description = (
+            "Planejamento iniciado Hoje"
+            if sim.get("effective_planning_start_date") == datetime.date.today().isoformat()
+            else f"Planejamento iniciado aos {start_age_years} anos"
+        )
 
         col_t1.metric(
             "Tempo Total de Investimento",
             f"{total_time_years} Anos e {total_time_months_leftover} meses ({total_time_months} meses)",
-            f"Planejamento iniciado aos {start_age_years} anos",
+            start_description,
         )
         col_t2.metric(
             "Tempo Restante de Aporte",

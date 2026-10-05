@@ -146,14 +146,14 @@ class PlanningDAO:
         finally:
             conn.close()
 
-    def get_min_transaction_date(self) -> str:
-        """Returns the chronological minimum transaction date, or a default fallback date."""
+    def get_min_transaction_date(self) -> str | None:
+        """Returns the chronological minimum transaction date, or None when empty."""
         conn = self.get_personal_connection()
         cursor = conn.cursor()
         try:
             cursor.execute("SELECT MIN(date) FROM transactions")
             res = cursor.fetchone()
-            return res[0] if res and res[0] is not None else "2021-04-30"
+            return res[0] if res else None
         finally:
             conn.close()
 

@@ -101,12 +101,7 @@ class SimulationService:
     @hybridmethod
     def get_initial_investment_age(self, birth_date, config=None):
         """Returns the exact age in months when the first investment was made."""
-        if config is not None and config.get(PLANNING_START_DATE) is not None:
-            min_date_str = config[PLANNING_START_DATE]
-        else:
-            min_date_str = self._planning_repo.get_min_transaction_date()
-
-        start_date = datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
+        start_date = self._get_planning_start_date(config)
 
         start_months_age = (
             (start_date.year - birth_date.year) * 12
@@ -115,6 +110,16 @@ class SimulationService:
             - (start_date.day < birth_date.day)
         )
         return start_months_age
+
+    def _get_planning_start_date(self, config=None, today=None):
+        """Uses today's date until an automatic plan has transaction history."""
+        if config is not None and config.get(PLANNING_START_DATE) is not None:
+            min_date_str = config[PLANNING_START_DATE]
+        else:
+            min_date_str = self._planning_repo.get_min_transaction_date()
+        if min_date_str is None:
+            return today or datetime.date.today()
+        return datetime.datetime.strptime(min_date_str, "%Y-%m-%d").date()
 
     @staticmethod
     def pmt_annuity_due(rate, nper, pv, fv):
@@ -166,7 +171,10 @@ class SimulationService:
         )
         current_age = months_age / 12
 
-        start_months_age = self.get_initial_investment_age(birth_date, config)
+        start_date = self._get_planning_start_date(config, today)
+        start_months_age = self.get_initial_investment_age(
+            birth_date, {PLANNING_START_DATE: start_date.isoformat()}
+        )
         start_age_years = start_months_age / 12
 
         total_time_months = max(0, config[RETIREMENT_AGE] * 12 - start_months_age)
@@ -229,6 +237,7 @@ class SimulationService:
             "desired_income_type": config[DESIRED_INCOME_TYPE],
             "annual_interest_rate": config[ANNUAL_INTEREST_RATE],
             "planning_start_date": config.get(PLANNING_START_DATE),
+            "effective_planning_start_date": start_date.isoformat(),
         }
 
     @hybridmethod

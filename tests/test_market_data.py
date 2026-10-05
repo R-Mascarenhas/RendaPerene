@@ -1,3 +1,4 @@
+from services.portfolio_read_service import PortfolioReadService
 import datetime
 import logging
 
@@ -427,7 +428,7 @@ def test_get_tracked_market_assets_includes_owned_stocks(mock_db):
     AssetService.add_transaction("BBAS3", "2021-12-15", "BUY", 10, 10.00)
 
     # 3. Check positions to confirm quantity is > 0 and type is Ação
-    positions = AssetService.calculate_positions()
+    positions = PortfolioReadService.read_planning().positions
     assert not positions.empty
     bbas3_row = positions[positions["ticker"] == "BBAS3"]
     assert not bbas3_row.empty

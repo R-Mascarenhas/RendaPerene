@@ -77,7 +77,9 @@ class GoalService:
         )
         reinvestment_goal = max(0.0, float(ytd_dividends)) if reinvestment_enabled else 0.0
         total_goal = annual_salary_goal + reinvestment_goal
-        raw_ytd_contributions = self._portfolio_provider.get_ytd_contributions(current_year)
+        raw_ytd_contributions = self._portfolio_provider.read_planning(
+            year=current_year
+        ).ytd_contributions
         contributions_pending = planning_pending or raw_ytd_contributions is None
         ytd_contributions = (
             float(raw_ytd_contributions) if raw_ytd_contributions is not None else None

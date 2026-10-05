@@ -7,9 +7,6 @@ from core.constants import (
     CURRENT_PRICE,
     PROFIT_LOSS,
     RETURN_PCT_CUSTOM,
-    SESSION_BAZIN_TARGET_SPREAD,
-    SESSION_BAZIN_TARGET_YIELD,
-    SESSION_CEILING_MODEL_SELECTION,
     TICKER,
 )
 from core.strings import (
@@ -32,55 +29,27 @@ from core.strings import (
     HELP_WEIGHT_PCT,
     HELP_YOC,
     HELP_YOC_12,
-    MODEL_CLASSIC,
-    MODEL_IPCA_SPREAD,
-    MODEL_SELIC,
     MSG_CUSTODY_ASSETS_TITLE,
 )
 from core.utils import Formatter
-from services.assets_service import AssetService
-from services.valuation_service import ValuationService
-from views.cached_market_data import StreamlitCachedMarketData as MarketData
 
 
 class DetailedHoldingsWidget:
     """Displays the active asset holdings detailed dataframe grid with custom financial metrics and color indicators."""
 
-    def render(self, df_positions):
+    def render(self, portfolio):
         st.markdown("---")
         st.subheader(MSG_CUSTODY_ASSETS_TITLE)
 
-        model = st.session_state.get(SESSION_CEILING_MODEL_SELECTION, MODEL_CLASSIC)
-        selic_rate = 0.0
-        ipca_rate = 0.0
-        if model == MODEL_SELIC:
-            selic_rate = MarketData.get_current_selic()
-        elif model == MODEL_IPCA_SPREAD:
-            ipca_rate = MarketData.get_current_ipca_l12m()
-
-        target_yield = ValuationService.calculate_target_yield(
-            model,
-            classic_target_yield=st.session_state.get(SESSION_BAZIN_TARGET_YIELD, 6.0),
-            selic_rate=selic_rate,
-            ipca_rate=ipca_rate,
-            target_spread=st.session_state.get(SESSION_BAZIN_TARGET_SPREAD, 3.0),
-        )
-
-        pending_costs = AssetService.get_pending_costs()
-        if not pending_costs.empty and "ticker" in pending_costs:
-            pending_tickers = set(pending_costs["ticker"])
-            df_positions.loc[df_positions[TICKER].isin(pending_tickers), "cost_pending"] = True
-
-        df_display, ceilings = AssetService.get_detailed_holdings_dataframe(
-            df_positions, target_yield
-        )
+        df_positions = portfolio.positions
+        df_display, ceilings = portfolio.holdings, portfolio.ceilings
 
         if df_display.empty:
             return
 
         if (
             df_positions.get("cost_pending", pd.Series(False, index=df_positions.index)).any()
-            or not pending_costs.empty
+            or portfolio.pending_tickers
         ):
             st.warning(
                 "Há custos pendentes em um ou mais ativos. Regularize as entradas em Ativos → Operações."

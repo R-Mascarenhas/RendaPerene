@@ -12,14 +12,14 @@ from core.strings import (
     LABEL_PATRIMONY_TOTAL,
 )
 from core.utils import Formatter
-from services.assets_service import AssetService
+from services.planning_service import SimulationService
 
 
 class PatrimonySummaryWidget:
     """Displays the 5 main portfolio KPI metrics (Patrimônio, Capital, YoC, Dividends)."""
 
-    def render(self, df_positions):
-        df_positions, metrics = AssetService.get_portfolio_summary_metrics(df_positions)
+    def render(self, portfolio):
+        metrics = dict(portfolio.summary)
 
         if not metrics:
             return
@@ -32,7 +32,10 @@ class PatrimonySummaryWidget:
             st.caption(
                 "Cotações incompletas: patrimônio total e rentabilidade aguardam dados de mercado."
             )
-        pending_tickers = AssetService.get_pending_tickers()
+        simulation = SimulationService.get_current_simulation()
+        if simulation:
+            metrics["total_invested"] = simulation["total_invested"]
+        pending_tickers = ", ".join(portfolio.pending_tickers)
         pending = metrics.get("cost_pending", False) or bool(pending_tickers)
         ratios_available = metrics.get("ratios_available", True)
         if pending:

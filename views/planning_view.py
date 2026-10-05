@@ -178,11 +178,13 @@ class PlanningView:
             and not st.session_state.get(INITIAL_EQUITY_MANUAL_OVERRIDE, False)
             and (st.session_state.get(INITIAL_EQUITY_AUTO, False) or not was_enabled)
         ):
-            from services.assets_service import AssetService
+            from services.portfolio_read_service import PortfolioReadService
 
             start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
             start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
-            computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
+            computed_initial = PortfolioReadService.read_planning(
+                start_date=start_date_str
+            ).prior_invested
             if computed_initial is not None:
                 st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
             st.session_state[INITIAL_EQUITY_AUTO] = True
@@ -197,10 +199,12 @@ class PlanningView:
         if not st.session_state.get(INITIAL_EQUITY_MANUAL_OVERRIDE, False) and st.session_state.get(
             INITIAL_EQUITY_AUTO, False
         ):
-            from services.assets_service import AssetService
+            from services.portfolio_read_service import PortfolioReadService
 
             new_start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
-            computed_initial = AssetService.calculate_prior_invested_amount(new_start_date_str)
+            computed_initial = PortfolioReadService.read_planning(
+                start_date=new_start_date_str
+            ).prior_invested
             if computed_initial is not None:
                 st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
             st.session_state[INITIAL_EQUITY_AUTO] = True
@@ -447,11 +451,13 @@ class PlanningView:
                 )
         with col_initial:
             if st.session_state.get(SESSION_PLANNING_START_DATE_ENABLED, False):
-                from services.assets_service import AssetService
+                from services.portfolio_read_service import PortfolioReadService
 
                 start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
                 start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
-                computed_initial = AssetService.calculate_prior_invested_amount(start_date_str)
+                computed_initial = PortfolioReadService.read_planning(
+                    start_date=start_date_str
+                ).prior_invested
                 self._sync_automatic_initial_equity(computed_initial)
                 initial_equity_help = (
                     Formatter.format_currency(computed_initial)

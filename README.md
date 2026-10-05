@@ -346,6 +346,20 @@ arquivos ativos e rotacionados usam `0600`.
 
 ## Validação
 
+As leituras de carteira são concentradas em `PortfolioReadService`: posições, resumo,
+holdings, detalhe do ativo, proventos e evolução histórica usam o mesmo ledger local.
+`AssetService` mantém lançamentos, importação B3, regularização, watchlist e catálogo;
+`SimulationService` mantém os cálculos de aposentadoria. A conexão SQLite permanece no DAO.
+O cache local guarda snapshots descartáveis por carteira, geração e revisão, separados
+das cotações. Alterações de mercado atualizam os resultados sem exigir limpeza do ledger.
+Essa organização não altera o schema dos bancos existentes.
+
+Para validar especificamente o contrato de leitura e o isolamento do cache:
+
+```bash
+venv/bin/pytest tests/test_portfolio_read.py
+```
+
 ### Medição de navegação
 
 Para medir sem registrar dados pessoais, execute `APP_ENV=dev RENDA_PERENE_NAVIGATION_METRICS=true venv/bin/streamlit run app.py`. Com uma carteira de teste, visite Dashboard, Ativos e Monitoramento uma vez para a medição fria e repita a mesma navegação sem mutações para a medição quente. Os logs seguem o formato `identificador.técnico duration: <ms> ms` e não incluem carteira, ticker, valores, caminhos ou identificadores. Os nomes são técnicos e hierárquicos, como `ativos.carteira.price_history.total` e `planejamento.projection_chart`: `total` mede um render completo e as demais fases isolam seus módulos. A instrumentação fica desabilitada fora desse modo explícito de desenvolvimento.

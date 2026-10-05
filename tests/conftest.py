@@ -34,6 +34,7 @@ def mock_db(monkeypatch, tmp_path):
 
     # Wire default test adapters at the test environment composition edge
     from services.assets_service import AssetService
+    from services.portfolio_read_service import PortfolioReadService
     from services.goals_service import GoalService
     from services.market_analysis_service import MarketAnalysisService
     from services.planning_service import SimulationService
@@ -42,23 +43,39 @@ def mock_db(monkeypatch, tmp_path):
 
     portfolio_repo = PortfolioDAO()
     market_analysis = MarketAnalysisService(MarketData, portfolio_repo)
+    class PortfolioMarketFake:
+        def get_batch_quotes(self, tickers):
+            return {}
+
+        def prefetch_tickers(self, tickers):
+            pass
+
+        def get_ticker_market_analysis(self, ticker, target_yield_pct=6.0):
+            return {}
+
+    PortfolioReadService.set_adapters(
+        repository=portfolio_repo,
+        quotes=PortfolioMarketFake(),
+        analysis=PortfolioMarketFake(),
+        catalog=MarketData,
+    )
     AssetService.set_adapters(
         portfolio_repo=portfolio_repo,
         market_data_api=MarketData,
         market_analysis_api=market_analysis,
         excel_parser=B3ExcelParserAdapter(),
-        planning_provider=SimulationService.get_default(),
+        read_provider=PortfolioReadService.get_default(),
     )
-    SimulationService.set_adapters(portfolio_provider=AssetService.get_default())
+    SimulationService.set_adapters(portfolio_provider=PortfolioReadService.get_default())
     GoalService.set_adapters(
         settings_repo=PlanningDAO(),
-        portfolio_provider=AssetService.get_default(),
+        portfolio_provider=PortfolioReadService.get_default(),
         planning_provider=SimulationService.get_default(),
     )
     ShareQuantityGoalService.set_adapters(
         goal_repo=PlanningDAO(),
         settings_repo=PlanningDAO(),
-        portfolio_provider=AssetService.get_default(),
+        portfolio_provider=PortfolioReadService.get_default(),
         market_analysis_api=market_analysis,
         planning_provider=SimulationService.get_default(),
     )

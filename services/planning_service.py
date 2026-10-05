@@ -126,16 +126,16 @@ class SimulationService:
         val = (fv - pv * interest_factor) / denominator if denominator > 0 else 0.0
         return max(0.0, val)
 
-    def _get_initial_equity_input(self, config) -> float | None:
+    def _get_initial_equity_input(self, config, portfolio=None) -> float | None:
         """Returns the configured baseline, refreshing automatically derived values."""
         if config.get(PLANNING_START_DATE) is None:
             return 0.0
-        if config.get(INITIAL_EQUITY_AUTO, False) and hasattr(
-            self._portfolio_provider, "calculate_prior_invested_amount"
-        ):
-            prior_amount = self._portfolio_provider.calculate_prior_invested_amount(
-                config[PLANNING_START_DATE]
-            )
+        if config.get(INITIAL_EQUITY_AUTO, False):
+            if portfolio is None:
+                portfolio = self._portfolio_provider.read_planning(
+                    start_date=config[PLANNING_START_DATE]
+                )
+            prior_amount = portfolio.prior_invested
             return None if prior_amount is None else float(prior_amount)
         return float(config[INITIAL_EQUITY_INPUT])
 
@@ -187,17 +187,15 @@ class SimulationService:
         if self._portfolio_provider is None:
             raise RuntimeError("Portfolio provider port is not configured on SimulationService.")
 
-        df_pos = self._portfolio_provider.calculate_positions(
+        portfolio = self._portfolio_provider.read_planning(
             start_date=config.get(PLANNING_START_DATE)
         )
         # Positions with a pending acquisition cost remain part of the portfolio, but
         # cannot contribute a reliable amount to the retirement calculation yet.
-        total_invested = (
-            float(df_pos["invested_amount"].sum(skipna=True)) if not df_pos.empty else 0.0
-        )
+        total_invested = portfolio.total_invested
 
         # Get initial equity input from database configuration (only used if planning start date is specified)
-        initial_equity_input = self._get_initial_equity_input(config)
+        initial_equity_input = self._get_initial_equity_input(config, portfolio)
         if initial_equity_input is None:
             return None
 
@@ -423,9 +421,9 @@ class SimulationService:
 
         config = self.get_configuration()
         start_date_val = config.get(PLANNING_START_DATE) if config else None
-        df_evolution = self._portfolio_provider.calculate_historical_evolution(
+        df_evolution = self._portfolio_provider.read_history(
             start_date=start_date_val, include_pending_costs=True
-        )
+        ).evolution
         if df_evolution.empty:
             return pd.DataFrame()
 

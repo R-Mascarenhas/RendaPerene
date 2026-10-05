@@ -5,6 +5,7 @@ import pandas as pd
 
 from core.activity import ACTIVITY_EVENT_FIELDS, ACTIVITY_PAGE_SIZE, activity_event
 from core.database import db
+from core.portfolio_read import PortfolioLedger
 
 _ACTIVITY_SQL = """
     SELECT t.id, 'transaction' AS source, t.date, t.ticker,
@@ -26,6 +27,29 @@ class PortfolioDAO:
     def get_personal_connection(self):
         """Delegates and returns an active SQLite database connection."""
         return self.db.get_personal_connection()
+
+    def load_ledger(self) -> PortfolioLedger:
+        """Read all financial records and their revision in one SQLite snapshot."""
+        conn = self.get_personal_connection()
+        try:
+            conn.execute("BEGIN")
+            revision = int(
+                conn.execute("SELECT revision FROM portfolio_projection_state").fetchone()[0]
+            )
+            transactions = pd.read_sql_query(
+                "SELECT t.id, t.date, t.ticker, t.transaction_type, t.quantity, t.unit_price, "
+                "t.fees, t.cost_status, b.event_kind FROM transactions t "
+                "LEFT JOIN b3_import_records b ON b.transaction_id=t.id ORDER BY t.date, t.id",
+                conn,
+            )
+            dividends = pd.read_sql_query(
+                "SELECT id, date, ticker, dividend_type, total_value, quantity, unit_price "
+                "FROM dividends ORDER BY date, id",
+                conn,
+            )
+            return PortfolioLedger(transactions, dividends, revision)
+        finally:
+            conn.close()
 
     def get_local_projection_revision(self) -> int:
         """Return the revision that keys discardable local portfolio projections."""

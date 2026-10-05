@@ -1,3 +1,4 @@
+from services.portfolio_read_service import PortfolioReadService
 import pandas as pd
 import pytest
 
@@ -8,7 +9,7 @@ def test_activity_combines_sources_orders_and_limits_without_changing_contributi
     AssetService.add_transaction("BBAS3", "2026-01-01", "BUY", 10, 20, 2)
     AssetService.add_transaction("BBAS3", "2026-01-03", "SELL", 2, 25, 1)
     AssetService.add_dividend("BBAS3", "2026-01-02", "DIVIDEND", 12)
-    before = AssetService.get_ytd_contributions(2026)
+    before = PortfolioReadService.read_planning(year=2026).ytd_contributions
 
     activity = AssetService.get_portfolio_activity()
 
@@ -18,7 +19,7 @@ def test_activity_combines_sources_orders_and_limits_without_changing_contributi
     assert activity.iloc[1]["quantity"] == 10
     assert activity.iloc[1]["quantity_status"] == "estimated"
     assert AssetService.get_portfolio_activity(limit=2).equals(activity.head(2))
-    assert AssetService.get_ytd_contributions(2026) == before
+    assert PortfolioReadService.read_planning(year=2026).ytd_contributions == before
 
 
 def test_activity_preserves_corporate_custody_and_pending_cost_semantics():

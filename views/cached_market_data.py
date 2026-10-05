@@ -1,5 +1,5 @@
-import datetime
 import hashlib
+import io
 from pathlib import Path
 
 import pandas as pd
@@ -7,14 +7,14 @@ import streamlit as st
 
 from core.application_paths import ApplicationPaths
 from core.background_market_data import BackgroundMarketData
-from core.database import db
+from core.daos.portfolio_dao import PortfolioDAO
 from core.market_data_cache import MarketDataCache
+from core.portfolio_read import PortfolioLedger
 from core.screen_cache import ScreenCache
 from core.utils.market_data import MarketData
-from services.assets_service import AssetService
 
 _cache_configuration: dict[str, Path | None] = {"path": None}
-_PROJECTION_VERSION = 1
+_PROJECTION_VERSION = 2
 
 
 def configure_screen_cache(path: Path) -> None:
@@ -147,115 +147,57 @@ for _method, _prefix in (
     )
 
 
-class StreamlitCachedPortfolioData:
-    """Cache discardable portfolio projections behind the Streamlit boundary."""
+class StreamlitCachedPortfolioRepository:
+    """Cache only local ledger snapshots; enrich market inputs on every read."""
 
-    @staticmethod
-    def _context() -> tuple[str, str | None, int]:
-        database_path = db.get_personal_database_path()
-        portfolio_key = hashlib.sha256(str(database_path).encode()).hexdigest()
+    def __init__(self, repository=None):
+        self._repository = repository or PortfolioDAO()
+
+    def context(self) -> tuple[str, str | None, int]:
+        database_path = self._repository.db.get_personal_database_path()
         return (
-            portfolio_key,
+            hashlib.sha256(str(database_path).encode()).hexdigest(),
             ApplicationPaths.database_generation(database_path),
-            AssetService.get_local_projection_revision(),
+            self._repository.get_local_projection_revision(),
         )
 
     @staticmethod
     @st.cache_data
-    def _calculate_positions(
-        portfolio_context: tuple[str, str | None, int],
-        today_date: str | None,
-        start_date: str | None,
-        catalog_identity: tuple,
-    ) -> pd.DataFrame:
-        key = (_PROJECTION_VERSION, *portfolio_context, today_date, start_date, catalog_identity)
+    def _load_ledger(context, _repository):
+        key = (_PROJECTION_VERSION, *context)
         store = get_screen_cache()
         if store is not None:
-            saved = store.get("positions", key)
-            if saved is not None and not saved.stale and isinstance(saved.value, pd.DataFrame):
-                return saved.value
-        today = datetime.date.fromisoformat(today_date)
-        filters = {}
-        filters["today_date"] = today
-        if start_date is not None:
-            filters["start_date"] = start_date
-        result = AssetService.calculate_positions(**filters)
-        if store is not None:
-            store.put("positions", key, result, ttl=30 * 86400)
-        return result
+            saved = store.get("portfolio_ledger", key)
+            if saved is not None and not saved.stale:
+                try:
+                    data = saved.value
+                    return PortfolioLedger(
+                        pd.read_json(io.StringIO(data["transactions"]), orient="table"),
+                        pd.read_json(io.StringIO(data["dividends"]), orient="table"),
+                        int(data["revision"]),
+                    )
+                except (ValueError, KeyError, TypeError):
+                    pass
+        ledger = _repository.load_ledger()
+        if store is not None and ledger.revision == context[2]:
+            store.put(
+                "portfolio_ledger",
+                key,
+                {
+                    "transactions": ledger.transactions.to_json(
+                        orient="table", double_precision=15
+                    ),
+                    "dividends": ledger.dividends.to_json(orient="table", double_precision=15),
+                    "revision": ledger.revision,
+                },
+                ttl=30 * 86400,
+            )
+        return ledger
 
-    @classmethod
-    def calculate_positions(cls, today_date=None, start_date=None) -> pd.DataFrame:
-        portfolio_context = cls._context()
-        effective_today = today_date or datetime.date.today()
-        catalog_path = Path(MarketData.resolve_catalog_path())
-        try:
-            catalog_stat = catalog_path.stat()
-            catalog_identity = (str(catalog_path), catalog_stat.st_mtime_ns, catalog_stat.st_size)
-        except OSError:
-            catalog_identity = (str(catalog_path), None, None)
-        return cls._calculate_positions(
-            portfolio_context,
-            effective_today.isoformat(),
-            start_date,
-            catalog_identity,
-        )
+    def load_ledger(self) -> PortfolioLedger:
+        return self._load_ledger(self.context(), self._repository)
 
-    @staticmethod
-    @st.cache_data
-    def _calculate_historical_evolution(
-        portfolio_context: tuple[str, str | None, int],
-        start_date: str | None,
-        include_pending_costs: bool,
-        as_of_month: str,
-    ) -> pd.DataFrame:
-        key = (
-            _PROJECTION_VERSION,
-            *portfolio_context,
-            start_date,
-            include_pending_costs,
-            as_of_month,
-        )
-        store = get_screen_cache()
-        if store is not None:
-            saved = store.get("historical_evolution", key)
-            if saved is not None and not saved.stale and isinstance(saved.value, pd.DataFrame):
-                return saved.value
-        result = AssetService.calculate_historical_evolution(start_date, include_pending_costs)
-        if store is not None:
-            store.put("historical_evolution", key, result, ttl=30 * 86400)
-        return result
 
-    @classmethod
-    def calculate_historical_evolution(cls, start_date=None, include_pending_costs=False):
-        portfolio_context = cls._context()
-        as_of_month = datetime.date.today().strftime("%Y-%m")
-        return cls._calculate_historical_evolution(
-            portfolio_context,
-            start_date,
-            include_pending_costs,
-            as_of_month,
-        )
-
-    @staticmethod
-    @st.cache_data
-    def _get_monthly_contributions_by_year(
-        portfolio_key: str, database_generation: str | None, revision: int, start_date: str | None
-    ) -> pd.DataFrame:
-        key = (_PROJECTION_VERSION, portfolio_key, database_generation, revision, start_date)
-        store = get_screen_cache()
-        if store is not None:
-            saved = store.get("monthly_contributions", key)
-            if saved is not None and not saved.stale and isinstance(saved.value, pd.DataFrame):
-                return saved.value
-        result = AssetService.get_monthly_contributions_by_year(start_date)
-        if store is not None:
-            store.put("monthly_contributions", key, result, ttl=30 * 86400)
-        return result
-
-    @classmethod
-    def get_monthly_contributions_by_year(cls, start_date=None) -> pd.DataFrame:
-        portfolio_key, database_generation, revision = cls._context()
-        return cls._get_monthly_contributions_by_year(
-            portfolio_key, database_generation, revision, start_date
-        )
+def portfolio_context() -> tuple[str, str | None, int]:
+    """Public identity for widgets scoped to the active local portfolio."""
+    return StreamlitCachedPortfolioRepository().context()

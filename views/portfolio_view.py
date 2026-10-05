@@ -13,9 +13,9 @@ from core.utils.market_history import (
     downsample_history_for_chart,
     get_closing_price_summary,
 )
-from services.assets_service import AssetService
+from services.portfolio_read_service import PortfolioReadService
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
-from views.cached_market_data import StreamlitCachedPortfolioData
+from views.cached_market_data import portfolio_context
 from views.components.asset_annual_goal import AssetAnnualGoalWidget
 from views.components.manual_entry import ManualEntryWidget
 
@@ -29,12 +29,13 @@ class PortfolioView:
 
         # Fetch active assets in portfolio
         with measure_navigation("ativos.carteira", "get_positions"):
-            df_positions = StreamlitCachedPortfolioData.calculate_positions()
+            portfolio = PortfolioReadService.read_planning()
+            df_positions = portfolio.positions
         if df_positions.empty:
             st.info(MSG_PORTFOLIO_EMPTY_ASSETS)
             return
 
-        pending_tickers = AssetService.get_pending_tickers()
+        pending_tickers = ", ".join(portfolio.pending_tickers)
         if pending_tickers:
             st.warning(
                 f"Custo pendente em {pending_tickers}. Regularize a entrada na tela de Operações para calcular os indicadores de custo."
@@ -42,7 +43,7 @@ class PortfolioView:
 
         tickers = sorted(df_positions["ticker"].tolist())
 
-        portfolio_key, generation, _ = StreamlitCachedPortfolioData._context()
+        portfolio_key, generation, _ = portfolio_context()
         ticker_set_key = hashlib.sha256(repr(tickers).encode("utf-8")).hexdigest()[:12]
         asset_tabs = st.tabs(
             tickers,
@@ -55,14 +56,19 @@ class PortfolioView:
                     self._render_single_asset_subtab(ticker, df_positions)
 
     def _render_single_asset_subtab(self, ticker, df_positions):
-        row_pos = df_positions[df_positions["ticker"] == ticker].iloc[0]
-        portfolio_key, generation, _ = StreamlitCachedPortfolioData._context()
-        metadata = AssetService.get_asset_metadata(ticker)
+        portfolio_key, generation, _ = portfolio_context()
         with (
             st.spinner(f"Buscando cotações em tempo real para {ticker}..."),
             measure_navigation("ativos.carteira", "market_analysis"),
         ):
-            details = AssetService.get_asset_market_analysis(ticker)
+            asset = PortfolioReadService.read_asset(ticker)
+            details = {**asset.market, "transaction_history": asset.transaction_history}
+            metadata = asset.metadata
+            row_pos = asset.position
+
+        if not row_pos:
+            st.info(MSG_PORTFOLIO_EMPTY_ASSETS)
+            return
 
         self._render_header_metadata_block(ticker, metadata)
         st.markdown("---")
@@ -89,10 +95,8 @@ class PortfolioView:
                 AssetAnnualGoalWidget().render(ticker)
         self._render_indicators_block(row_pos, details)
         self._render_behavior_chart(ticker, details)
-        with measure_navigation("ativos.carteira", "dividends_projection"):
-            df_div = AssetService.get_asset_dividends(ticker)
-        self._render_proventos_pivot_table(ticker, df_div)
-        self._render_transactions_and_dividends_tables(ticker, df_div)
+        self._render_proventos_pivot_table(ticker, asset)
+        self._render_transactions_and_dividends_tables(ticker, asset)
 
     @instrument_screen("ativos.carteira.header")
     def _render_header_metadata_block(self, ticker, metadata):
@@ -134,12 +138,12 @@ class PortfolioView:
             )
 
     @instrument_screen("ativos.carteira.dividends")
-    def _render_proventos_pivot_table(self, ticker, df_div):
+    def _render_proventos_pivot_table(self, ticker, asset):
         """SECTION 1: Renders the annual pivot table of received dividends and metrics."""
         st.markdown("---")
         st.subheader(MSG_DIVIDENDS_DYNAMIC_TABLE)
 
-        years = AssetService.get_asset_years_with_dividends(ticker)
+        years = list(asset.annual_dividends)
         if years:
             p_col1, p_col2, p_col3, p_col4, p_col5, p_col6, p_col7 = st.columns(
                 [0.5, 1, 1, 1, 1, 1, 1]
@@ -150,24 +154,15 @@ class PortfolioView:
                     "Filtrar Ano", years, key=f"year_selector_{ticker}", label_visibility="visible"
                 )
 
-            df_pivot = AssetService.get_asset_annual_dividends_pivot(ticker, chosen_year)
-            val_div = df_pivot.loc[
-                df_pivot["Categoria"] == "Total de Dividendos", "Valor (R$)"
-            ].values[0]
-            val_jcp = df_pivot.loc[df_pivot["Categoria"] == "Total de JCP", "Valor (R$)"].values[0]
-            val_rend = df_pivot.loc[
-                df_pivot["Categoria"] == "Total de Rendimentos", "Valor (R$)"
-            ].values[0]
-            val_total = df_pivot.loc[
-                df_pivot["Categoria"] == "Total de Proventos (Soma de todos)", "Valor (R$)"
-            ].values[0]
-
-            metrics = AssetService.get_annual_dividends_metrics(ticker, chosen_year, df_div)
+            metrics = asset.annual_dividends[chosen_year]
+            df_pivot = metrics["pivot"]
+            val_div, val_jcp = metrics["dividends"], metrics["jcp"]
+            val_rend, val_total = metrics["yields"], metrics["total"]
             total_paid_per_share = metrics["total_paid_per_share"]
             qty_end_of_year = metrics["qty_end_of_year"]
             qty_prev_year = metrics["qty_prev_year"]
             prev_year = metrics["prev_year"]
-            diff = qty_end_of_year - qty_prev_year
+            diff = metrics["quantity_change"]
 
             qty_delta = f"{diff:+d} cotas" if diff != 0 else None
 
@@ -228,11 +223,7 @@ class PortfolioView:
         high_52w = details.get("high_52w", 0.0)
         low_52w = details.get("low_52w", 0.0)
 
-        # Calculate actual adjusted price: (invested_amount - total_dividends) / quantity
-        qty = row_pos["quantity"]
-        total_dividends = row_pos["total_dividends"]
-        invested_amount = row_pos["invested_amount"]
-        adjusted_price = (invested_amount - total_dividends) / qty if qty > 0 else 0.0
+        adjusted_price = row_pos["adjusted_price"]
 
         st.markdown("---")
         st.markdown(MSG_ASSET_GENERAL_INDICATORS)
@@ -255,9 +246,7 @@ class PortfolioView:
         )
         m_col4.metric(LABEL_DY, f"{dy:.2f}%" if dy > 0 else "N/D", help=HELP_DY)
 
-        total_invested = row_pos["invested_amount"]
-        l12m_dividends = row_pos["l12m_dividends"]
-        yoc_12 = ((l12m_dividends / total_invested * 100) / 12) if total_invested > 0 else 0.0
+        yoc_12 = row_pos["monthly_l12m_yoc"]
         m_col5.metric(
             LABEL_YOC_12_MONTHLY,
             "Custo pendente" if pending else f"{yoc_12:.2f}%",
@@ -377,7 +366,7 @@ class PortfolioView:
                 hover_fmt = "Fechamento: R$ %{y:,.2f}<extra></extra>"
 
             # Fetch raw transactions for this ticker to plot Buy/Sell markers
-            df_raw_tx = AssetService.get_raw_transactions_for_chart(ticker)
+            df_raw_tx = details["transaction_history"].copy()
 
             # Filter transactions that fall within the current selected chart timeline
             history_start = pd.to_datetime(history.index.min()).date()
@@ -508,7 +497,7 @@ class PortfolioView:
             st.info(MSG_NO_YF_CHART_DATA)
 
     @instrument_screen("ativos.carteira.activity_tables")
-    def _render_transactions_and_dividends_tables(self, ticker, df_div):
+    def _render_transactions_and_dividends_tables(self, ticker, asset):
         """SECTION 4: Renders detailed tables for deposits and dividends side-by-side."""
         st.markdown("---")
         st.markdown(MSG_TX_EXTRACT_TITLE)
@@ -516,7 +505,7 @@ class PortfolioView:
 
         with col_t1:
             st.subheader(MSG_DETAILED_CONTRIBUTIONS)
-            df_tx = AssetService.get_asset_transactions(ticker)
+            df_tx = asset.transactions
             if not df_tx.empty:
                 df_tx_display = df_tx.copy()
                 df_tx_display["Valor Unitário"] = df_tx_display["Valor Unitário"].map(
@@ -534,8 +523,8 @@ class PortfolioView:
 
         with col_t2:
             st.subheader(MSG_RECEIVED_DIVIDENDS)
-            if not df_div.empty:
-                df_div_display = AssetService.get_asset_dividends_detailed(ticker)
+            if not asset.dividends.empty:
+                df_div_display = asset.dividend_details.copy()
                 df_div_display["Unitário"] = df_div_display["Unitário"].map(
                     Formatter.format_currency
                 )

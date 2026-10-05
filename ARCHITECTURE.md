@@ -79,6 +79,28 @@ A direção das dependências é `views` → `services` → contratos e adaptado
 
 ### Portas e adaptadores
 
+O contrato de planejamento está em `core/planning.py`. A apresentação envia um
+`PlanningConfiguration` para `SimulationService.save_planning_configuration()`, que normaliza
+datas e mantém os parâmetros de valuation já salvos. A consulta do capital anterior passa por
+`get_prior_invested_capital()`, usando o mesmo `PortfolioProviderPort` injetado em `app.py`.
+Não há consulta direta da tela a `AssetService` ou `PortfolioReadService`.
+
+`get_current_simulation()` continua sendo a referência para o plano persistido e seus aportes.
+`simulate_scenario(PlanningScenario)` executa o sandbox sem ler nem gravar configurações ou
+carteira. Os dois casos de uso compartilham a implementação financeira e retornam
+`SimulationResult`, com atributos nomeados e acesso pelas chaves existentes. A anuidade
+antecipada (`type=1`) permanece; prazo encerrado ou taxa não positiva resulta em aporte zero.
+Na projeção com taxa zero, o patrimônio mantém a base inicial sem produzir valores indefinidos.
+`get_scenario_projection()` prepara os datasets acumulado e mensal a partir do resultado já
+calculado. `ProjectionChartWidget.render_scenario()` renderiza esses datasets por uma interface
+pública; somente `render()` acrescenta o histórico do plano salvo.
+
+Os valores dos widgets e o cache de aporte do plano salvo permanecem na sessão. O sandbox não
+sobrescreve esse cache. O planejamento continua reutilizando o ledger do adaptador
+`StreamlitCachedPortfolioRepository`, com as mesmas chaves de carteira, geração e revisão e
+invalidação após mutações. Os cálculos financeiros são refeitos com as entradas atuais;
+não há novo cache de resultados financeiros, alteração de schema ou migração de dados.
+
 `PlanningConfigPort.get_min_transaction_date()` retorna `None` quando não há transações.
 Nesse caso, sem data de início explícita, `SimulationService` usa o dia atual a cada cálculo,
 sem persistir uma data provisória. Com transações, usa a primeira data do histórico; uma data

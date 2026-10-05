@@ -10,11 +10,6 @@ from core.constants import (
     PLANNED_DIVIDENDS,
     PLANNED_INVESTED,
     SIM_CURRENT_AGE,
-    SIM_MONTHLY_INTEREST_RATE,
-    SIM_REQUIRED_CONTRIBUTION,
-    SIM_START_AGE_YEARS,
-    SIM_TARGET_EQUITY,
-    SIM_TOTAL_TIME_MONTHS,
 )
 from core.strings import (
     MSG_CONSTANT_CONTRIB_VS_INTEREST_TITLE,
@@ -31,15 +26,20 @@ class ProjectionChartWidget:
     """Displays highly polished, interactive compounding projection and comparative curves."""
 
     def render(self, sim):
+        self.render_scenario(sim)
+
+        # Historical comparisons belong only to the saved plan.
+        self._render_historical_comparisons(extrapolation=12)
+
+    def render_scenario(self, sim):
+        """Render the two public scenario datasets without reading the saved plan."""
+        projection = SimulationService.get_scenario_projection(sim)
         # 1. RENDER SECTION 1: PROJECTION CHARTS (SIDE BY SIDE)
         st.markdown("---")
         chart_col1, chart_col2 = st.columns(2)
 
-        self._render_cumulative_projection(sim, chart_col1)
-        self._render_monthly_comparison(sim, chart_col2)
-
-        # 2. RENDER SECTION 2: HISTORICAL REAL VS PLANNED (SIDE BY SIDE WITH EXTRAPOLATION)
-        self._render_historical_comparisons(extrapolation=12)
+        self._render_cumulative_projection(sim, projection.cumulative, chart_col1)
+        self._render_monthly_comparison(sim, projection.monthly, chart_col2)
 
     @staticmethod
     def _add_today_marker(fig, sim):
@@ -64,18 +64,8 @@ class ProjectionChartWidget:
             font=dict(size=12, color=ChartThemeAdapter.annotation_font_color()),
         )
 
-    def _render_cumulative_projection(self, sim, container):
+    def _render_cumulative_projection(self, sim, df_projection, container):
         """Renders the cumulative long-term projection area chart with crossover markers."""
-        initial_equity = sim.get("initial_equity_input", 0.0)
-        df_projection = SimulationService.build_projection_dataframe(
-            sim[SIM_START_AGE_YEARS],
-            sim[SIM_TOTAL_TIME_MONTHS],
-            initial_equity,
-            sim[SIM_REQUIRED_CONTRIBUTION],
-            sim[SIM_MONTHLY_INTEREST_RATE],
-            sim[SIM_TARGET_EQUITY],
-        )
-
         if df_projection.empty:
             return
 
@@ -169,17 +159,8 @@ class ProjectionChartWidget:
             )
             st.plotly_chart(ChartThemeAdapter.apply_theme(fig), width="stretch")
 
-    def _render_monthly_comparison(self, sim, container):
+    def _render_monthly_comparison(self, sim, df_cashflow, container):
         """Renders the constant out-of-pocket contribution vs growing passive interest monthly comparison chart."""
-        initial_equity = sim.get("initial_equity_input", 0.0)
-        df_cashflow = SimulationService.build_monthly_cashflow_dataframe(
-            sim[SIM_START_AGE_YEARS],
-            sim[SIM_TOTAL_TIME_MONTHS],
-            initial_equity,
-            sim[SIM_REQUIRED_CONTRIBUTION],
-            sim[SIM_MONTHLY_INTEREST_RATE],
-        )
-
         if df_cashflow.empty:
             return
 

@@ -280,6 +280,14 @@ Na Simulação Rápida, o patrimônio inicial aparece no ano zero da projeção 
 juros acumulados iguais a zero, e compõe a base de crescimento do patrimônio e dos rendimentos.
 Também reduz o aporte mensal necessário. Os valores dessa simulação não alteram o plano salvo.
 
+O plano salvo e a Simulação Rápida usam o mesmo cálculo de anuidade antecipada e a mesma
+estrutura de resultados. A tela encaminha uma configuração única ao módulo de planejamento,
+que também prepara os dados dos gráficos e consulta o capital anterior pelo provedor da carteira.
+Os campos continuam mantendo seus valores na sessão, e a Simulação Rápida não substitui o aporte
+do plano salvo usado pelos demais indicadores. As leituras reutilizam o ledger em memória,
+renovado quando mudam os dados, a carteira ou sua geração; os cálculos financeiros usam sempre
+as entradas atuais. Essa organização não exige migração dos bancos existentes.
+
 ## Requisitos
 
 - Python 3.10 a 3.14

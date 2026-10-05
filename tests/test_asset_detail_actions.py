@@ -1,3 +1,4 @@
+from services.portfolio_read_service import PortfolioReadService
 import contextlib
 import datetime
 import sqlite3
@@ -11,7 +12,7 @@ from core.daos.planning_dao import PlanningDAO
 from core.database import db
 from services.assets_service import AssetService
 from services.share_quantity_goal_service import ShareQuantityGoalService
-from views.cached_market_data import StreamlitCachedPortfolioData
+from views.cached_market_data import StreamlitCachedPortfolioRepository
 from views.components.manual_entry import ManualEntryWidget
 
 
@@ -46,24 +47,25 @@ def test_bound_form_saves_only_selected_ticker_and_refreshes_projections(mock_db
     monkeypatch.setattr(st, "rerun", lambda: reruns.append(True))
     state = {f"{WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX}testsnapshotpending": True}
     monkeypatch.setattr(st, "session_state", state)
-    StreamlitCachedPortfolioData._calculate_positions.clear()
-    assert StreamlitCachedPortfolioData.calculate_positions().iloc[0]["quantity"] == 100
+    StreamlitCachedPortfolioRepository._load_ledger.clear()
+    PortfolioReadService.set_adapters(repository=StreamlitCachedPortfolioRepository())
+    assert PortfolioReadService.read_planning().positions.iloc[0]["quantity"] == 100
     revision = AssetService.get_local_projection_revision()
     ManualEntryWidget().render("BBAS3")
     assert AssetService.get_local_projection_revision() > revision
     assert reruns == [True]
     assert not state
     if kind in {"DIVIDEND", "JCP", "YIELD"}:
-        receipt = AssetService.get_asset_dividends("BBAS3").iloc[0]
+        receipt = PortfolioReadService.read_asset("BBAS3").dividends.iloc[0]
         assert receipt["Total"] == 2
-        assert AssetService.get_asset_dividends("CXSE3").empty
+        assert PortfolioReadService.read_asset("CXSE3").dividends.empty
         expected_quantity = 100
     else:
-        transaction = AssetService.get_raw_transactions_for_chart("BBAS3").iloc[-1]
+        transaction = PortfolioReadService.read_asset("BBAS3").transaction_history.iloc[-1]
         assert transaction["transaction_type"] == kind
-        assert AssetService.get_raw_transactions_for_chart("CXSE3").empty
+        assert PortfolioReadService.read_asset("CXSE3").transaction_history.empty
         expected_quantity = 2 if kind == "GROUP" else 98 if kind == "SELL" else 102
-    assert StreamlitCachedPortfolioData.calculate_positions().iloc[0]["quantity"] == expected_quantity
+    assert PortfolioReadService.read_planning().positions.iloc[0]["quantity"] == expected_quantity
 
 
 def test_annual_goal_uses_january_base_and_keeps_other_targets(mock_db, monkeypatch):
@@ -246,9 +248,9 @@ def test_native_bound_form_refreshes_after_purchase(mock_db, monkeypatch):
     app.number_input[2].set_value(1)
     app.button[0].click().run()
     assert not app.exception
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["ticker"] == "BBAS3"
     assert position["quantity"] == 5
     assert position["average_price"] == pytest.approx(20.2)
-    assert AssetService.get_ytd_contributions(datetime.date.today().year) == 101
+    assert PortfolioReadService.read_planning(year=datetime.date.today().year).ytd_contributions == 101
     assert len(AssetService.get_portfolio_activity()) == 1

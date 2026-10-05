@@ -1,3 +1,4 @@
+from services.portfolio_read_service import PortfolioReadService
 import pandas as pd
 import pytest
 
@@ -9,10 +10,10 @@ def test_same_month_reallocation_is_not_a_new_contribution():
     assert AssetService.add_transaction("BBAS3", "2024-02-01", "SELL", 100, 100)
     assert AssetService.add_transaction("CXSE3", "2024-02-02", "BUY", 100, 100)
 
-    monthly = AssetService.get_monthly_contributions_by_year(start_date="2024-02-01")
+    monthly = PortfolioReadService.read_history(start_date="2024-02-01").monthly_contributions
 
     assert monthly.to_dict("records") == [{"year": "2024", "month": "02", "amount": 0.0}]
-    assert AssetService.get_ytd_contributions(2024) == 10_000
+    assert PortfolioReadService.read_planning(year=2024).ytd_contributions == 10_000
 
 
 @pytest.mark.parametrize(
@@ -23,11 +24,11 @@ def test_reallocation_counts_purchase_and_sale_fees(buy_fees, sell_fees, expecte
     assert AssetService.add_transaction("BBAS3", "2024-01-01", "SELL", 100, 100, sell_fees)
     assert AssetService.add_transaction("CXSE3", "2024-01-02", "BUY", 100, 100, buy_fees)
 
-    monthly = AssetService.get_monthly_contributions_by_year("2024-01-01")
+    monthly = PortfolioReadService.read_history("2024-01-01").monthly_contributions
 
     assert monthly.to_dict("records") == [{"year": "2024", "month": "01", "amount": expected}]
-    assert AssetService.get_ytd_contributions(2024) == expected
-    evolution = AssetService.calculate_historical_evolution("2024-01-01")
+    assert PortfolioReadService.read_planning(year=2024).ytd_contributions == expected
+    evolution = PortfolioReadService.read_history("2024-01-01").evolution
     assert evolution.iloc[-1]["cumulative_invested"] == expected
 
 
@@ -36,26 +37,26 @@ def test_sale_and_purchase_in_different_months_preserve_negative_cash_flow():
     assert AssetService.add_transaction("BBAS3", "2024-01-01", "SELL", 100, 100, 20)
     assert AssetService.add_transaction("CXSE3", "2024-02-01", "BUY", 50, 100, 10)
 
-    monthly = AssetService.get_monthly_contributions_by_year("2024-01-01")
+    monthly = PortfolioReadService.read_history("2024-01-01").monthly_contributions
 
     assert monthly.to_dict("records") == [
         {"year": "2024", "month": "01", "amount": -9_980},
         {"year": "2024", "month": "02", "amount": 5_010},
     ]
-    assert AssetService.get_ytd_contributions(2024) == -4_970
-    assert AssetService.get_monthly_contributions_by_year("2024-02-01")["amount"].sum() == 5_010
+    assert PortfolioReadService.read_planning(year=2024).ytd_contributions == -4_970
+    assert PortfolioReadService.read_history("2024-02-01").monthly_contributions["amount"].sum() == 5_010
 
 
 def test_empty_portfolio_has_zero_ytd_and_no_monthly_contributions():
-    assert AssetService.get_ytd_contributions(2024) == 0
-    assert AssetService.get_monthly_contributions_by_year().empty
+    assert PortfolioReadService.read_planning(year=2024).ytd_contributions == 0
+    assert PortfolioReadService.read_history().monthly_contributions.empty
 
 
 def test_grouping_does_not_create_contributions():
     assert AssetService.add_transaction("BBAS3", "2024-01-01", "GROUP", 10, 999, 10)
 
-    assert AssetService.get_ytd_contributions(2024) == 0
-    assert AssetService.get_monthly_contributions_by_year().empty
+    assert PortfolioReadService.read_planning(year=2024).ytd_contributions == 0
+    assert PortfolioReadService.read_history().monthly_contributions.empty
 
 
 def test_pending_trade_before_selected_period_does_not_withhold_totals():
@@ -71,9 +72,9 @@ def test_pending_trade_before_selected_period_does_not_withhold_totals():
     assert AssetService.process_b3_import(frame) == (1, 0)
     assert AssetService.add_transaction("BBAS3", "2024-01-01", "SELL", 100, 10, 20)
 
-    assert AssetService.get_ytd_contributions(2023) is None
-    assert AssetService.get_monthly_contributions_by_year().empty
-    assert AssetService.get_ytd_contributions(2024) == -980
-    assert AssetService.get_monthly_contributions_by_year("2024-01-01").to_dict("records") == [
+    assert PortfolioReadService.read_planning(year=2023).ytd_contributions is None
+    assert PortfolioReadService.read_history().monthly_contributions.empty
+    assert PortfolioReadService.read_planning(year=2024).ytd_contributions == -980
+    assert PortfolioReadService.read_history("2024-01-01").monthly_contributions.to_dict("records") == [
         {"year": "2024", "month": "01", "amount": -980},
     ]

@@ -173,7 +173,7 @@ class ShareQuantityGoalService:
             raise RuntimeError(
                 "O provedor da carteira não está configurado para metas de acumulação."
             )
-        return self._portfolio_provider.calculate_positions()
+        return self._portfolio_provider.read_planning().positions
 
     def _get_goal_positions(self, today_date: datetime.date | None = None) -> pd.DataFrame:
         """Keep closed reductions visible using the effective baseline for the requested year."""
@@ -223,10 +223,10 @@ class ShareQuantityGoalService:
         """Returns quantities held on January 1 of the current year."""
         reference_date = today_date or datetime.date.today()
         year_start_date = f"{reference_date.year}-01-01"
-        return {
-            ticker: float(self._portfolio_provider.get_quantity_on_date(ticker, year_start_date))
-            for ticker in tickers
-        }
+        quantities = self._portfolio_provider.read_planning(
+            quantity_date=year_start_date
+        ).quantities
+        return {ticker: float(quantities.get(ticker, 0)) for ticker in tickers}
 
     @staticmethod
     def _is_corporate_action(transaction: pd.Series) -> bool:
@@ -238,7 +238,9 @@ class ShareQuantityGoalService:
         self, goal: dict, year_start_date: str, target_action_cutoff: str | None = None
     ) -> tuple[float, float, float] | None:
         """Calculates progress and goal quantities rebased through corporate actions."""
-        transactions = self._portfolio_provider.get_raw_transactions_for_chart(goal[TICKER])
+        transactions = self._portfolio_provider.read_planning().transactions.get(
+            goal[TICKER], pd.DataFrame()
+        )
         if transactions.empty:
             return None
 

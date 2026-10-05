@@ -415,9 +415,11 @@ from services.assets_service import AssetService
 from services.goals_service import GoalService
 from services.market_analysis_service import MarketAnalysisService
 from services.planning_service import SimulationService
+from services.portfolio_read_service import PortfolioReadService
 from services.share_quantity_goal_service import ShareQuantityGoalService
 from views.cached_market_data import (
     StreamlitCachedMarketData,
+    StreamlitCachedPortfolioRepository,
     configure_screen_cache,
     get_background_market_data,
 )
@@ -430,20 +432,26 @@ st.session_state["market_data_requests"] = {}
 st.session_state["market_data_poll_ready"] = False
 market_analysis = MarketAnalysisService(StreamlitCachedMarketData, portfolio_repo)
 
+PortfolioReadService.set_adapters(
+    repository=StreamlitCachedPortfolioRepository(),
+    quotes=StreamlitCachedMarketData,
+    analysis=market_analysis,
+    catalog=StreamlitCachedMarketData,
+)
 AssetService.set_adapters(
     portfolio_repo=portfolio_repo,
     market_data_api=StreamlitCachedMarketData,
     market_analysis_api=market_analysis,
     excel_parser=B3ExcelParserAdapter(),
-    planning_provider=SimulationService.get_default(),
+    read_provider=PortfolioReadService.get_default(),
 )
-SimulationService.set_adapters(portfolio_provider=AssetService.get_default())
+SimulationService.set_adapters(portfolio_provider=PortfolioReadService.get_default())
 GoalService.set_adapters(
-    portfolio_provider=AssetService.get_default(),
+    portfolio_provider=PortfolioReadService.get_default(),
     planning_provider=SimulationService.get_default(),
 )
 ShareQuantityGoalService.set_adapters(
-    portfolio_provider=AssetService.get_default(),
+    portfolio_provider=PortfolioReadService.get_default(),
     market_analysis_api=market_analysis,
     planning_provider=SimulationService.get_default(),
 )

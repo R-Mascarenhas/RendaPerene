@@ -1,4 +1,3 @@
-import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
@@ -18,7 +17,6 @@ from core.constants import (
     PLANNING_START_DATE,
     SECTOR,
     TICKER,
-    TOTAL_DIVIDENDS,
 )
 from core.strings import (
     MSG_HISTORIC_CONTRIBUTIONS_TITLE,
@@ -26,69 +24,27 @@ from core.strings import (
 )
 from core.utils.formatter import Formatter
 from services.planning_service import SimulationService
-from views.cached_market_data import StreamlitCachedPortfolioData
+from services.portfolio_read_service import PortfolioReadService
 from views.components.chart_theme import ChartThemeAdapter
 
 
 class DashboardCharts:
     """Displays all interactive Plotly figures on the Dashboard."""
 
-    def render(self, df_positions):
+    def render(self, portfolio):
+        df_positions = portfolio.positions
         if df_positions[CURRENT_VALUE].notna().all():
-            self._render_top_charts(df_positions)
+            self._render_top_charts(portfolio)
         else:
             st.caption("Os gráficos de composição do patrimônio aguardam cotações completas.")
         self._render_evolution_chart()
         self._render_monthly_contributions_chart()
 
-    def _render_top_charts(self, df_positions):
+    def _render_top_charts(self, portfolio):
+        df_positions = portfolio.positions
         chart_col1, chart_col2, chart_col3 = st.columns(3)
         with chart_col1:
-            # Group df_positions by SECTOR to calculate sector sum and build custom hover details
-            total_portfolio_equity = df_positions[CURRENT_VALUE].sum()
-            sector_groups = df_positions.groupby(SECTOR)
-
-            sector_data = []
-            for sector_name, group in sector_groups:
-                sector_val = group[CURRENT_VALUE].sum()
-                sector_pct = (
-                    (sector_val / total_portfolio_equity * 100)
-                    if total_portfolio_equity > 0
-                    else 0.0
-                )
-
-                # Sort tickers within sector by CURRENT_VALUE descending
-                group_sorted = group.sort_values(by=CURRENT_VALUE, ascending=False)
-
-                # Build detail lines for each ticker
-                details = []
-                for _, row in group_sorted.iterrows():
-                    ticker = row[TICKER]
-                    ticker_val = row[CURRENT_VALUE]
-                    ticker_pct_portfolio = (
-                        (ticker_val / total_portfolio_equity * 100)
-                        if total_portfolio_equity > 0
-                        else 0.0
-                    )
-                    ticker_pct_sector = (ticker_val / sector_val * 100) if sector_val > 0 else 0.0
-
-                    formatted_val = Formatter.format_currency(ticker_val)
-                    details.append(
-                        f"  • {ticker}: {formatted_val} ({ticker_pct_sector:.2f}% do setor / {ticker_pct_portfolio:.2f}% do total)"
-                    )
-
-                details_str = "<br>".join(details)
-
-                sector_data.append(
-                    {
-                        SECTOR: sector_name,
-                        CURRENT_VALUE: sector_val,
-                        "Percentual": sector_pct,
-                        "Detalhes": details_str,
-                    }
-                )
-
-            df_sectors = pd.DataFrame(sector_data)
+            df_sectors = portfolio.sectors
 
             fig_sectors = px.pie(
                 df_sectors,
@@ -128,11 +84,6 @@ class DashboardCharts:
             st.plotly_chart(ChartThemeAdapter.apply_theme(fig_evol), width="stretch")
 
         with chart_col3:
-            if "total_yoc" not in df_positions.columns:
-                df_positions["total_yoc"] = (
-                    df_positions[TOTAL_DIVIDENDS] / df_positions[INVESTED_AMOUNT]
-                ) * 100
-
             df_chart_yoc = df_positions[df_positions["total_yoc"] > 0].sort_values(
                 by="total_yoc", ascending=True
             )
@@ -157,7 +108,7 @@ class DashboardCharts:
         st.markdown("---")
         config = SimulationService.get_configuration()
         start_date = config.get(PLANNING_START_DATE) if config else None
-        df_evolution = StreamlitCachedPortfolioData.calculate_historical_evolution(start_date)
+        df_evolution = PortfolioReadService.read_history(start_date).evolution
         df_evolution = SimulationService.prepare_historical_evolution(df_evolution)
 
         if not df_evolution.empty:
@@ -271,7 +222,7 @@ class DashboardCharts:
         st.markdown("---")
         config = SimulationService.get_configuration()
         start_date = config.get(PLANNING_START_DATE) if config else None
-        df_contribs = StreamlitCachedPortfolioData.get_monthly_contributions_by_year(start_date)
+        df_contribs = PortfolioReadService.read_history(start_date).monthly_contributions
         if not df_contribs.empty:
             st.subheader(MSG_HISTORIC_CONTRIBUTIONS_TITLE)
 

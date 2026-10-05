@@ -1,3 +1,4 @@
+from services.portfolio_read_service import PortfolioReadService
 import logging
 
 import pandas as pd
@@ -53,7 +54,7 @@ def test_manual_transaction_rejects_text_that_is_not_a_b3_ticker(mock_db):
     with pytest.raises(ValueError, match="ticker válido da B3"):
         AssetService.add_transaction("Petrobras", "2021-04-30", "BUY", 100, 20.00, 5.0)
 
-    assert AssetService.calculate_positions().empty
+    assert PortfolioReadService.read_planning().positions.empty
     assert catalog_path.read_bytes() == catalog_before
 
 
@@ -92,7 +93,7 @@ def test_b3_excel_importer_logic():
     assert trans_count == 4
     assert prov_count == 2
 
-    df_positions = AssetService.calculate_positions()
+    df_positions = PortfolioReadService.read_planning().positions
     assert len(df_positions) == 1
     assert df_positions.loc[0, "quantity"] == 150  # 100 buy + 100 split - 50 sell
     assert (
@@ -133,7 +134,7 @@ def test_b3_importer_deduplication():
     t2, p2 = AssetService.process_b3_import(df_excel)
     assert t2 == 0
     assert p2 == 0
-    df_positions = AssetService.calculate_positions()
+    df_positions = PortfolioReadService.read_planning().positions
     assert len(df_positions) == 1
     assert df_positions.loc[0, "quantity"] == 150
     assert df_positions.loc[0, "total_dividends"] == 80.00
@@ -247,7 +248,7 @@ def test_b3_split_logic():
     assert trans == 1
     assert prov == 0
 
-    df_pos = AssetService.calculate_positions()
+    df_pos = PortfolioReadService.read_planning().positions
     assert len(df_pos) == 1
     assert df_pos.loc[0, "quantity"] == 200
     assert df_pos.loc[0, "average_price"] == 10.00
@@ -272,7 +273,7 @@ def test_b3_resgate_logic():
     assert trans == 2
     assert prov == 0
 
-    df_pos = AssetService.calculate_positions()
+    df_pos = PortfolioReadService.read_planning().positions
     assert len(df_pos) == 0
 
 
@@ -295,7 +296,7 @@ def test_b3_custodian_transfer_pair_ignored():
     assert trans == 0  # Should ignore both transfers
     assert prov == 0
 
-    df_pos = AssetService.calculate_positions()
+    df_pos = PortfolioReadService.read_planning().positions
     assert len(df_pos) == 1
     assert df_pos.loc[0, "quantity"] == 100
     assert df_pos.loc[0, "average_price"] == 20.00
@@ -389,7 +390,7 @@ def test_discrepancies_parser():
 
     trans_count, prov_count = AssetService.process_b3_import(df_excel)
 
-    df_positions = AssetService.calculate_positions()
+    df_positions = PortfolioReadService.read_planning().positions
     df_positions.set_index("ticker", inplace=True)
 
     # 1. BBDC3 assertions
@@ -642,7 +643,7 @@ def test_assets_service_injected_parser_delegation():
     assert tx_count == 1
     assert div_count == 0
 
-    df_positions = service.calculate_positions()
+    df_positions = PortfolioReadService.read_planning().positions
     df_positions.set_index("ticker", inplace=True)
     assert "FAKE4" in df_positions.index
     assert df_positions.loc["FAKE4", "quantity"] == 200

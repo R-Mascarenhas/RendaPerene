@@ -1,3 +1,4 @@
+from services.portfolio_read_service import PortfolioReadService
 import threading
 import datetime
 
@@ -195,15 +196,16 @@ def test_missing_quote_does_not_turn_portfolio_equity_into_a_partial_total(monke
 
     AssetService.add_transaction("BBAS3", "2024-01-01", "BUY", 10, 20)
     AssetService.add_transaction("CXSE3", "2024-01-01", "BUY", 10, 10)
-    monkeypatch.setattr(MarketData, "get_batch_quotes", lambda _: {"BBAS3": 30.0})
-    monkeypatch.setattr(AssetService.get_default()._market_analysis_api,
+    monkeypatch.setattr(PortfolioReadService.get_default()._quotes, "get_batch_quotes", lambda _: {"BBAS3": 30.0})
+    monkeypatch.setattr(PortfolioReadService.get_default()._analysis,
                         "get_ticker_market_analysis", lambda *args, **kwargs: {})
-    positions, metrics = AssetService.get_portfolio_summary_metrics(AssetService.calculate_positions())
+    portfolio = PortfolioReadService.read_portfolio()
+    positions, metrics = portfolio.positions, portfolio.summary
     assert pd.isna(metrics["total_equity"])
     assert pd.isna(metrics["overall_return"])
     assert metrics["total_dividends"] == 0
     assert not metrics["market_complete"]
-    display, _ = AssetService.get_detailed_holdings_dataframe(positions, 6)
+    display = portfolio.holdings
     assert display.loc[display["Código"] == "CXSE3", DISPLAY_QUOTE_TODAY].iloc[0] == "N/D"
     assert set(display[DISPLAY_WEIGHT]) == {"N/D"}
 
@@ -315,6 +317,7 @@ def test_dashboard_renders_local_portfolio_while_yahoo_is_blocked(monkeypatch, a
 
     AssetService.add_transaction("BBAS3", "2024-01-01", "BUY", 10, 20)
     market_analysis = MarketAnalysisService(StreamlitCachedMarketData, PortfolioDAO())
+    PortfolioReadService.set_adapters(quotes=StreamlitCachedMarketData, analysis=market_analysis)
     AssetService.set_adapters(
         market_data_api=StreamlitCachedMarketData,
         market_analysis_api=market_analysis,

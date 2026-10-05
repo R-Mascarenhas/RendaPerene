@@ -1,3 +1,4 @@
+from services.portfolio_read_service import PortfolioReadService
 import json
 import sqlite3
 from contextlib import closing
@@ -31,7 +32,7 @@ def test_acquisition_without_value_remains_visible_and_pending(missing):
         1,
         0,
     )
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 100
     assert position["cost_pending"]
     assert pd.isna(position["average_price"])
@@ -62,7 +63,7 @@ def test_deposit_without_value_is_a_zero_cost_acquisition():
         0,
     )
 
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 6
     assert position["invested_amount"] == 0.0
     assert not position["cost_pending"]
@@ -71,18 +72,17 @@ def test_deposit_without_value_is_a_zero_cost_acquisition():
 
 def test_zero_basis_returns_are_unavailable(monkeypatch):
     AssetService.process_b3_import(pd.DataFrame([movement("Depósito", quantity=6)]))
-    api = AssetService.get_default()._market_data_api
-    analysis_api = AssetService.get_default()._market_analysis_api
+    api = PortfolioReadService.get_default()._quotes
+    analysis_api = PortfolioReadService.get_default()._analysis
     monkeypatch.setattr(api, "get_batch_quotes", lambda tickers: {"BBAS3": 30})
     monkeypatch.setattr(analysis_api, "get_ticker_market_analysis", lambda *args, **kwargs: {})
 
-    positions, metrics = AssetService.get_portfolio_summary_metrics(
-        AssetService.calculate_positions()
-    )
+    portfolio = PortfolioReadService.read_portfolio()
+    positions, metrics = portfolio.positions, portfolio.summary
     assert not metrics["ratios_available"]
     assert pd.isna(metrics["overall_return"])
 
-    display, _ = AssetService.get_detailed_holdings_dataframe(positions, 6)
+    display = portfolio.holdings
     from core.strings import DISPLAY_RETURN_PCT, DISPLAY_YOC, DISPLAY_YOC_12
 
     assert display.iloc[0][DISPLAY_RETURN_PCT] == "N/D"
@@ -99,7 +99,7 @@ def test_zero_cost_deposit_covers_later_custody_transfer():
     )
 
     assert AssetService.process_b3_import(frame) == (1, 0)
-    assert AssetService.calculate_positions().iloc[0]["quantity"] == 6
+    assert PortfolioReadService.read_planning().positions.iloc[0]["quantity"] == 6
     assert AssetService.get_pending_costs().empty
 
 
@@ -113,7 +113,7 @@ def test_zero_cost_deposit_covers_transfer_after_pending_acquisition():
     )
 
     assert AssetService.process_b3_import(frame) == (2, 0)
-    assert AssetService.calculate_positions().iloc[0]["quantity"] == 12
+    assert PortfolioReadService.read_planning().positions.iloc[0]["quantity"] == 12
     assert len(AssetService.get_pending_costs()) == 1
 
 
@@ -127,7 +127,7 @@ def test_zero_cost_deposit_coverage_scales_through_split():
     )
 
     assert AssetService.process_b3_import(frame) == (2, 0)
-    assert AssetService.calculate_positions().iloc[0]["quantity"] == 200
+    assert PortfolioReadService.read_planning().positions.iloc[0]["quantity"] == 200
     assert AssetService.get_pending_costs().empty
 
 
@@ -135,18 +135,17 @@ def test_known_invested_capital_remains_visible_with_pending_acquisition(monkeyp
     AssetService.add_transaction("BBAS3", "2026-01-02", "BUY", 100, 20)
     AssetService.process_b3_import(pd.DataFrame([movement("Aquisição", quantity=6)]))
 
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 106
     assert position["invested_amount"] == pytest.approx(2000)
     assert position["cost_pending"]
 
-    api = AssetService.get_default()._market_data_api
+    api = PortfolioReadService.get_default()._quotes
     monkeypatch.setattr(api, "get_batch_quotes", lambda tickers: {"BBAS3": 30})
-    positions, metrics = AssetService.get_portfolio_summary_metrics(
-        AssetService.calculate_positions()
-    )
+    portfolio = PortfolioReadService.read_portfolio()
+    positions, metrics = portfolio.positions, portfolio.summary
     assert metrics["total_invested"] == pytest.approx(2000)
-    display, _ = AssetService.get_detailed_holdings_dataframe(positions, 6)
+    display = portfolio.holdings
     from core.strings import DISPLAY_INVESTED
 
     assert display.iloc[0][DISPLAY_INVESTED] != "Custo pendente"
@@ -159,7 +158,7 @@ def test_sale_reduces_known_capital_proportionally_after_pending_acquisition():
     )
     AssetService.add_transaction("BBAS3", "2024-01-03", "SELL", 50, 12)
 
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 150
     assert position["invested_amount"] == pytest.approx(750)
     assert position["cost_pending"]
@@ -174,8 +173,8 @@ def test_custody_does_not_block_or_change_net_trade_contributions(regularize_cus
     assert AssetService.add_transaction("CXSE3", "2024-01-03", "BUY", 100, 10, 10)
     assert AssetService.add_transaction("CXSE3", "2024-01-04", "SELL", 50, 12, 20)
 
-    assert AssetService.get_ytd_contributions(2024) == 430
-    assert AssetService.get_monthly_contributions_by_year().to_dict("records") == [
+    assert PortfolioReadService.read_planning(year=2024).ytd_contributions == 430
+    assert PortfolioReadService.read_history().monthly_contributions.to_dict("records") == [
         {"year": "2024", "month": "01", "amount": 430},
     ]
 
@@ -183,15 +182,15 @@ def test_custody_does_not_block_or_change_net_trade_contributions(regularize_cus
 def test_pending_trade_withholds_contribution_totals():
     AssetService.process_b3_import(pd.DataFrame([movement()]))
 
-    assert AssetService.get_ytd_contributions(2024) is None
-    assert AssetService.get_monthly_contributions_by_year().empty
+    assert PortfolioReadService.read_planning(year=2024).ytd_contributions is None
+    assert PortfolioReadService.read_history().monthly_contributions.empty
 
 
 def test_pending_trade_withholds_historical_investment_evolution():
     AssetService.process_b3_import(pd.DataFrame([movement()]))
     AssetService.add_transaction("BBAS3", "2024-02-01", "SELL", 10, 25)
 
-    assert AssetService.calculate_historical_evolution().empty
+    assert PortfolioReadService.read_history().evolution.empty
 
 
 def test_reimport_with_known_cost_reconciles_pending_b3_purchase():
@@ -202,7 +201,7 @@ def test_reimport_with_known_cost_reconciles_pending_b3_purchase():
     assert AssetService.process_b3_import(pd.DataFrame([movement(value=2000, price=20)])) == (0, 0)
     assert AssetService.process_b3_import(pd.DataFrame([movement()])) == (0, 0)
 
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 100
     assert position["average_price"] == pytest.approx(20)
     assert not position["cost_pending"]
@@ -231,7 +230,7 @@ def test_reimport_with_accent_variant_reconciles_pending_b3_purchase():
     assert AssetService.process_b3_import(
         pd.DataFrame([movement(value=2000, price=20, direction="Credito")])
     ) == (0, 0)
-    assert AssetService.calculate_positions().iloc[0]["quantity"] == 100
+    assert PortfolioReadService.read_planning().positions.iloc[0]["quantity"] == 100
 
 
 def test_same_day_known_b3_trades_with_distinct_costs_remain_separate():
@@ -240,7 +239,7 @@ def test_same_day_known_b3_trades_with_distinct_costs_remain_separate():
 
     assert AssetService.process_b3_import(pd.DataFrame([first, second])) == (2, 0)
 
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 200
     assert position["invested_amount"] == pytest.approx(5000)
     with closing(PortfolioDAO().get_personal_connection()) as conn:
@@ -264,7 +263,7 @@ def test_pending_occurrences_align_with_divergent_known_costs():
     assert AssetService.process_b3_import(pending_frame) == (2, 0)
     assert AssetService.process_b3_import(known_frame) == (0, 0)
     assert AssetService.get_pending_costs().empty
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 200
     assert position["invested_amount"] == pytest.approx(5000)
 
@@ -312,7 +311,7 @@ def test_reconciled_trade_does_not_consume_duplicate_known_trade():
     )
     assert AssetService.process_b3_import(duplicate_export) == (1, 0)
 
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 200
     assert position["invested_amount"] == pytest.approx(4000)
     with closing(PortfolioDAO().get_personal_connection()) as conn:
@@ -329,7 +328,7 @@ def test_reconciled_corrected_trade_does_not_consume_duplicate_known_trade():
     )
     assert AssetService.process_b3_import(duplicate_export) == (1, 0)
 
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 200
     assert position["invested_amount"] == pytest.approx(4000)
     with closing(PortfolioDAO().get_personal_connection()) as conn:
@@ -375,17 +374,18 @@ def test_regularization_replays_costs_after_sale_and_reimport(total_mode, value,
     )
     assert AssetService.process_b3_import(frame.iloc[::-1]) == (0, 0)
     assert AssetService.get_pending_costs().empty
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 60
     assert position["average_price"] == pytest.approx(20.1)
     assert position["invested_amount"] == pytest.approx(1206)
     assert not position["cost_pending"]
     monkeypatch.setattr(
-        AssetService.get_default()._market_data_api,
+        PortfolioReadService.get_default()._quotes,
         "get_batch_quotes",
         lambda tickers: {"BBAS3": 30},
     )
-    positions, _ = AssetService.get_portfolio_summary_metrics(AssetService.calculate_positions())
+    portfolio = PortfolioReadService.read_portfolio()
+    positions, _ = portfolio.positions, portfolio.summary
     assert positions.iloc[0]["profit_loss"] == pytest.approx(594)
     with closing(PortfolioDAO().get_personal_connection()) as conn:
         assert (
@@ -427,13 +427,13 @@ def test_transfer_ignored_with_chronological_history_and_stays_ignored():
         [movement("Transferência"), movement("Compra", "01/01/2024", value=2000, price=20)]
     )
     assert AssetService.process_b3_import(frame) == (1, 0)
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 100
     assert position["invested_amount"] == 2000
     assert AssetService.get_pending_costs().empty
     AssetService.add_transaction("BBAS3", "2024-01-03", "SELL", 100, 30)
     assert AssetService.process_b3_import(frame) == (0, 0)
-    assert AssetService.calculate_positions().empty
+    assert PortfolioReadService.read_planning().positions.empty
 
 
 def test_same_day_custody_pair_is_ignored_without_cost_history():
@@ -444,7 +444,7 @@ def test_same_day_custody_pair_is_ignored_without_cost_history():
         ]
     )
     assert AssetService.process_b3_import(frame) == (0, 0)
-    assert AssetService.calculate_positions().empty
+    assert PortfolioReadService.read_planning().positions.empty
     assert AssetService.get_pending_costs().empty
     assert AssetService.process_b3_import(frame.iloc[::-1]) == (0, 0)
 
@@ -458,7 +458,7 @@ def test_transfer_liquidation_without_value_is_pending_acquisition():
     assert parsed["cost_status"] == "PENDING"
     assert not parsed["matched_custody_transfer"]
     assert AssetService.process_b3_import(frame) == (1, 0)
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 100
     assert position["cost_pending"]
 
@@ -470,7 +470,7 @@ def test_transfer_liquidation_with_value_is_regular_trade():
     assert parsed["event_kind"] == "TRADE"
     assert parsed["cost_status"] == "KNOWN"
     assert AssetService.process_b3_import(frame) == (1, 0)
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["average_price"] == 20
     assert not position["cost_pending"]
 
@@ -506,7 +506,7 @@ def test_reimport_reconciles_legacy_positive_cost_custody_entry():
 
     frame = pd.DataFrame([movement("Transferência", date="02/01/2024", value=2000, price=20)])
     assert AssetService.process_b3_import(frame) == (0, 0)
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 100
     assert position["average_price"] == pytest.approx(20)
     assert not position["cost_pending"]
@@ -642,7 +642,7 @@ def test_partial_known_import_with_changed_cost_preserves_both_trades():
     )
     assert AssetService.process_b3_import(pd.DataFrame([movement(value=2100, price=21)])) == (1, 0)
 
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 200
     assert position["invested_amount"] == pytest.approx(4100)
     with closing(PortfolioDAO().get_personal_connection()) as conn:
@@ -667,7 +667,7 @@ def test_custody_price_fallback_does_not_adopt_provenanced_trade():
     )
 
     assert AssetService.process_b3_import(frame) == (2, 0)
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 200
     assert position["cost_pending"]
     with closing(PortfolioDAO().get_personal_connection()) as conn:
@@ -679,7 +679,7 @@ def test_custody_price_fallback_does_not_adopt_manual_trade():
     frame = pd.DataFrame([movement("Transferência", date="02/01/2024", value=2000, price=20)])
 
     assert AssetService.process_b3_import(frame) == (1, 0)
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == 200
 
 
@@ -689,7 +689,7 @@ def test_custody_price_fallback_does_not_adopt_manual_trade():
 def test_corporate_events_preserve_known_cost(kind):
     AssetService.add_transaction("BBAS3", "2024-01-01", "BUY", 100, 20, 10)
     AssetService.process_b3_import(pd.DataFrame([movement(kind, quantity=50)]))
-    position = AssetService.calculate_positions().iloc[0]
+    position = PortfolioReadService.read_planning().positions.iloc[0]
     assert position["quantity"] == (50 if kind == "Grupamento" else 150)
     assert position["invested_amount"] == pytest.approx(2010)
     assert not position["cost_pending"]
@@ -733,7 +733,7 @@ def test_import_does_not_adopt_ambiguous_legacy_transaction():
         conn.commit()
     frame = pd.DataFrame([movement()])
     assert AssetService.process_b3_import(frame) == (1, 0)
-    assert AssetService.calculate_positions().iloc[0]["quantity"] == 200
+    assert PortfolioReadService.read_planning().positions.iloc[0]["quantity"] == 200
     assert len(AssetService.get_pending_costs()) == 1
     with closing(PortfolioDAO().get_personal_connection()) as conn:
         assert (
@@ -749,18 +749,18 @@ def test_regularized_transfer_is_not_a_new_contribution():
     AssetService.process_b3_import(frame)
     identifier = int(AssetService.get_pending_costs().iloc[0]["id"])
     assert AssetService.regularize_cost(identifier, 20, fees=10)
-    assert AssetService.get_ytd_contributions(2024) == 0
-    assert AssetService.get_monthly_contributions_by_year().empty
-    assert AssetService.calculate_historical_evolution().iloc[-1]["cumulative_invested"] == 0
+    assert PortfolioReadService.read_planning(year=2024).ytd_contributions == 0
+    assert PortfolioReadService.read_history().monthly_contributions.empty
+    assert PortfolioReadService.read_history().evolution.iloc[-1]["cumulative_invested"] == 0
     assert (
-        AssetService.get_raw_transactions_for_chart("BBAS3").iloc[0]["transaction_type"]
+        PortfolioReadService.read_asset("BBAS3").transaction_history.iloc[0]["transaction_type"]
         == "TRANSFER_IN"
     )
     assert (
-        AssetService.get_asset_transactions("BBAS3").iloc[0]["Operação"] == "Transferência recebida"
+        PortfolioReadService.read_asset("BBAS3").transactions.iloc[0]["Operação"] == "Transferência recebida"
     )
     assert AssetService.process_b3_import(frame) == (0, 0)
-    assert AssetService.calculate_positions().iloc[0]["invested_amount"] == pytest.approx(2010)
+    assert PortfolioReadService.read_planning().positions.iloc[0]["invested_amount"] == pytest.approx(2010)
 
 
 def test_manual_zero_cost_split_preserves_zero_cost_deposit_coverage():
@@ -771,7 +771,7 @@ def test_manual_zero_cost_split_preserves_zero_cost_deposit_coverage():
 
     transfer = pd.DataFrame([movement("Transferência", date="03/01/2024", quantity=150)])
     assert AssetService.process_b3_import(transfer) == (0, 0)
-    assert AssetService.calculate_positions().iloc[0]["quantity"] == 200
+    assert PortfolioReadService.read_planning().positions.iloc[0]["quantity"] == 200
     assert AssetService.get_pending_costs().empty
 
 
@@ -788,7 +788,7 @@ def test_regularized_transfer_does_not_consume_duplicate_transfer():
         ]
     )
     assert AssetService.process_b3_import(duplicate_export) == (1, 0)
-    assert AssetService.calculate_positions().iloc[0]["quantity"] == 200
+    assert PortfolioReadService.read_planning().positions.iloc[0]["quantity"] == 200
     assert len(AssetService.get_pending_costs()) == 1
 
 
@@ -807,17 +807,16 @@ def test_corporate_event_does_not_turn_unknown_cost_into_known_cost():
 
 def test_pending_cost_hides_portfolio_profit_and_holdings_metrics(monkeypatch):
     AssetService.process_b3_import(pd.DataFrame([movement()]))
-    api = AssetService.get_default()._market_data_api
-    analysis_api = AssetService.get_default()._market_analysis_api
+    api = PortfolioReadService.get_default()._quotes
+    analysis_api = PortfolioReadService.get_default()._analysis
     monkeypatch.setattr(api, "get_batch_quotes", lambda tickers: {"BBAS3": 30})
     monkeypatch.setattr(analysis_api, "get_ticker_market_analysis", lambda *args, **kwargs: {})
-    positions, metrics = AssetService.get_portfolio_summary_metrics(
-        AssetService.calculate_positions()
-    )
+    portfolio = PortfolioReadService.read_portfolio()
+    positions, metrics = portfolio.positions, portfolio.summary
     assert metrics["total_equity"] == 3000
     assert metrics["cost_pending"]
     assert pd.isna(metrics["overall_return"])
-    display, _ = AssetService.get_detailed_holdings_dataframe(positions, 6)
+    display = portfolio.holdings
     from core.strings import DISPLAY_AVG_PRICE, DISPLAY_INVESTED, DISPLAY_RETURN_PCT
 
     assert display.iloc[0][DISPLAY_AVG_PRICE] == "Custo pendente"

@@ -14,8 +14,8 @@ from core.ports import (
     ExcelParserPort,
     MarketAnalysisPort,
     MarketDataPort,
-    PlanningProviderPort,
     PortfolioPort,
+    PortfolioReadPort,
     hybridmethod,
 )
 from core.strings import MODEL_IPCA_SPREAD, MODEL_SELIC
@@ -28,7 +28,7 @@ _MAX_B3_SUBSET_STATES = 65_536
 
 
 class AssetService:
-    """Domain Service for managing assets, transactions, dividends, and positions (Single Source of Truth)."""
+    """Own portfolio writes, B3 import, operation history, watchlist and catalog use cases."""
 
     def __init__(
         self,
@@ -36,13 +36,26 @@ class AssetService:
         market_data_api: MarketDataPort = None,
         market_analysis_api: MarketAnalysisPort = None,
         excel_parser: ExcelParserPort = None,
-        planning_provider: PlanningProviderPort = None,
+        read_provider: PortfolioReadPort = None,
     ):
         self._portfolio_repo = portfolio_repo or PortfolioDAO()
         self._market_data_api = market_data_api or MarketData
         self._market_analysis_api = market_analysis_api
         self._excel_parser = excel_parser
-        self._planning_provider = planning_provider
+        self._read_provider = read_provider
+
+    @property
+    def _reads(self):
+        if self._read_provider is not None:
+            return self._read_provider
+        from services.portfolio_read_service import PortfolioReadService
+
+        return PortfolioReadService(
+            self._portfolio_repo,
+            self._market_data_api,
+            self._market_analysis_api,
+            self._market_data_api,
+        )
 
     # Default instance for backwards compatibility in presentation layers
     _default_instance = None
@@ -60,10 +73,12 @@ class AssetService:
         market_data_api: MarketDataPort = None,
         market_analysis_api: MarketAnalysisPort = None,
         excel_parser: ExcelParserPort = None,
-        planning_provider: PlanningProviderPort = None,
+        read_provider: PortfolioReadPort = None,
     ):
         """Dynamic dependency injection mechanism for testing and custom environment mocks."""
         inst = cls.get_default()
+        if read_provider is not None:
+            inst._read_provider = read_provider
         if portfolio_repo is not None:
             inst._portfolio_repo = portfolio_repo
         if market_data_api is not None:
@@ -72,8 +87,6 @@ class AssetService:
             inst._market_analysis_api = market_analysis_api
         if excel_parser is not None:
             inst._excel_parser = excel_parser
-        if planning_provider is not None:
-            inst._planning_provider = planning_provider
 
     @hybridmethod
     def get_local_projection_revision(self) -> int:
@@ -118,7 +131,7 @@ class AssetService:
             )
         if success and transaction_type == "SELL":
             try:
-                df_positions = self.calculate_positions()
+                df_positions = self._reads.read_planning().positions
                 if df_positions.empty or ticker not in df_positions["ticker"].values:
                     # Seamlessly transition a zeroed out owned stock to manual tracking so it stays on radar but is removable
                     self.add_tracked_market_asset(ticker)
@@ -226,7 +239,7 @@ class AssetService:
                 if (
                     success
                     and row["transaction_type"] == "SELL"
-                    and self.get_quantity_on_date(row["ticker"], row["date"]) == 0
+                    and self._portfolio_repo.get_quantity_on_date(row["ticker"], row["date"]) == 0
                 ):
                     self.add_tracked_market_asset(row["ticker"])
             else:
@@ -553,7 +566,7 @@ class AssetService:
         pending_costs = self.get_pending_costs()
         if pending_costs.empty:
             return ""
-        active_positions = self.calculate_positions()
+        active_positions = self._reads.read_planning().positions
         active_pending = set(active_positions.loc[active_positions["cost_pending"], "ticker"])
         return ", ".join(sorted(set(pending_costs["ticker"]) & active_pending))
 
@@ -576,14 +589,9 @@ class AssetService:
         return self._portfolio_repo.resolve_pending_cost(transaction_id, price, fees)
 
     @hybridmethod
-    def get_quantity_on_date(self, ticker: str, date_str: str, conn=None) -> int:
-        """Returns the accumulated quantity owned of a specific ticker on a given date."""
-        return self._portfolio_repo.get_quantity_on_date(ticker, date_str, conn=conn)
-
-    @hybridmethod
     def get_owned_tickers(self) -> list[str]:
         """Returns tickers with a positive current position."""
-        df_positions = self.calculate_positions()
+        df_positions = self._reads.read_planning().positions
         if df_positions.empty or "ticker" not in df_positions.columns:
             return []
         if "quantity" not in df_positions.columns:
@@ -600,7 +608,7 @@ class AssetService:
         return number if math.isfinite(number) and number > 0 else None
 
     def _receipt_unit_value(
-        self, ticker, date, total, quantity=None, unit_price=None, conn=None
+        self, ticker, date, total, quantity=None, unit_price=None
     ) -> float | None:
         """Prefer reported prices, then reported quantities, then the legacy historical basis."""
         price = self._positive_number(unit_price)
@@ -611,9 +619,7 @@ class AssetService:
             return None
         basis = self._positive_number(quantity)
         if basis is None:
-            basis = self._positive_number(
-                self._portfolio_repo.get_quantity_on_date(ticker, date, conn=conn)
-            )
+            basis = self._positive_number(self._portfolio_repo.get_quantity_on_date(ticker, date))
         return self._positive_number(total / basis) if basis is not None else None
 
     @hybridmethod
@@ -735,96 +741,6 @@ class AssetService:
         )
 
     @hybridmethod
-    def get_asset_transactions(self, ticker: str) -> pd.DataFrame:
-        """Returns all transactions for a specific asset ordered by date descending."""
-        return self._portfolio_repo.get_transactions_by_ticker_desc(ticker)
-
-    @hybridmethod
-    def get_asset_dividends(self, ticker: str) -> pd.DataFrame:
-        """Returns all dividend receipts for a specific asset."""
-        return self._portfolio_repo.get_dividends_by_ticker(ticker)
-
-    @hybridmethod
-    def get_asset_dividends_detailed(self, ticker: str) -> pd.DataFrame:
-        """
-        Returns all dividend receipts for a specific asset, pre-calculating the
-        exact unit value owned on each receipt date.
-        """
-        df_div = self._portfolio_repo.get_dividends_by_ticker(ticker)
-        if df_div.empty:
-            return df_div
-
-        unit_vals = []
-        conn_shared = self._portfolio_repo.get_personal_connection()
-        try:
-            for _, row in df_div.iterrows():
-                dt = row["Data"]
-                total = row["Total"]
-                unit_value = self._receipt_unit_value(
-                    ticker,
-                    dt,
-                    total,
-                    quantity=row.get("quantity"),
-                    unit_price=row.get("unit_price"),
-                    conn=conn_shared,
-                )
-                unit_vals.append(unit_value if unit_value is not None else 0.0)
-        finally:
-            conn_shared.close()
-
-        df_div_display = df_div.copy()
-        df_div_display["Unitário"] = unit_vals
-        df_div_display = df_div_display[["Data", "Tipo", "Unitário", "Total"]]
-        return df_div_display
-
-    @hybridmethod
-    def get_annual_dividends_metrics(
-        self, ticker: str, chosen_year: str, df_div: pd.DataFrame
-    ) -> dict:
-        """
-        Calculates annual dividend metrics including total paid per share and
-        end of year/previous year quantities for comparison.
-        """
-        total_paid_per_share = 0.0
-        conn_shared = self._portfolio_repo.get_personal_connection()
-        try:
-            if not df_div.empty:
-                df_div_year = df_div[df_div["Data"].str.startswith(chosen_year)]
-                for _, row in df_div_year.iterrows():
-                    unit_value = self._receipt_unit_value(
-                        ticker,
-                        row["Data"],
-                        row["Total"],
-                        quantity=row.get("quantity"),
-                        unit_price=row.get("unit_price"),
-                        conn=conn_shared,
-                    )
-                    if unit_value is not None:
-                        total_paid_per_share += unit_value
-
-            qty_end_of_year = self._portfolio_repo.get_quantity_on_date(
-                ticker, f"{chosen_year}-12-31", conn=conn_shared
-            )
-            prev_year = str(int(chosen_year) - 1)
-            qty_prev_year = self._portfolio_repo.get_quantity_on_date(
-                ticker, f"{prev_year}-12-31", conn=conn_shared
-            )
-        finally:
-            conn_shared.close()
-
-        return {
-            "total_paid_per_share": total_paid_per_share,
-            "qty_end_of_year": qty_end_of_year,
-            "qty_prev_year": qty_prev_year,
-            "prev_year": prev_year,
-        }
-
-    @hybridmethod
-    def get_raw_transactions_for_chart(self, ticker: str) -> pd.DataFrame:
-        """Returns raw historical transactions sorted by date ascending for charts."""
-        return self._portfolio_repo.get_transactions_by_ticker(ticker)
-
-    @hybridmethod
     def get_asset_metadata(self, ticker: str) -> dict:
         """Return catalog metadata or neutral display metadata for an uncatalogued ticker."""
         ticker = ticker.strip().upper()
@@ -912,56 +828,12 @@ class AssetService:
         return details
 
     @hybridmethod
-    def get_years_with_dividends(self) -> list:
-        """Returns a sorted list of all unique years available in the dividends database."""
-        return self._portfolio_repo.get_years_with_dividends()
-
-    @hybridmethod
-    def get_asset_years_with_dividends(self, ticker: str) -> list:
-        """Returns a sorted list of unique years in which a specific asset paid dividends."""
-        return self._portfolio_repo.get_asset_years_with_dividends(ticker)
-
-    def _build_dividends_pivot_dataframe(self, rows) -> pd.DataFrame:
-        """Converts raw database rows into a structured PT-BR dividends pivot DataFrame (DRY helper)."""
-        data = {"DIVIDEND": 0.0, "JCP": 0.0, "YIELD": 0.0}
-        for row in rows:
-            div_type, total = row
-            if div_type in data:
-                data[div_type] = float(total)
-            else:
-                data["YIELD"] = data.get("YIELD", 0.0) + float(total)
-
-        total_sum = sum(data.values())
-
-        df = pd.DataFrame(
-            [
-                {"Categoria": "Total de Dividendos", "Valor (R$)": data["DIVIDEND"]},
-                {"Categoria": "Total de JCP", "Valor (R$)": data["JCP"]},
-                {"Categoria": "Total de Rendimentos", "Valor (R$)": data["YIELD"]},
-                {"Categoria": "Total de Proventos (Soma de todos)", "Valor (R$)": total_sum},
-            ]
-        )
-        return df
-
-    @hybridmethod
-    def get_annual_dividends_pivot(self, year: str) -> pd.DataFrame:
-        """Returns aggregated totals for dividends, JCP, and rendimentos for a specific year."""
-        rows = self._portfolio_repo.get_annual_dividend_types_sum(year)
-        return self._build_dividends_pivot_dataframe(rows)
-
-    @hybridmethod
-    def get_asset_annual_dividends_pivot(self, ticker: str, year: str) -> pd.DataFrame:
-        """Returns aggregated totals for dividends, JCP, and rendimentos for a specific asset and year."""
-        rows = self._portfolio_repo.get_asset_annual_dividend_types_sum(ticker, year)
-        return self._build_dividends_pivot_dataframe(rows)
-
-    @hybridmethod
     def get_tracked_market_assets(self, include_owned: bool = True) -> list:
         """Returns the list of tracked tickers from the database, automatically merged with owned stocks."""
         db_tracked = self._portfolio_repo.get_tracked_assets()
 
         try:
-            df_positions = self.calculate_positions()
+            df_positions = self._reads.read_planning().positions
             if not df_positions.empty:
                 # Include owned stocks and uncatalogued positions whose type is unknown.
                 owned_stocks = df_positions[
@@ -1005,319 +877,6 @@ class AssetService:
             return self._portfolio_repo.get_dividend_corrections(ticker)
         except Exception:
             return {}
-
-    @hybridmethod
-    def calculate_prior_invested_amount(self, start_date) -> float | None:
-        """Calculates the prior net investment, or None when a prior cost is pending."""
-        if start_date is None:
-            return 0.0
-        df_all_tx = self._portfolio_repo.get_all_transactions()
-        if df_all_tx.empty:
-            return 0.0
-
-        df_prev_tx = df_all_tx[df_all_tx["date"] < start_date]
-        if df_prev_tx.empty:
-            return 0.0
-        if "cost_status" in df_prev_tx and df_prev_tx["cost_status"].eq("PENDING").any():
-            return None
-
-        from core.constants import FEES, QUANTITY, TRANSACTION_TYPE, UNIT_PRICE
-
-        prior_amount = 0.0
-        for _, row in df_prev_tx.iterrows():
-            txn_type = row[TRANSACTION_TYPE]
-            qty = row[QUANTITY]
-            price = row[UNIT_PRICE]
-            fees = row[FEES]
-            if txn_type == "BUY":
-                prior_amount += qty * price + fees
-            elif txn_type == "SELL":
-                prior_amount -= qty * price - fees
-
-        return max(0.0, prior_amount)
-
-    @hybridmethod
-    def calculate_positions(self, today_date=None, start_date=None) -> pd.DataFrame:
-        """
-        Consolidates active portfolio holdings, calculating average price (PM),
-        invested totals, and received dividends. Optional start_date filters out older transactions.
-        """
-        catalog = self._market_data_api.load_assets_catalog()
-
-        if today_date is None:
-            today_date = datetime.date.today()
-
-        l12m_limit = (today_date - datetime.timedelta(days=365)).strftime("%Y-%m-%d")
-        ytd_limit = f"{today_date.year}-01-01"
-
-        df_transactions = self._portfolio_repo.get_all_transactions()
-        if start_date is not None:
-            df_transactions = df_transactions[df_transactions["date"] >= start_date]
-
-        portfolio_state = {}
-
-        from core.constants import (
-            ASSET_TYPE,
-            AVERAGE_PRICE,
-            FEES,
-            INVESTED_AMOUNT,
-            L12M_DIVIDENDS,
-            NAME,
-            QUANTITY,
-            SECTOR,
-            TICKER,
-            TOTAL_DIVIDENDS,
-            TRANSACTION_TYPE,
-            UNIT_PRICE,
-            YTD_DIVIDENDS,
-        )
-
-        for _, row in df_transactions.iterrows():
-            ticker = row[TICKER]
-            txn_type = row[TRANSACTION_TYPE]
-            qty = row[QUANTITY]
-            price = row[UNIT_PRICE]
-            fees = row[FEES]
-
-            if ticker not in portfolio_state:
-                portfolio_state[ticker] = {
-                    QUANTITY: 0,
-                    AVERAGE_PRICE: 0.0,
-                    INVESTED_AMOUNT: 0.0,
-                }
-
-            current_state = portfolio_state[ticker]
-            old_qty = current_state[QUANTITY]
-            old_avg_price = current_state[AVERAGE_PRICE]
-
-            if txn_type == "BUY":
-                new_qty = old_qty + qty
-                if row.get("cost_status") == "PENDING":
-                    new_avg_price = old_avg_price
-                    new_invested_amount = current_state[INVESTED_AMOUNT]
-                else:
-                    new_invested_amount = current_state[INVESTED_AMOUNT] + qty * price + fees
-                    new_avg_price = new_invested_amount / new_qty if new_qty > 0 else 0.0
-                portfolio_state[ticker] = {
-                    QUANTITY: new_qty,
-                    AVERAGE_PRICE: new_avg_price,
-                    INVESTED_AMOUNT: new_invested_amount,
-                }
-            elif txn_type == "SELL":
-                new_qty = max(0, old_qty - qty)
-                portfolio_state[ticker] = {
-                    QUANTITY: new_qty,
-                    AVERAGE_PRICE: old_avg_price if new_qty > 0 else 0.0,
-                    INVESTED_AMOUNT: max(
-                        0.0,
-                        current_state[INVESTED_AMOUNT]
-                        - qty * current_state[INVESTED_AMOUNT] / old_qty
-                        if old_qty > 0
-                        else current_state[INVESTED_AMOUNT],
-                    ),
-                }
-            elif txn_type == "GROUP":
-                new_qty = qty
-                new_avg_price = current_state[INVESTED_AMOUNT] / qty if qty > 0 else 0.0
-                portfolio_state[ticker] = {
-                    QUANTITY: new_qty,
-                    AVERAGE_PRICE: new_avg_price,
-                    INVESTED_AMOUNT: current_state[INVESTED_AMOUNT],
-                }
-
-            pending = (
-                current_state.get("cost_pending", False) or row.get("cost_status") == "PENDING"
-            )
-            portfolio_state[ticker]["cost_pending"] = (
-                pending and portfolio_state[ticker][QUANTITY] > 0
-            )
-
-        active_assets = []
-        for ticker, info in portfolio_state.items():
-            if info[QUANTITY] > 0:
-                metadata = self._resolve_asset_metadata(catalog, ticker)
-                name = metadata["name"]
-                asset_type = metadata["asset_type"]
-                sector = metadata["sector"]
-                segment = metadata["segment"]
-                asset_type_clean = asset_type.strip().lower()
-                if asset_type_clean in ["ação", "acao"]:
-                    display_sector = segment if segment else sector
-                elif asset_type_clean == "etf":
-                    display_sector = "-"
-                else:
-                    display_sector = sector
-
-                if start_date is not None:
-                    total_dividends = self._portfolio_repo.get_dividends_by_ticker_since_date(
-                        ticker, start_date
-                    )
-                else:
-                    total_dividends = self._portfolio_repo.get_total_dividends_by_ticker(ticker)
-
-                l12m_dividends = self._portfolio_repo.get_dividends_by_ticker_since_date(
-                    ticker, l12m_limit
-                )
-                ytd_dividends = self._portfolio_repo.get_dividends_by_ticker_since_date(
-                    ticker, ytd_limit
-                )
-
-                active_assets.append(
-                    {
-                        TICKER: ticker,
-                        NAME: name,
-                        ASSET_TYPE: asset_type,
-                        SECTOR: display_sector,
-                        QUANTITY: info[QUANTITY],
-                        "cost_pending": info.get("cost_pending", False),
-                        AVERAGE_PRICE: float("nan")
-                        if info.get("cost_pending")
-                        else info[AVERAGE_PRICE],
-                        INVESTED_AMOUNT: info[INVESTED_AMOUNT],
-                        TOTAL_DIVIDENDS: total_dividends,
-                        L12M_DIVIDENDS: l12m_dividends,
-                        YTD_DIVIDENDS: ytd_dividends,
-                    }
-                )
-
-        return pd.DataFrame(active_assets)
-
-    @hybridmethod
-    def calculate_historical_evolution(
-        self, start_date=None, include_pending_costs: bool = False
-    ) -> pd.DataFrame:
-        """
-        Consolidates a month-by-month chronological sequence of your portfolio evolution.
-        Ensures a seamless monthly series without gaps since the first transaction or custom start_date.
-        """
-        df_transactions = self._portfolio_repo.get_all_transactions()
-        df_dividends = self._portfolio_repo.get_all_dividends()
-
-        from core.constants import (
-            CUMULATIVE_DIVIDENDS,
-            CUMULATIVE_INVESTED,
-            DATE,
-            FEES,
-            MONTH_STR,
-            MONTHLY_DIVIDEND,
-            NET_CASHFLOW,
-            QUANTITY,
-            TOTAL_VALUE,
-            TRANSACTION_TYPE,
-            UNIT_PRICE,
-        )
-
-        if start_date is not None:
-            df_transactions = df_transactions[df_transactions[DATE] >= start_date]
-            df_dividends = df_dividends[df_dividends[DATE] >= start_date]
-
-        if df_transactions.empty and df_dividends.empty:
-            return pd.DataFrame()
-
-        pending_trade = df_transactions.get(
-            "cost_status", pd.Series(False, index=df_transactions.index)
-        ).eq("PENDING") & df_transactions.get(
-            "event_kind", pd.Series("TRADE", index=df_transactions.index)
-        ).ne("CUSTODY")
-        if pending_trade.any() and not include_pending_costs:
-            return pd.DataFrame()
-
-        df_transactions[MONTH_STR] = df_transactions[DATE].str[:7]
-        df_dividends[MONTH_STR] = df_dividends[DATE].str[:7]
-
-        df_transactions[NET_CASHFLOW] = df_transactions.apply(
-            lambda r: (
-                0.0
-                if r.get("event_kind") == "CUSTODY"
-                else (r[QUANTITY] * r[UNIT_PRICE] + r[FEES])
-                if r[TRANSACTION_TYPE] == "BUY"
-                else -(r[QUANTITY] * r[UNIT_PRICE] - r[FEES])
-                if r[TRANSACTION_TYPE] == "SELL"
-                else 0.0
-            ),
-            axis=1,
-        )
-
-        monthly_t = df_transactions.groupby(MONTH_STR)[NET_CASHFLOW].sum().reset_index()
-        monthly_d = (
-            df_dividends.groupby(MONTH_STR)[TOTAL_VALUE]
-            .sum()
-            .reset_index()
-            .rename(columns={TOTAL_VALUE: MONTHLY_DIVIDEND})
-        )
-
-        if start_date is not None:
-            start_date_str = start_date
-        else:
-            min_date_transactions = (
-                df_transactions[DATE].min() if not df_transactions.empty else None
-            )
-            min_date_dividends = df_dividends[DATE].min() if not df_dividends.empty else None
-
-            dates = [d for d in [min_date_transactions, min_date_dividends] if d is not None]
-            if not dates:
-                return pd.DataFrame()
-
-            start_date_str = min(dates)
-
-        start_date_dt = pd.to_datetime(start_date_str).replace(day=1)
-        today = datetime.date.today()
-
-        date_range = pd.date_range(start=start_date_dt, end=today, freq="MS")
-        all_months = date_range.strftime("%Y-%m").tolist()
-
-        if not all_months:
-            all_months = [start_date_dt.strftime("%Y-%m")]
-
-        timeline = pd.DataFrame({MONTH_STR: all_months})
-        timeline = timeline.merge(monthly_t, on=MONTH_STR, how="left")
-        timeline[NET_CASHFLOW] = pd.to_numeric(timeline[NET_CASHFLOW], errors="coerce").fillna(0.0)
-        timeline = timeline.merge(monthly_d, on=MONTH_STR, how="left")
-        timeline[MONTHLY_DIVIDEND] = pd.to_numeric(
-            timeline[MONTHLY_DIVIDEND], errors="coerce"
-        ).fillna(0.0)
-
-        timeline[CUMULATIVE_INVESTED] = timeline[NET_CASHFLOW].cumsum()
-        timeline[CUMULATIVE_DIVIDENDS] = timeline[MONTHLY_DIVIDEND].cumsum()
-
-        return timeline
-
-    @hybridmethod
-    def get_ytd_contributions(self, current_year: int) -> float | None:
-        """Calculates total net contributions made in the current year."""
-        contributions = self._get_net_contributions(f"{current_year}-01-01")
-        if contributions is None:
-            return None
-        return float(contributions["amount"].sum())
-
-    def _get_net_contributions(self, start_date=None) -> pd.DataFrame | None:
-        """Returns trade cash flows, or None when a selected trade has pending cost."""
-        transactions = self._portfolio_repo.get_all_transactions()
-        trades = transactions["transaction_type"].isin(["BUY", "SELL"])
-        custody = transactions["event_kind"].eq("CUSTODY")
-        transactions = transactions.loc[trades & ~custody].copy()
-        if start_date is not None:
-            transactions = transactions.loc[transactions["date"] >= start_date].copy()
-        if transactions["cost_status"].eq("PENDING").any():
-            return None
-
-        direction = transactions["transaction_type"].map({"BUY": 1.0, "SELL": -1.0})
-        transactions["amount"] = (
-            direction * transactions["quantity"] * transactions["unit_price"] + transactions["fees"]
-        )
-        return transactions
-
-    @hybridmethod
-    def get_monthly_contributions_by_year(self, start_date=None) -> pd.DataFrame:
-        """Returns monthly contributions grouped by year for the bar chart. Optional start_date filters out older transactions."""
-        df_transactions = self._get_net_contributions(start_date)
-        if df_transactions is None or df_transactions.empty:
-            return pd.DataFrame()
-        df_transactions["year"] = df_transactions["date"].str[:4]
-        df_transactions["month"] = df_transactions["date"].str[5:7]
-
-        grouped = df_transactions.groupby(["year", "month"])["amount"].sum().reset_index()
-        return grouped
 
     @hybridmethod
     def get_market_analysis_data(
@@ -1416,230 +975,3 @@ class AssetService:
         df_display[DISPLAY_ROE] = df_market[DISPLAY_ROE]
 
         return df_display, df_market
-
-    @hybridmethod
-    def get_portfolio_summary_metrics(
-        self, df_positions: pd.DataFrame
-    ) -> tuple[pd.DataFrame, dict]:
-        """
-        Calculates all portfolio-wide KPI summary metrics, returning the updated
-        df_positions and a dictionary of ready-to-render formatted metrics.
-        """
-        from core.constants import (
-            CURRENT_PRICE,
-            CURRENT_VALUE,
-            INVESTED_AMOUNT,
-            L12M_DIVIDENDS,
-            PROFIT_LOSS,
-            QUANTITY,
-            TICKER,
-            TOTAL_DIVIDENDS,
-            YTD_DIVIDENDS,
-        )
-
-        if df_positions.empty:
-            return df_positions, {}
-
-        tickers = df_positions[TICKER].tolist()
-        quote_map = self._market_data_api.get_batch_quotes(tickers)
-
-        prices = pd.to_numeric(df_positions[TICKER].map(quote_map), errors="coerce")
-        df_positions[CURRENT_PRICE] = prices.where(prices.map(lambda x: math.isfinite(x) and x > 0))
-        df_positions[CURRENT_VALUE] = df_positions[QUANTITY] * df_positions[CURRENT_PRICE]
-        df_positions[PROFIT_LOSS] = df_positions[CURRENT_VALUE] - df_positions[INVESTED_AMOUNT]
-
-        df_positions["return_pct"] = (
-            df_positions[PROFIT_LOSS] / df_positions[INVESTED_AMOUNT]
-        ) * 100
-        df_positions["total_yoc"] = (
-            df_positions[TOTAL_DIVIDENDS] / df_positions[INVESTED_AMOUNT]
-        ) * 100
-        df_positions["l12m_yoc"] = (
-            df_positions[L12M_DIVIDENDS] / df_positions[INVESTED_AMOUNT]
-        ) * 100
-
-        cost_pending = bool(
-            df_positions.get("cost_pending", pd.Series(False, index=df_positions.index)).any()
-        )
-        total_invested_init = df_positions[INVESTED_AMOUNT].sum(skipna=False)
-        market_complete = bool(df_positions[CURRENT_PRICE].notna().all())
-        total_equity = df_positions[CURRENT_VALUE].sum(skipna=False)
-
-        total_dividends = df_positions[TOTAL_DIVIDENDS].sum()
-        l12m_dividends = df_positions[L12M_DIVIDENDS].sum()
-        ytd_dividends = df_positions[YTD_DIVIDENDS].sum()
-
-        total_profit = total_equity - total_invested_init
-        ratios_available = total_invested_init > 0
-        overall_return = (
-            (total_profit / total_invested_init * 100) if ratios_available else float("nan")
-        )
-        overall_yoc = (
-            (total_dividends / total_invested_init * 100) if ratios_available else float("nan")
-        )
-        overall_l12m_yoc = (
-            (l12m_dividends / total_invested_init * 100) if ratios_available else float("nan")
-        )
-        if cost_pending:
-            overall_return = overall_yoc = overall_l12m_yoc = float("nan")
-        if not market_complete:
-            overall_return = float("nan")
-
-        # Pull the invested capital parameter used in PMT calculations from the planning service if available
-        if self._planning_provider is not None:
-            sim = self._planning_provider.get_current_simulation()
-            total_invested_sim = sim["total_invested"] if sim else total_invested_init
-        else:
-            total_invested_sim = total_invested_init
-
-        return df_positions, {
-            "total_equity": total_equity,
-            "cost_pending": cost_pending,
-            "market_complete": market_complete,
-            "total_invested": total_invested_sim,
-            "total_dividends": total_dividends,
-            "l12m_dividends": l12m_dividends,
-            "ytd_dividends": ytd_dividends,
-            "overall_return": overall_return,
-            "overall_yoc": overall_yoc,
-            "overall_l12m_yoc": overall_l12m_yoc,
-            "ratios_available": ratios_available,
-        }
-
-    @hybridmethod
-    def get_detailed_holdings_dataframe(
-        self, df_positions: pd.DataFrame, target_yield: float
-    ) -> tuple[pd.DataFrame, dict]:
-        """
-        Calculates detailed holding metrics, retrieves Bazin ceilings,
-        and compiles a structured, pre-formatted display DataFrame ready for the view.
-        """
-        from core.constants import (
-            ADJUSTED_PRICE,
-            AVERAGE_PRICE,
-            CEILING_PRICE_GRID,
-            CURRENT_PRICE,
-            CURRENT_VALUE,
-            INVESTED_AMOUNT,
-            L12M_DIVIDENDS,
-            NAME,
-            PROFIT_LOSS,
-            QUANTITY,
-            RETURN_PCT_CUSTOM,
-            SECTOR,
-            TICKER,
-            TOTAL_DIVIDENDS,
-            WEIGHT_PCT,
-            YOC_12_CUSTOM,
-            YOC_CUSTOM,
-        )
-        from core.strings import (
-            DISPLAY_ADJ_PRICE,
-            DISPLAY_AVG_PRICE,
-            DISPLAY_CEILING,
-            DISPLAY_CODE,
-            DISPLAY_CURRENT,
-            DISPLAY_EARNINGS,
-            DISPLAY_INVESTED,
-            DISPLAY_NAME,
-            DISPLAY_QTY,
-            DISPLAY_QUOTE_TODAY,
-            DISPLAY_RESULT,
-            DISPLAY_RETURN_PCT,
-            DISPLAY_SECTOR,
-            DISPLAY_WEIGHT,
-            DISPLAY_YOC,
-            DISPLAY_YOC_12,
-        )
-        from core.utils.formatter import Formatter
-
-        if df_positions.empty:
-            return pd.DataFrame(), {}
-
-        total_equity = df_positions[CURRENT_VALUE].sum(skipna=False)
-
-        df_positions[ADJUSTED_PRICE] = (
-            df_positions[INVESTED_AMOUNT] - df_positions[TOTAL_DIVIDENDS]
-        ) / df_positions[QUANTITY]
-        invested_base = df_positions[INVESTED_AMOUNT].where(df_positions[INVESTED_AMOUNT] > 0)
-        df_positions[RETURN_PCT_CUSTOM] = df_positions[PROFIT_LOSS] / invested_base * 100
-        df_positions[YOC_CUSTOM] = df_positions[TOTAL_DIVIDENDS] / invested_base * 100
-        df_positions[YOC_12_CUSTOM] = df_positions[L12M_DIVIDENDS] / invested_base * 100
-        df_positions[WEIGHT_PCT] = (
-            (df_positions[CURRENT_VALUE] / total_equity * 100)
-            if total_equity > 0
-            else float("nan")
-            if pd.isna(total_equity)
-            else 0.0
-        )
-
-        ceilings = {}
-        prefetch = getattr(self._market_analysis_api, "prefetch_tickers", None)
-        if callable(prefetch):
-            prefetch(df_positions[TICKER].tolist())
-        for t in df_positions[TICKER]:
-            details = self._market_analysis_api.get_ticker_market_analysis(
-                t, target_yield_pct=target_yield
-            )
-            ceilings[t] = details.get("ceiling_price", float("nan")) if details else float("nan")
-
-        df_positions[CEILING_PRICE_GRID] = df_positions[TICKER].map(lambda t: ceilings.get(t, 0.0))
-
-        df_display = pd.DataFrame()
-        df_display[DISPLAY_CODE] = df_positions[TICKER]
-        df_display[DISPLAY_NAME] = df_positions[NAME]
-        df_display[DISPLAY_SECTOR] = df_positions[SECTOR]
-        df_display[DISPLAY_WEIGHT] = df_positions[WEIGHT_PCT].map(lambda x: f"{x:.2f}%")
-        df_display[DISPLAY_QTY] = df_positions[QUANTITY]
-        df_display[DISPLAY_AVG_PRICE] = df_positions[AVERAGE_PRICE].map(Formatter.format_currency)
-        df_display[DISPLAY_ADJ_PRICE] = df_positions[ADJUSTED_PRICE].map(Formatter.format_currency)
-        df_display[DISPLAY_CEILING] = df_positions[CEILING_PRICE_GRID].map(
-            Formatter.format_currency
-        )
-        df_display[DISPLAY_QUOTE_TODAY] = df_positions[CURRENT_PRICE].map(Formatter.format_currency)
-        df_display[DISPLAY_INVESTED] = df_positions[INVESTED_AMOUNT].map(Formatter.format_currency)
-        df_display[DISPLAY_CURRENT] = df_positions[CURRENT_VALUE].map(Formatter.format_currency)
-        df_display[DISPLAY_RETURN_PCT] = df_positions[RETURN_PCT_CUSTOM].map(lambda x: f"{x:.2f}%")
-        df_display[DISPLAY_RESULT] = df_positions[PROFIT_LOSS].map(Formatter.format_currency)
-        df_display[DISPLAY_EARNINGS] = df_positions[TOTAL_DIVIDENDS].map(Formatter.format_currency)
-        df_display[DISPLAY_YOC] = df_positions[YOC_CUSTOM].map(lambda x: f"{x:.2f}%")
-        df_display[DISPLAY_YOC_12] = df_positions[YOC_12_CUSTOM].map(lambda x: f"{x:.2f}%")
-
-        pending = df_positions.get("cost_pending", pd.Series(False, index=df_positions.index))
-        zero_basis = df_positions[INVESTED_AMOUNT] <= 0
-        for column in (DISPLAY_RETURN_PCT, DISPLAY_YOC, DISPLAY_YOC_12):
-            df_display.loc[zero_basis, column] = "N/D"
-        if pending.any():
-            df_display["Situação do custo"] = pending.map(
-                {True: "Custo pendente", False: "Informado"}
-            )
-            for column in (
-                DISPLAY_AVG_PRICE,
-                DISPLAY_ADJ_PRICE,
-                DISPLAY_RETURN_PCT,
-                DISPLAY_RESULT,
-                DISPLAY_YOC,
-                DISPLAY_YOC_12,
-            ):
-                df_display.loc[pending, column] = "Custo pendente"
-
-        # Missing remote inputs are never rendered as zero or literal "nan".
-        for display_column, source_column in (
-            (DISPLAY_WEIGHT, WEIGHT_PCT),
-            (DISPLAY_CEILING, CEILING_PRICE_GRID),
-            (DISPLAY_QUOTE_TODAY, CURRENT_PRICE),
-            (DISPLAY_CURRENT, CURRENT_VALUE),
-            (DISPLAY_RETURN_PCT, RETURN_PCT_CUSTOM),
-            (DISPLAY_RESULT, PROFIT_LOSS),
-        ):
-            missing = df_positions[source_column].isna() & ~pending
-            df_display.loc[missing, display_column] = "N/D"
-        for display_column, source_column in (
-            (DISPLAY_WEIGHT, WEIGHT_PCT),
-            (DISPLAY_CEILING, CEILING_PRICE_GRID),
-            (DISPLAY_QUOTE_TODAY, CURRENT_PRICE),
-            (DISPLAY_CURRENT, CURRENT_VALUE),
-        ):
-            df_display.loc[df_positions[source_column].isna(), display_column] = "N/D"
-
-        return df_display, ceilings

@@ -1,3 +1,4 @@
+from services.portfolio_read_service import PortfolioReadService
 import pandas as pd
 import pytest
 
@@ -25,7 +26,7 @@ def test_imported_receipt_preserves_quantity_price_and_authoritative_total(kind,
     assert activity["quantity"] == 80
     assert activity["quantity_status"] == "reported"
     assert activity["value"] == 9.25
-    detailed = AssetService.get_asset_dividends_detailed("BBAS3").iloc[0]
+    detailed = PortfolioReadService.read_asset("BBAS3").dividend_details.iloc[0]
     assert detailed["Unitário"] == 0.125
     assert detailed["Total"] == 9.25
 
@@ -78,7 +79,7 @@ def test_invalid_metadata_does_not_drop_receipt_or_fabricate_quantity():
 def test_reported_fractional_quantity_is_preserved_and_supplies_missing_unit_value():
     AssetService.process_b3_import(receipt(quantity=0.5, unit_price="-"))
     assert AssetService.get_portfolio_activity().iloc[0]["quantity"] == 0.5
-    assert AssetService.get_asset_dividends_detailed("BBAS3").iloc[0]["Unitário"] == 20
+    assert PortfolioReadService.read_asset("BBAS3").dividend_details.iloc[0]["Unitário"] == 20
 
 
 def test_receipt_schema_migration_preserves_old_rows_and_is_repeatable(tmp_path):
@@ -99,7 +100,12 @@ def test_receipt_schema_migration_preserves_old_rows_and_is_repeatable(tmp_path)
     assert service.get_portfolio_activity().iloc[0]["value"] == 10
     assert service.add_dividend("BBAS3", "2026-01-02", "DIVIDEND", 10, 80, 0.125)
     assert len(service.get_portfolio_activity(limit=None)) == 1
-    assert service.get_asset_dividends_detailed("BBAS3").iloc[0]["Unitário"] == 0.125
+    class NoQuotes:
+        def get_batch_quotes(self, tickers):
+            return {}
+
+    reads = PortfolioReadService(repository=PortfolioDAO(manager), quotes=NoQuotes())
+    assert reads.read_asset("BBAS3").dividend_details.iloc[0]["Unitário"] == 0.125
     with sqlite3.connect(path) as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == CURRENT_SCHEMA_VERSION
 
@@ -128,11 +134,9 @@ def test_annual_per_share_metric_honors_receipt_metadata(kind, quantity, unit_pr
     AssetService.add_transaction("BBAS3", "2025-01-01", "BUY", 40, 20)
     AssetService.add_transaction("BBAS3", "2026-01-01", "BUY", 60, 20)
     assert AssetService.process_b3_import(receipt(kind, quantity, unit_price, total)) == (0, 1)
-    metrics = AssetService.get_annual_dividends_metrics(
-        "BBAS3", "2026", AssetService.get_asset_dividends("BBAS3")
-    )
+    metrics = PortfolioReadService.read_asset("BBAS3").annual_dividends["2026"]
     assert metrics["total_paid_per_share"] == 0.125
-    assert AssetService.get_asset_dividends_detailed("BBAS3").iloc[0]["Unitário"] == 0.125
+    assert PortfolioReadService.read_asset("BBAS3").dividend_details.iloc[0]["Unitário"] == 0.125
     assert metrics["qty_end_of_year"] == 100
     assert metrics["qty_prev_year"] == 40
 
@@ -144,9 +148,7 @@ def test_annual_per_share_metric_sums_selected_year_with_legacy_fallback():
     AssetService.add_dividend("BBAS3", "2026-01-02", "JCP", 9.25, quantity=80, unit_price=0.125)
     AssetService.add_dividend("BBAS3", "2026-02-01", "YIELD", 10, quantity=50)
     AssetService.add_dividend("BBAS3", "2026-03-01", "DIVIDEND", 10)
-    metrics = AssetService.get_annual_dividends_metrics(
-        "BBAS3", "2026", AssetService.get_asset_dividends("BBAS3")
-    )
+    metrics = PortfolioReadService.read_asset("BBAS3").annual_dividends["2026"]
     assert metrics["total_paid_per_share"] == pytest.approx(0.425)
     assert metrics["qty_end_of_year"] == 100
     assert metrics["qty_prev_year"] == 40
@@ -155,9 +157,7 @@ def test_annual_per_share_metric_sums_selected_year_with_legacy_fallback():
 def test_annual_per_share_metric_uses_reported_price_without_historical_position():
     AssetService.add_dividend("BBAS3", "2026-01-02", "JCP", 10, unit_price=0.125)
     AssetService.add_dividend("BBAS3", "2026-02-01", "DIVIDEND", 10)
-    metrics = AssetService.get_annual_dividends_metrics(
-        "BBAS3", "2026", AssetService.get_asset_dividends("BBAS3")
-    )
+    metrics = PortfolioReadService.read_asset("BBAS3").annual_dividends["2026"]
     assert metrics["total_paid_per_share"] == 0.125
     assert metrics["qty_end_of_year"] == 0
     assert metrics["qty_prev_year"] == 0

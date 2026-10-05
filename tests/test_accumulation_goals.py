@@ -1,3 +1,4 @@
+from services.portfolio_read_service import PortfolioReadService
 import contextlib
 import datetime
 import sqlite3
@@ -7,6 +8,7 @@ import pytest
 
 from core.daos.planning_dao import PlanningDAO
 from core.database import DatabaseManager
+from core.portfolio_read import PortfolioPlanning
 from services.goals_service import GoalService
 from services.planning_service import SimulationService
 from services.share_quantity_goal_service import ShareQuantityGoalService
@@ -29,17 +31,14 @@ class StubPortfolioProvider:
             position["ticker"]: position["quantity"] for position in positions
         }
 
-    def calculate_positions(self, today_date=None, start_date=None):
-        return pd.DataFrame(self.positions)
+    def read_planning(self, *, start_date=None, year=None, quantity_date=None):
+        positions = pd.DataFrame(self.positions)
+        if quantity_date:
+            self.quantity_queries.extend((ticker, quantity_date) for ticker in self.year_start_quantities)
+        transactions = {ticker: self._transactions_for_ticker(ticker) for ticker in self.transactions}
+        return PortfolioPlanning(positions, 0.0, 0.0, self.ytd_contributions, self.year_start_quantities, transactions)
 
-    def get_ytd_contributions(self, current_year):
-        return self.ytd_contributions
-
-    def get_quantity_on_date(self, ticker, date_str, conn=None):
-        self.quantity_queries.append((ticker, date_str))
-        return self.year_start_quantities.get(ticker, 0)
-
-    def get_raw_transactions_for_chart(self, ticker):
+    def _transactions_for_ticker(self, ticker):
         records = [
             {**transaction, "event_kind": transaction.get("event_kind", "CORPORATE")}
             for transaction in self.transactions.get(ticker, [])
@@ -914,7 +913,7 @@ def test_net_withdrawal_increases_remaining_annual_contribution(mock_db):
     assert AssetService.add_transaction("BBAS3", "2026-01-01", "SELL", 100, 100, 20)
     service = GoalService(
         settings_repo=PlanningDAO(),
-        portfolio_provider=AssetService.get_default(),
+        portfolio_provider=PortfolioReadService.get_default(),
         planning_provider=StubPlanningProvider(),
     )
 
@@ -1870,8 +1869,7 @@ def test_saved_snapshot_edits_recalculate_without_market_or_portfolio_queries(
         raise AssertionError("editing must use the displayed snapshot")
 
     monkeypatch.setattr(MarketData, "get_ticker_market_analysis", unexpected_query)
-    monkeypatch.setattr(portfolio, "calculate_positions", unexpected_query)
-    monkeypatch.setattr(portfolio, "get_quantity_on_date", unexpected_query)
+    monkeypatch.setattr(portfolio, "read_planning", unexpected_query)
     monkeypatch.setattr(StubPlanningProvider, "get_current_simulation", unexpected_query)
     updated = service.save_edited_goal_plan(snapshot, {"BBAS3": target, "SANB3": 150})
     assert snapshot["rows"].iloc[0]["target_quantity"] == 150

@@ -1,5 +1,7 @@
+from services.portfolio_read_service import PortfolioReadService
 from core.database import db
-from views.cached_market_data import StreamlitCachedPortfolioData
+from core.portfolio_read import PortfolioPlanning, AssetRead
+from types import SimpleNamespace
 import pytest
 import os
 import re
@@ -29,12 +31,10 @@ def _fake_tabs(labels, **_kwargs):
 
 def test_views_and_services_sanity():
     """Automated SCM Sanity and View Import/Attribute Verification Test."""
+    for name in ("read_portfolio", "read_asset", "read_history", "read_planning"):
+        assert hasattr(PortfolioReadService, name)
     from services.assets_service import AssetService
 
-    assert hasattr(AssetService, "calculate_positions")
-    assert hasattr(AssetService, "calculate_historical_evolution")
-    assert hasattr(AssetService, "get_ytd_contributions")
-    assert hasattr(AssetService, "get_monthly_contributions_by_year")
 
     from services.planning_service import SimulationService
 
@@ -51,14 +51,7 @@ def test_views_and_services_sanity():
     assert hasattr(AssetService, "add_transaction")
     assert hasattr(AssetService, "add_dividend")
     assert hasattr(AssetService, "process_b3_import")
-    assert hasattr(AssetService, "get_quantity_on_date")
-    assert hasattr(AssetService, "get_asset_transactions")
-    assert hasattr(AssetService, "get_asset_dividends")
     assert hasattr(AssetService, "get_asset_metadata")
-    assert hasattr(AssetService, "get_years_with_dividends")
-    assert hasattr(AssetService, "get_asset_years_with_dividends")
-    assert hasattr(AssetService, "get_annual_dividends_pivot")
-    assert hasattr(AssetService, "get_asset_annual_dividends_pivot")
     assert hasattr(AssetService, "get_tracked_market_assets")
     assert hasattr(AssetService, "add_tracked_market_asset")
     assert hasattr(AssetService, "remove_tracked_market_asset")
@@ -114,18 +107,16 @@ def test_asset_information_renders_without_opening_editors(monkeypatch):
     calls = []
     monkeypatch.setattr(st, "tabs", _fake_tabs)
     monkeypatch.setattr(
-        StreamlitCachedPortfolioData,
-        "calculate_positions",
-        lambda *args, **kwargs: pd.DataFrame([{"ticker": "ABCD3"}]),
+        PortfolioReadService,
+        "read_planning",
+        lambda *args, **kwargs: PortfolioPlanning(pd.DataFrame([{"ticker": "ABCD3"}]), 0, 0, 0),
     )
     monkeypatch.setattr(AssetService, "get_pending_tickers", lambda: [])
     monkeypatch.setattr(ManualEntryWidget, "render", lambda *args: calls.append("entry"))
     monkeypatch.setattr(AssetAnnualGoalWidget, "render", lambda *args: calls.append("goal"))
     monkeypatch.setattr(AssetService, "get_asset_metadata", lambda *args: {})
     monkeypatch.setattr(AssetService, "get_asset_market_analysis", lambda *args: {})
-    monkeypatch.setattr(
-        AssetService, "get_asset_dividends", lambda *args: calls.append("dividends") or pd.DataFrame()
-    )
+    monkeypatch.setattr(PortfolioReadService, "read_asset", lambda ticker: (calls.append("detail") or AssetRead(ticker, {}, {"quantity": 1}, {}, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {})))
     for name in (
         "_render_header_metadata_block", "_render_behavior_chart", "_render_proventos_pivot_table",
         "_render_indicators_block", "_render_transactions_and_dividends_tables",
@@ -137,7 +128,7 @@ def test_asset_information_renders_without_opening_editors(monkeypatch):
     assert "entry" not in calls
     assert "goal" not in calls
     assert "_render_behavior_chart" in calls
-    assert "dividends" in calls
+    assert "detail" in calls
     assert "_render_proventos_pivot_table" in calls
     assert "_render_transactions_and_dividends_tables" in calls
 
@@ -148,9 +139,9 @@ def test_asset_tabs_render_only_the_selected_ticker(monkeypatch):
     rendered = []
     options = []
     monkeypatch.setattr(
-        StreamlitCachedPortfolioData,
-        "calculate_positions",
-        lambda: pd.DataFrame({"ticker": ["CXSE3", "BBAS3"]}),
+        PortfolioReadService,
+        "read_planning",
+        lambda: PortfolioPlanning(pd.DataFrame({"ticker": ["CXSE3", "BBAS3"]}), 0, 0, 0),
     )
     monkeypatch.setattr(AssetService, "get_pending_tickers", lambda: [])
 
@@ -180,11 +171,11 @@ def test_native_asset_tabs_switch_without_rendering_hidden_tickers(monkeypatch):
 
     monkeypatch.setattr(streamlit.env_util, "is_repl", lambda: False)
     monkeypatch.setattr(
-        StreamlitCachedPortfolioData,
-        "calculate_positions",
-        lambda: pd.DataFrame({"ticker": ["BBAS3", "CXSE3"]}),
+        PortfolioReadService,
+        "read_planning",
+        lambda: PortfolioPlanning(pd.DataFrame({"ticker": ["BBAS3", "CXSE3"]}), 0, 0, 0),
     )
-    monkeypatch.setattr(StreamlitCachedPortfolioData, "_context", lambda: ("portfolio", "gen", 1))
+    monkeypatch.setattr("views.portfolio_view.portfolio_context", lambda: ("portfolio", "gen", 1))
     monkeypatch.setattr(AssetService, "get_pending_tickers", lambda: [])
     rendered = []
     monkeypatch.setattr(
@@ -352,15 +343,12 @@ def test_portfolio_chart_uses_last_valid_close_when_latest_history_row_is_empty(
     monkeypatch.setattr(st, "info", lambda *args, **kwargs: None)
     monkeypatch.setattr(st, "plotly_chart", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        AssetService, "get_raw_transactions_for_chart", lambda ticker: pd.DataFrame()
-    )
-    monkeypatch.setattr(
         StreamlitCachedMarketData,
         "get_ticker_history",
         lambda ticker, period, interval: history,
     )
 
-    PortfolioView()._render_behavior_chart("BBAS3", {})
+    PortfolioView()._render_behavior_chart("BBAS3", {"transaction_history": pd.DataFrame()})
 
     assert any("R$ 11,00" in text for text in markdown_calls)
 
@@ -416,27 +404,14 @@ def test_portfolio_view_renders_missing_market_multiples_as_unavailable(monkeypa
     monkeypatch.setattr(st, "info", lambda *args, **kwargs: None)
     monkeypatch.setattr(st, "radio", lambda *args, **kwargs: "1 Ano")
     monkeypatch.setattr(st, "plotly_chart", lambda *args, **kwargs: None)
-    monkeypatch.setattr(AssetService, "calculate_positions", lambda **_kwargs: positions)
-    monkeypatch.setattr(
-        AssetService,
-        "get_asset_metadata",
-        lambda ticker: {"name": "Banco do Brasil"},
-    )
-    monkeypatch.setattr(AssetService, "get_asset_dividends", lambda ticker: pd.DataFrame())
-    monkeypatch.setattr(AssetService, "get_asset_years_with_dividends", lambda ticker: [])
-    monkeypatch.setattr(AssetService, "get_asset_transactions", lambda ticker: pd.DataFrame())
-    monkeypatch.setattr(
-        AssetService,
-        "get_asset_market_analysis",
-        lambda ticker: {
-            "current_price": 20.0,
-            "dy": 0.0,
-            "pe": None,
-            "pb": None,
-            "high_52w": 0.0,
-            "low_52w": 0.0,
-        },
-    )
+    positions["adjusted_price"] = 19.5
+    positions["monthly_l12m_yoc"] = 2 / 200 * 100 / 12
+    monkeypatch.setattr(PortfolioReadService, "read_planning", lambda: PortfolioPlanning(positions, 200, 0, 0))
+    monkeypatch.setattr(PortfolioReadService, "read_asset", lambda ticker: AssetRead(
+        ticker, {"name": "Banco do Brasil"}, positions.iloc[0].to_dict(),
+        {"current_price": 20.0, "dy": 0.0, "pe": None, "pb": None, "high_52w": 0.0, "low_52w": 0.0},
+        pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {},
+    ))
     monkeypatch.setattr(
         StreamlitCachedMarketData,
         "get_ticker_history",
@@ -758,7 +733,7 @@ def test_operations_view_reports_invalid_free_form_ticker_without_saving(mock_db
     OperationsView()._render_unified_manual_form()
 
     assert errors == ["Informe um ticker válido da B3, como PETR4, BOVA11, NUBR33 ou PETR4F."]
-    assert AssetService.calculate_positions().empty
+    assert PortfolioReadService.read_planning().positions.empty
 
 
 def test_operations_view_labels_uncatalogued_owned_ticker_neutrally(mock_db, monkeypatch):
@@ -1087,7 +1062,11 @@ def test_sector_chart_hover_customdata(monkeypatch):
     monkeypatch.setattr("streamlit.plotly_chart", mock_plotly_chart)
 
     charts = DashboardCharts()
-    charts._render_top_charts(df_mock)
+    sectors = pd.DataFrame([
+        {"sector": "Financeiro", "current_value": 3000, "Detalhes": "BBAS3: R$ 1.000,00 (33.33% / 16.67%)<br>SANB11: R$ 2.000,00 (66.67% / 33.33%)"},
+        {"sector": "Seguridade", "current_value": 3000, "Detalhes": "CXSE3: R$ 3.000,00 (100.00% / 50.00%)"},
+    ])
+    charts._render_top_charts(SimpleNamespace(positions=df_mock, sectors=sectors))
 
     assert len(captured_charts) >= 1
     fig_sectors = captured_charts[0]
@@ -1127,118 +1106,10 @@ def test_sector_chart_hover_customdata(monkeypatch):
     assert found_seguridade, "Hover data for Seguridade not found or incorrect"
 
 
-def test_local_projection_cache_reuses_only_the_same_portfolio_revision(monkeypatch, tmp_path):
-    database = tmp_path / "portfolio.db"
-    database.touch()
-    revisions = [4]
-    calls = []
-
-    StreamlitCachedPortfolioData._calculate_positions.clear()
-    monkeypatch.setattr(db, "get_personal_database_path", lambda: database)
-    monkeypatch.setattr(AssetService, "get_local_projection_revision", lambda: revisions[0])
-    monkeypatch.setattr(
-        AssetService,
-        "calculate_positions",
-        lambda today_date=None, start_date=None: (
-            calls.append((today_date, start_date)) or pd.DataFrame({"ticker": ["BBAS3"]})
-        ),
-    )
-
-    first = StreamlitCachedPortfolioData.calculate_positions()
-    second = StreamlitCachedPortfolioData.calculate_positions()
-
-    assert len(calls) == 1
-    assert first.equals(second)
-
-    StreamlitCachedPortfolioData.calculate_positions(today_date=datetime.date(2026, 1, 2))
-
-    assert len(calls) == 2
-
-    revisions[0] += 1
-    StreamlitCachedPortfolioData.calculate_positions()
-
-    assert len(calls) == 3
-
-    evolution_calls = []
-    current_date = [datetime.date(2026, 1, 31)]
-
-    class CurrentDate:
-        @classmethod
-        def today(cls):
-            return current_date[0]
-
-    StreamlitCachedPortfolioData._calculate_historical_evolution.clear()
-    monkeypatch.setattr("views.cached_market_data.datetime.date", CurrentDate)
-    monkeypatch.setattr(
-        AssetService,
-        "calculate_historical_evolution",
-        lambda start_date, include_pending_costs: (
-            evolution_calls.append((start_date, include_pending_costs)) or pd.DataFrame()
-        ),
-    )
-
-    StreamlitCachedPortfolioData.calculate_historical_evolution()
-    StreamlitCachedPortfolioData.calculate_historical_evolution()
-    current_date[0] = current_date[0].replace(month=2, day=1)
 
 
-def test_positions_reopen_from_disk_but_new_revision_recalculates(monkeypatch, tmp_path):
-    import views.cached_market_data as cached_market_data
-
-    revisions = [1]
-    calculations = []
-    monkeypatch.setitem(cached_market_data._cache_configuration, "path", tmp_path / "screens.db")
-    monkeypatch.setattr(AssetService, "get_local_projection_revision", lambda: revisions[0])
-
-    def calculate(**_):
-        calculations.append(revisions[0])
-        return pd.DataFrame({"ticker": ["BBAS3"], "quantity": [revisions[0]]})
-
-    monkeypatch.setattr(AssetService, "calculate_positions", calculate)
-    StreamlitCachedPortfolioData._calculate_positions.clear()
-    first = StreamlitCachedPortfolioData.calculate_positions()
-    StreamlitCachedPortfolioData._calculate_positions.clear()  # Simulate a new process.
-    reopened = StreamlitCachedPortfolioData.calculate_positions()
-
-    assert first.equals(reopened)
-    assert calculations == [1]
-
-    revisions[0] = 2
-    updated = StreamlitCachedPortfolioData.calculate_positions()
-    assert updated.iloc[0]["quantity"] == 2
-    assert calculations == [1, 2]
 
 
-def test_disk_projection_does_not_cross_portfolios_or_restored_generation(monkeypatch, tmp_path):
-    import views.cached_market_data as cached_market_data
-    from core.application_paths import ApplicationPaths
-
-    current = [tmp_path / "a.db"]
-    generation = ["first"]
-    calculations = []
-    monkeypatch.setitem(cached_market_data._cache_configuration, "path", tmp_path / "screens.db")
-    monkeypatch.setattr(db, "get_personal_database_path", lambda: current[0])
-    monkeypatch.setattr(ApplicationPaths, "database_generation", lambda path: generation[0])
-    monkeypatch.setattr(AssetService, "get_local_projection_revision", lambda: 1)
-
-    def calculate(**_):
-        label = f"{current[0].stem}-{generation[0]}"
-        calculations.append(label)
-        return pd.DataFrame({"ticker": [label]})
-
-    monkeypatch.setattr(AssetService, "calculate_positions", calculate)
-    StreamlitCachedPortfolioData._calculate_positions.clear()
-    assert StreamlitCachedPortfolioData.calculate_positions().iloc[0]["ticker"] == "a-first"
-    StreamlitCachedPortfolioData._calculate_positions.clear()
-    current[0] = tmp_path / "b.db"
-    assert StreamlitCachedPortfolioData.calculate_positions().iloc[0]["ticker"] == "b-first"
-    StreamlitCachedPortfolioData._calculate_positions.clear()
-    current[0] = tmp_path / "a.db"
-    assert StreamlitCachedPortfolioData.calculate_positions().iloc[0]["ticker"] == "a-first"
-    generation[0] = "restored"
-    StreamlitCachedPortfolioData._calculate_positions.clear()
-    assert StreamlitCachedPortfolioData.calculate_positions().iloc[0]["ticker"] == "a-restored"
-    assert calculations == ["a-first", "b-first", "a-restored"]
 
 
 @pytest.mark.parametrize("initial_equity", [0.0, 100_000.0])

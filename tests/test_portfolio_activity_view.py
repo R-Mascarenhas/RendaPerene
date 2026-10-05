@@ -49,10 +49,11 @@ def test_dashboard_shows_activity_without_current_positions(monkeypatch):
     from views.components.portfolio_activity import PortfolioActivityWidget
     from views.components.annual_planning import AnnualPlanningWidget
     from views.components.accumulation_goals import AccumulationGoalProgressWidget
-    from views.cached_market_data import StreamlitCachedPortfolioData
+    from services.portfolio_read_service import PortfolioReadService
+    from core.portfolio_read import PortfolioOverview
 
     rendered = []
-    monkeypatch.setattr(StreamlitCachedPortfolioData, "calculate_positions", lambda: pd.DataFrame())
+    monkeypatch.setattr(PortfolioReadService, "read_portfolio", lambda **kw: PortfolioOverview(pd.DataFrame(), {}, pd.DataFrame(), {}, pd.DataFrame(), ()))
     monkeypatch.setattr(AnnualPlanningWidget, "render", lambda *args: None)
     monkeypatch.setattr(AccumulationGoalProgressWidget, "render", lambda *args: None)
     monkeypatch.setattr(PortfolioActivityWidget, "render", lambda *args, **kwargs: rendered.append(True))

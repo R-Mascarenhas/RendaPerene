@@ -1,3 +1,4 @@
+from services.portfolio_read_service import PortfolioReadService
 import datetime
 import logging
 
@@ -53,16 +54,15 @@ def test_local_projection_revision_advances_only_after_ledger_mutations():
     assert portfolio.get_local_projection_revision() == after_tracking + 1
 
 
-def test_recoverable_post_sale_failure_is_logged_without_changing_result(monkeypatch, caplog):
-    service = AssetService.get_default()
+def test_recoverable_post_sale_failure_is_logged_without_changing_result(caplog):
+    class FailedReads:
+        def read_planning(self):
+            raise RuntimeError("sensitive portfolio details")
 
-    def fail_positions():
-        raise RuntimeError("sensitive portfolio details")
-
-    monkeypatch.setattr(service, "calculate_positions", fail_positions)
+    service = AssetService(read_provider=FailedReads())
 
     with caplog.at_level(logging.DEBUG, logger="services.assets_service"):
-        assert AssetService.add_transaction("BBAS3", "2026-09-21", "SELL", 3, 20.0)
+        assert service.add_transaction("BBAS3", "2026-09-21", "SELL", 3, 20.0)
 
     warning = next(
         record.getMessage()
@@ -83,7 +83,7 @@ def test_uncatalogued_ticker_persists_with_neutral_metadata_after_service_restar
     assert AssetService.add_transaction("MOCK4", "2025-01-10", "BUY", 10, 20.0, 5.0)
 
     reloaded_service = AssetService(portfolio_repo=PortfolioDAO(), market_data_api=MarketData)
-    position = reloaded_service.calculate_positions().iloc[0]
+    position = PortfolioReadService(repository=PortfolioDAO(), catalog=MarketData).read_planning().positions.iloc[0]
 
     assert position["ticker"] == "MOCK4"
     assert position["quantity"] == 10
@@ -108,23 +108,23 @@ def test_average_price_calculation():
     """Ensures chronologically weighted average price math works perfectly."""
     AssetService.add_transaction("BBAS3", "2021-04-30", "BUY", 100, 20.00)
 
-    df = AssetService.calculate_positions()
+    df = PortfolioReadService.read_planning().positions
     assert len(df) == 1
     assert df.loc[0, "quantity"] == 100
     assert df.loc[0, "average_price"] == 20.00
 
     AssetService.add_transaction("BBAS3", "2021-05-15", "BUY", 100, 30.00)
-    df = AssetService.calculate_positions()
+    df = PortfolioReadService.read_planning().positions
     assert df.loc[0, "quantity"] == 200
     assert df.loc[0, "average_price"] == 25.00
 
     AssetService.add_transaction("BBAS3", "2021-06-01", "SELL", 50, 40.00)
-    df = AssetService.calculate_positions()
+    df = PortfolioReadService.read_planning().positions
     assert df.loc[0, "quantity"] == 150
     assert df.loc[0, "average_price"] == 25.00
 
     AssetService.add_transaction("BBAS3", "2021-07-01", "BUY", 50, 15.00)
-    df = AssetService.calculate_positions()
+    df = PortfolioReadService.read_planning().positions
     assert df.loc[0, "quantity"] == 200
     assert df.loc[0, "average_price"] == 22.50
 
@@ -136,7 +136,7 @@ def test_dividends_time_windows():
     AssetService.add_dividend("BBAS3", "2025-11-15", "DIVIDEND", 50.00)
     AssetService.add_dividend("BBAS3", "2024-11-15", "DIVIDEND", 30.00)
 
-    df_positions = AssetService.calculate_positions(today_date=datetime.date(2026, 6, 13))
+    df_positions = PortfolioReadService.read_planning(today_date=datetime.date(2026, 6, 13)).positions
 
     assert len(df_positions) == 1
     assert df_positions.loc[0, "total_dividends"] == 180.00
@@ -150,7 +150,7 @@ def test_historical_evolution_calculation():
     AssetService.add_transaction("BBAS3", "2025-02-15", "BUY", 10, 30.00)
     AssetService.add_dividend("BBAS3", "2025-02-28", "DIVIDEND", 50.00)
 
-    df_ev = AssetService.calculate_historical_evolution()
+    df_ev = PortfolioReadService.read_history().evolution
 
     assert len(df_ev) >= 2
     assert df_ev.loc[0, "month_str"] == "2025-01"
@@ -168,11 +168,11 @@ def test_get_quantity_on_date():
     AssetService.add_transaction("BBAS3", "2025-03-01", "BUY", 100, 22.00)
     AssetService.add_transaction("BBAS3", "2025-05-01", "SELL", 50, 25.00)
 
-    qty_before = AssetService.get_quantity_on_date("BBAS3", "2024-12-31")
-    qty_jan = AssetService.get_quantity_on_date("BBAS3", "2025-01-15")
-    qty_feb = AssetService.get_quantity_on_date("BBAS3", "2025-02-15")
-    qty_mar = AssetService.get_quantity_on_date("BBAS3", "2025-03-15")
-    qty_jun = AssetService.get_quantity_on_date("BBAS3", "2025-06-01")
+    qty_before = PortfolioReadService.read_planning(quantity_date="2024-12-31").quantities.get("BBAS3", 0)
+    qty_jan = PortfolioReadService.read_planning(quantity_date="2025-01-15").quantities.get("BBAS3", 0)
+    qty_feb = PortfolioReadService.read_planning(quantity_date="2025-02-15").quantities.get("BBAS3", 0)
+    qty_mar = PortfolioReadService.read_planning(quantity_date="2025-03-15").quantities.get("BBAS3", 0)
+    qty_jun = PortfolioReadService.read_planning(quantity_date="2025-06-01").quantities.get("BBAS3", 0)
 
     assert qty_before == 0
     assert qty_jan == 100
@@ -188,7 +188,7 @@ def test_asset_annual_dividends_pivot():
     AssetService.add_dividend("CXSE3", "2025-05-15", "DIVIDEND", 100.00)
     AssetService.add_dividend("BBAS3", "2024-05-15", "DIVIDEND", 15.00)
 
-    df_pivot_bb = AssetService.get_asset_annual_dividends_pivot("BBAS3", "2025")
+    df_pivot_bb = PortfolioReadService.read_asset("BBAS3").annual_dividends["2025"]["pivot"]
 
     val_div = df_pivot_bb.loc[
         df_pivot_bb["Categoria"] == "Total de Dividendos", "Valor (R$)"
@@ -223,7 +223,7 @@ def test_sell_all_shares_retains_monitoring_but_allows_removal():
     AssetService.add_transaction("BBAS3", "2021-12-16", "SELL", 10, 12.00)
 
     # Position must be 0
-    positions = AssetService.calculate_positions()
+    positions = PortfolioReadService.read_planning().positions
     assert positions.empty or "BBAS3" not in positions["ticker"].values
 
     # It should STILL be monitored
@@ -240,7 +240,7 @@ def test_sale_transaction_total_subtracts_fees():
     AssetService.add_transaction("BBAS3", "2021-12-15", "BUY", 100, 10.00)
     AssetService.add_transaction("BBAS3", "2021-12-16", "SELL", 100, 10.00, 5.00)
 
-    transactions = AssetService.get_asset_transactions("BBAS3")
+    transactions = PortfolioReadService.read_asset("BBAS3").transactions
 
     sale = transactions[transactions["Operação"] == "Venda"].iloc[0]
     assert sale["Valor Total"] == 995.00
@@ -283,8 +283,8 @@ def test_instantiable_portfolio_contexts_isolation(tmp_path):
     service1.add_transaction("WEGE3", "2021-04-30", "BUY", 100, 30.00)
 
     # 5. Verify service1 has the position, but service2 remains completely empty!
-    df1 = service1.calculate_positions()
-    df2 = service2.calculate_positions()
+    df1 = PortfolioReadService(repository=dao1).read_planning().positions
+    df2 = PortfolioReadService(repository=dao2).read_planning().positions
 
     assert len(df1) == 1
     assert df1.loc[0, "ticker"] == "WEGE3"

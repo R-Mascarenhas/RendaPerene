@@ -5,6 +5,13 @@ from typing import Any, Protocol
 
 import pandas as pd
 
+from core.portfolio_read import (
+    AssetRead,
+    PortfolioHistory,
+    PortfolioLedger,
+    PortfolioOverview,
+    PortfolioPlanning,
+)
 from core.update_checker import AvailableUpdate
 
 
@@ -75,10 +82,30 @@ class hybridmethod:
         return self.func.__get__(instance, owner)
 
 
+class PortfolioReadRepositoryPort(Protocol):
+    """Load a coherent local ledger without exposing a database connection."""
+
+    def load_ledger(self) -> "PortfolioLedger": ...
+
+
+class PortfolioReadPort(Protocol):
+    """Complete portfolio read use cases; results never require caller enrichment."""
+
+    def read_portfolio(
+        self, *, today_date=None, start_date=None, target_yield=6.0
+    ) -> "PortfolioOverview": ...
+
+    def read_asset(self, ticker: str, *, today_date=None, target_yield=6.0) -> "AssetRead": ...
+
+    def read_history(self, start_date=None, include_pending_costs=False) -> "PortfolioHistory": ...
+
+    def read_planning(
+        self, *, start_date=None, year=None, quantity_date=None, today_date=None
+    ) -> "PortfolioPlanning": ...
+
+
 class PortfolioPort(Protocol):
     """Outbound Port interface defining portfolio ledger operations (DIP compliant)."""
-
-    def get_personal_connection(self) -> Any: ...
 
     def import_b3_transaction(self, record: dict, transfer_classifier: Any) -> bool: ...
 
@@ -122,23 +149,7 @@ class PortfolioPort(Protocol):
         unit_price: float | None = None,
     ) -> bool: ...
 
-    def get_quantity_on_date(self, ticker: str, date_str: str, conn: Any = None) -> int: ...
-
-    def get_raw_transactions_for_chart(self, ticker: str) -> pd.DataFrame: ...
-
-    def get_transactions_by_ticker(self, ticker: str) -> pd.DataFrame: ...
-
-    def get_transactions_by_ticker_desc(self, ticker: str) -> pd.DataFrame: ...
-
-    def get_dividends_by_ticker(self, ticker: str) -> pd.DataFrame: ...
-
-    def get_years_with_dividends(self) -> list: ...
-
-    def get_asset_years_with_dividends(self, ticker: str) -> list: ...
-
-    def get_annual_dividend_types_sum(self, year: str) -> list: ...
-
-    def get_asset_annual_dividend_types_sum(self, ticker: str, year: str) -> list: ...
+    def get_quantity_on_date(self, ticker: str, date_str: str) -> int: ...
 
     def get_tracked_assets(self) -> list: ...
 
@@ -149,14 +160,6 @@ class PortfolioPort(Protocol):
     def insert_dividend_correction(self, ticker: str, year: int, total_value: float) -> bool: ...
 
     def get_dividend_corrections(self, ticker: str) -> dict: ...
-
-    def get_all_transactions(self) -> pd.DataFrame: ...
-
-    def get_total_dividends_by_ticker(self, ticker: str) -> float: ...
-
-    def get_dividends_by_ticker_since_date(self, ticker: str, limit_date: str) -> float: ...
-
-    def get_all_dividends(self) -> pd.DataFrame: ...
 
     def get_activity_records(self, limit: int | None = None) -> pd.DataFrame: ...
 
@@ -323,24 +326,8 @@ class ExcelParserPort(Protocol):
         ...
 
 
-class PortfolioProviderPort(Protocol):
-    """Outbound Port interface defining required portfolio metrics and positions provider operations (DIP compliant)."""
-
-    def calculate_positions(
-        self, today_date: Any = None, start_date: Any = None
-    ) -> pd.DataFrame: ...
-
-    def calculate_historical_evolution(
-        self, start_date: Any = None, include_pending_costs: bool = False
-    ) -> pd.DataFrame: ...
-
-    def get_ytd_contributions(self, current_year: int) -> float | None: ...
-
-    def get_quantity_on_date(self, ticker: str, date_str: str, conn: Any = None) -> int: ...
-
-    def get_raw_transactions_for_chart(self, ticker: str) -> pd.DataFrame: ...
-
-    def calculate_prior_invested_amount(self, start_date: str) -> float | None: ...
+class PortfolioProviderPort(PortfolioReadPort, Protocol):
+    """Portfolio reads consumed by retirement and goal modules."""
 
 
 class PlanningProviderPort(Protocol):

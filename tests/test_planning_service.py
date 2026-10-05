@@ -1,3 +1,5 @@
+from services.portfolio_read_service import PortfolioReadService
+from core.portfolio_read import PortfolioPlanning, PortfolioHistory
 import pytest
 import datetime
 import sqlite3
@@ -64,12 +66,12 @@ def test_planning_custom_start_date(mock_db):
     assert sim_default["start_age_years"] == 31.0
 
     # Assert historical evolution start month for default case (should be Jan 2021)
-    df_ev_default = AssetService.calculate_historical_evolution()
+    df_ev_default = PortfolioReadService.read_history().evolution
     assert not df_ev_default.empty
     assert df_ev_default.sort_values("month_str").iloc[0]["month_str"] == "2021-01"
 
     # Assert get_monthly_contributions_by_year includes both years in default
-    df_contribs_default = AssetService.get_monthly_contributions_by_year()
+    df_contribs_default = PortfolioReadService.read_history().monthly_contributions
     assert "2021" in df_contribs_default["year"].values
     assert "2024" in df_contribs_default["year"].values
 
@@ -96,12 +98,12 @@ def test_planning_custom_start_date(mock_db):
     assert sim_custom["start_age_years"] == 34.0
 
     # Assert historical evolution start month for custom start date case (should be Jan 2024)
-    df_ev_custom = AssetService.calculate_historical_evolution(start_date="2024-01-01")
+    df_ev_custom = PortfolioReadService.read_history(start_date="2024-01-01").evolution
     assert not df_ev_custom.empty
     assert df_ev_custom.sort_values("month_str").iloc[0]["month_str"] == "2024-01"
 
     # Assert get_monthly_contributions_by_year only includes 2024
-    df_contribs_custom = AssetService.get_monthly_contributions_by_year(start_date="2024-01-01")
+    df_contribs_custom = PortfolioReadService.read_history(start_date="2024-01-01").monthly_contributions
     assert "2021" not in df_contribs_custom["year"].values
     assert "2024" in df_contribs_custom["year"].values
 
@@ -119,7 +121,7 @@ def test_planning_initial_equity_integration(mock_db):
     AssetService.add_transaction("BBAS3", "2024-05-15", "BUY", 50, 40.00)
 
     # 1. Verify that calculate_prior_invested_amount works correctly standalone
-    computed_prior = AssetService.calculate_prior_invested_amount("2024-01-01")
+    computed_prior = PortfolioReadService.read_planning(start_date="2024-01-01").prior_invested
     assert computed_prior == 3000.0
 
     # 2. Save config with custom start date "2024-01-01" and the computed_prior (pre-population scenario)
@@ -418,16 +420,13 @@ def test_decoupled_portfolio_provider_seam(mock_db):
             return "2024-01-01"
 
     class StubPortfolioProvider:
-        def calculate_positions(self, today_date=None, start_date=None) -> pd.DataFrame:
-            # Under planning_start_date="2024-01-01", return custom mock positions
-            return pd.DataFrame(
-                [
-                    {"ticker": "MOCK1", "invested_amount": 10000.0},
-                    {"ticker": "MOCK2", "invested_amount": 25000.0},
-                ]
-            )
+        def read_planning(self, **kwargs):
+            return PortfolioPlanning(pd.DataFrame(), 35000.0, 0.0, 0.0)
 
-        def calculate_historical_evolution(
+        def read_history(self, start_date=None, include_pending_costs=False):
+            return PortfolioHistory(self._history(start_date, include_pending_costs), pd.DataFrame())
+
+        def _history(
             self, start_date=None, include_pending_costs=False
         ) -> pd.DataFrame:
             # Generate months from 2024-01 to today
@@ -473,7 +472,7 @@ def test_decoupled_portfolio_provider_seam(mock_db):
         from services.assets_service import AssetService
 
         SimulationService.set_adapters(
-            planning_repo=PlanningDAO, portfolio_provider=AssetService.get_default()
+            planning_repo=PlanningDAO, portfolio_provider=PortfolioReadService.get_default()
         )
 
 
@@ -532,12 +531,12 @@ def test_history_charts_include_initial_equity(
         monkeypatch.setattr(charts.st, "markdown", lambda *args, **kwargs: None)
         monkeypatch.setattr(charts.st, "subheader", lambda *args, **kwargs: None)
         monkeypatch.setattr(charts.st, "plotly_chart", lambda fig, **kwargs: figures.append(fig))
-        cached_history = AssetService.calculate_historical_evolution(start_date)
+        cached_history = PortfolioReadService.read_history(start_date).evolution
         original_history = cached_history.copy(deep=True)
         monkeypatch.setattr(
-            charts.StreamlitCachedPortfolioData,
-            "calculate_historical_evolution",
-            lambda *args, **kwargs: cached_history,
+            charts.PortfolioReadService,
+            "read_history",
+            lambda *args, **kwargs: PortfolioHistory(cached_history, pd.DataFrame()),
         )
         dashboard = charts.DashboardCharts()
         dashboard._render_evolution_chart()

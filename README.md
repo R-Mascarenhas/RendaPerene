@@ -373,6 +373,17 @@ Para validar especificamente o contrato de leitura e o isolamento do cache:
 venv/bin/pytest tests/test_portfolio_read.py
 ```
 
+Para validar as interações da tela de Planejamento com widgets reais, callbacks e
+persistência em um banco temporário, execute:
+
+```bash
+venv/bin/pytest tests/test_planning_ui.py -v
+```
+
+Esses testes usam o `AppTest` do Streamlit e verificam a edição do plano, o isolamento
+da Simulação Rápida e o patrimônio inicial automático/manual. Não exigem iniciar o
+servidor nem abrir o navegador; a aparência visual dos gráficos requer conferência manual.
+
 ### Medição de navegação
 
 Para medir sem registrar dados pessoais, execute `APP_ENV=dev RENDA_PERENE_NAVIGATION_METRICS=true venv/bin/streamlit run app.py`. Com uma carteira de teste, visite Dashboard, Ativos e Monitoramento uma vez para a medição fria e repita a mesma navegação sem mutações para a medição quente. Os logs seguem o formato `identificador.técnico duration: <ms> ms` e não incluem carteira, ticker, valores, caminhos ou identificadores. Os nomes são técnicos e hierárquicos, como `ativos.carteira.price_history.total` e `planejamento.projection_chart`: `total` mede um render completo e as demais fases isolam seus módulos. A instrumentação fica desabilitada fora desse modo explícito de desenvolvimento.

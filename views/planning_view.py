@@ -5,7 +5,6 @@ import streamlit as st
 
 from core.constants import (
     INITIAL_EQUITY_AUTO,
-    INITIAL_EQUITY_INPUT,
     INITIAL_EQUITY_MANUAL_OVERRIDE,
     SESSION_ANNUAL_INTEREST_RATE,
     SESSION_BIRTH_DATE,
@@ -18,16 +17,6 @@ from core.constants import (
     SESSION_PLANNING_START_DATE_ENABLED,
     SESSION_REQUIRED_CONTRIBUTION_CACHE,
     SESSION_RETIREMENT_AGE,
-    SIM_CURRENT_AGE,
-    SIM_MONTHLY_INTEREST_RATE,
-    SIM_REMAINING_TIME_MONTHS,
-    SIM_REQUIRED_CONTRIBUTION,
-    SIM_START_AGE_YEARS,
-    SIM_TARGET_EQUITY,
-    SIM_TARGET_MONTHLY_INCOME,
-    SIM_TOTAL_INVESTED,
-    SIM_TOTAL_TIME_MONTHS,
-    SIM_UPDATED_CONTRIBUTION,
     WIDGET_BIRTH_DATE,
     WIDGET_INCOME_FIXED,
     WIDGET_INCOME_MW,
@@ -40,6 +29,7 @@ from core.constants import (
     WIDGET_RETIREMENT_AGE,
 )
 from core.performance import instrument_screen, measure_navigation
+from core.planning import PlanningConfiguration, PlanningScenario
 from core.strings import (
     HELP_INCOME_MULTIPLIER,
     HELP_INITIAL_EQUITY_INPUT_DYNAMIC,
@@ -95,7 +85,7 @@ class PlanningView:
 
         # 1. Renders all editable life parameters and minimum wage controls on exactly the same single horizontal row!
         with measure_navigation("planejamento", "life_parameters"):
-            current_age, months_age = self._render_life_parameters()
+            self._render_life_parameters()
 
         # 2. Unified Service call (Single source of truth)
         with measure_navigation("planejamento", "simulation"):
@@ -109,7 +99,7 @@ class PlanningView:
         # Display Capital Investido on top of widgets
         st.metric(
             MSG_PLANNING_INVESTED_CAPITAL,
-            f"R$ {sim['total_invested']:,.2f}",
+            Formatter.format_currency(sim["total_invested"]),
             help=HELP_PLANNING_AUTOMATED,
         )
 
@@ -178,13 +168,8 @@ class PlanningView:
             and not st.session_state.get(INITIAL_EQUITY_MANUAL_OVERRIDE, False)
             and (st.session_state.get(INITIAL_EQUITY_AUTO, False) or not was_enabled)
         ):
-            from services.portfolio_read_service import PortfolioReadService
-
             start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
-            start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
-            computed_initial = PortfolioReadService.read_planning(
-                start_date=start_date_str
-            ).prior_invested
+            computed_initial = SimulationService.get_prior_invested_capital(start_date_val)
             if computed_initial is not None:
                 st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
             st.session_state[INITIAL_EQUITY_AUTO] = True
@@ -199,12 +184,7 @@ class PlanningView:
         if not st.session_state.get(INITIAL_EQUITY_MANUAL_OVERRIDE, False) and st.session_state.get(
             INITIAL_EQUITY_AUTO, False
         ):
-            from services.portfolio_read_service import PortfolioReadService
-
-            new_start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
-            computed_initial = PortfolioReadService.read_planning(
-                start_date=new_start_date_str
-            ).prior_invested
+            computed_initial = SimulationService.get_prior_invested_capital(start_date_val)
             if computed_initial is not None:
                 st.session_state[SESSION_INITIAL_EQUITY] = computed_initial
             st.session_state[INITIAL_EQUITY_AUTO] = True
@@ -269,41 +249,26 @@ class PlanningView:
 
     def _save_params(self):
         """Callback to save the current session state parameters to the database."""
-        core_birth_date = st.session_state[SESSION_BIRTH_DATE]
-        birth_str = (
-            core_birth_date.strftime("%Y-%m-%d")
-            if hasattr(core_birth_date, "strftime")
-            else str(core_birth_date)
-        )
-
-        db_type = st.session_state[SESSION_DESIRED_INCOME_TYPE]
-        desired_mw = float(st.session_state[SESSION_DESIRED_INCOME_MW])
-        desired_fixed = float(st.session_state[SESSION_DESIRED_INCOME_FIXED])
-
-        start_date_str = None
-        if st.session_state.get(SESSION_PLANNING_START_DATE_ENABLED, False):
-            start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
-            if start_date_val:
-                start_date_str = (
-                    start_date_val.strftime("%Y-%m-%d")
-                    if hasattr(start_date_val, "strftime")
-                    else str(start_date_val)
-                )
-
-        SimulationService.save_configuration(
-            birth_str,
-            st.session_state[SESSION_RETIREMENT_AGE],
-            desired_mw,
-            st.session_state[SESSION_ANNUAL_INTEREST_RATE],
-            st.session_state[SESSION_MW_VALUE],
-            float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0)),
-            desired_income_type=db_type,
-            desired_income_fixed=desired_fixed,
-            planning_start_date=start_date_str,
-            initial_equity_auto=st.session_state.get(INITIAL_EQUITY_AUTO, False),
-            initial_equity_manual_override=st.session_state.get(
-                INITIAL_EQUITY_MANUAL_OVERRIDE, False
-            ),
+        SimulationService.save_planning_configuration(
+            PlanningConfiguration(
+                birth_date=st.session_state[SESSION_BIRTH_DATE],
+                retirement_age=st.session_state[SESSION_RETIREMENT_AGE],
+                desired_income_mw=float(st.session_state[SESSION_DESIRED_INCOME_MW]),
+                annual_interest_rate=st.session_state[SESSION_ANNUAL_INTEREST_RATE],
+                mw_value=st.session_state[SESSION_MW_VALUE],
+                initial_equity_input=float(st.session_state.get(SESSION_INITIAL_EQUITY, 0.0)),
+                desired_income_type=st.session_state[SESSION_DESIRED_INCOME_TYPE],
+                desired_income_fixed=float(st.session_state[SESSION_DESIRED_INCOME_FIXED]),
+                planning_start_date=(
+                    st.session_state.get(SESSION_PLANNING_START_DATE)
+                    if st.session_state.get(SESSION_PLANNING_START_DATE_ENABLED, False)
+                    else None
+                ),
+                initial_equity_auto=st.session_state.get(INITIAL_EQUITY_AUTO, False),
+                initial_equity_manual_override=st.session_state.get(
+                    INITIAL_EQUITY_MANUAL_OVERRIDE, False
+                ),
+            )
         )
 
     def _render_life_parameters(self):
@@ -326,13 +291,7 @@ class PlanningView:
                 on_change=self._on_birth_date_change,
             )
 
-            # Calculate exact age in months
-            months_age = (
-                (today.year - birth_date.year) * 12
-                + today.month
-                - birth_date.month
-                - (today.day < birth_date.day)
-            )
+            months_age = SimulationService.get_age_months(birth_date)
             current_age = months_age // 12
 
         with col_ret_age:
@@ -451,13 +410,8 @@ class PlanningView:
                 )
         with col_initial:
             if st.session_state.get(SESSION_PLANNING_START_DATE_ENABLED, False):
-                from services.portfolio_read_service import PortfolioReadService
-
                 start_date_val = st.session_state.get(SESSION_PLANNING_START_DATE)
-                start_date_str = start_date_val.strftime("%Y-%m-%d") if start_date_val else None
-                computed_initial = PortfolioReadService.read_planning(
-                    start_date=start_date_str
-                ).prior_invested
+                computed_initial = SimulationService.get_prior_invested_capital(start_date_val)
                 self._sync_automatic_initial_equity(computed_initial)
                 initial_equity_help = (
                     Formatter.format_currency(computed_initial)
@@ -524,32 +478,15 @@ class PlanningView:
                     key="sandbox_patrimonio_inicial",
                 )
 
-            n_months = tempo_anos * 12
-            monthly_rate = (1 + taxa_juros / 100) ** (1 / 12) - 1
-            target_equity = salario_desejado / monthly_rate if monthly_rate > 0 else 0.0
-
-            aporte_necessario = SimulationService.pmt_annuity_due(
-                monthly_rate, n_months, patrimonio_inicial, target_equity
+            sandbox_sim = SimulationService.simulate_scenario(
+                PlanningScenario(
+                    duration_years=tempo_anos,
+                    target_monthly_income=salario_desejado,
+                    annual_interest_rate=taxa_juros,
+                    initial_equity_input=patrimonio_inicial,
+                )
             )
-
-            # Build a dynamic simulation dictionary that fully satisfies existing Widget schemas
-            sandbox_sim = {
-                SIM_CURRENT_AGE: 0.0,
-                SIM_START_AGE_YEARS: 0.0,
-                SIM_TOTAL_TIME_MONTHS: n_months,
-                SIM_REMAINING_TIME_MONTHS: n_months,
-                SIM_TARGET_MONTHLY_INCOME: salario_desejado,
-                SIM_MONTHLY_INTEREST_RATE: monthly_rate,
-                SIM_TARGET_EQUITY: target_equity,
-                SIM_REQUIRED_CONTRIBUTION: aporte_necessario,
-                SIM_UPDATED_CONTRIBUTION: aporte_necessario,  # Required by ProjectionChartWidget
-                SIM_TOTAL_INVESTED: patrimonio_inicial,
-                INITIAL_EQUITY_INPUT: patrimonio_inicial,
-            }
 
             SimulationResultsWidget().render(sandbox_sim, show_updated=False)
 
-            st.markdown("---")
-            chart_col1, chart_col2 = st.columns(2)
-            ProjectionChartWidget()._render_cumulative_projection(sandbox_sim, chart_col1)
-            ProjectionChartWidget()._render_monthly_comparison(sandbox_sim, chart_col2)
+            ProjectionChartWidget().render_scenario(sandbox_sim)

@@ -1,11 +1,15 @@
 import datetime
+from dataclasses import asdict, replace
 
 import numpy as np
 import pandas as pd
 
 from core.constants import (
     ANNUAL_INTEREST_RATE,
+    BAZIN_TARGET_SPREAD,
+    BAZIN_TARGET_YIELD,
     BIRTH_DATE,
+    CEILING_MODEL_SELECTION,
     DESIRED_INCOME_FIXED,
     DESIRED_INCOME_MW,
     DESIRED_INCOME_TYPE,
@@ -17,6 +21,12 @@ from core.constants import (
     RETIREMENT_AGE,
 )
 from core.daos.planning_dao import PlanningDAO
+from core.planning import (
+    PlanningConfiguration,
+    PlanningScenario,
+    ScenarioProjection,
+    SimulationResult,
+)
 from core.ports import PlanningConfigPort, PortfolioProviderPort, hybridmethod
 
 
@@ -61,6 +71,113 @@ class SimulationService:
     def get_configuration(self):
         """Fetches the planning configuration from the database."""
         return self._planning_repo.get_configuration()
+
+    @staticmethod
+    def _date_value(value):
+        return value.isoformat() if isinstance(value, datetime.date) else value
+
+    @hybridmethod
+    def save_planning_configuration(self, configuration: PlanningConfiguration) -> None:
+        """Save retirement inputs while retaining separately owned valuation settings."""
+        values = asdict(configuration)
+        values[BIRTH_DATE] = self._date_value(configuration.birth_date)
+        values[PLANNING_START_DATE] = self._date_value(configuration.planning_start_date)
+        existing = self.get_configuration() or {}
+        for key, default in (
+            (CEILING_MODEL_SELECTION, "Bazin Clássico"),
+            (BAZIN_TARGET_YIELD, 6.0),
+            (BAZIN_TARGET_SPREAD, 3.0),
+        ):
+            values[key] = existing.get(key, default)
+        self.save_configuration(**values)
+
+    @hybridmethod
+    def get_prior_invested_capital(self, start_date) -> float | None:
+        """Read the suggested initial capital through the configured portfolio provider."""
+        if self._portfolio_provider is None:
+            raise RuntimeError("Portfolio provider port is not configured on SimulationService.")
+        return self._portfolio_provider.read_planning(
+            start_date=self._date_value(start_date)
+        ).prior_invested
+
+    @staticmethod
+    def get_age_months(birth_date, on_date=None) -> int:
+        """Coordinate the exact age used by the plan and its input constraints."""
+        if isinstance(birth_date, str):
+            birth_date = datetime.date.fromisoformat(birth_date)
+        today = on_date or datetime.date.today()
+        return (
+            (today.year - birth_date.year) * 12
+            + today.month
+            - birth_date.month
+            - (today.day < birth_date.day)
+        )
+
+    def _calculate_simulation(
+        self,
+        *,
+        total_months,
+        remaining_months,
+        target_income,
+        annual_rate,
+        initial_equity,
+        invested,
+        current_age=0.0,
+        start_age=0.0,
+    ) -> SimulationResult:
+        monthly_rate = (1 + annual_rate / 100) ** (1 / 12) - 1
+        target_equity = target_income / monthly_rate if monthly_rate > 0 else 0.0
+        return SimulationResult(
+            current_age=current_age,
+            start_age_years=start_age,
+            total_time_months=total_months,
+            remaining_time_months=remaining_months,
+            target_monthly_income=target_income,
+            monthly_interest_rate=monthly_rate,
+            target_equity=target_equity,
+            required_monthly_contribution=self.pmt_annuity_due(
+                monthly_rate, total_months, initial_equity, target_equity
+            ),
+            updated_monthly_contribution=self.pmt_annuity_due(
+                monthly_rate, remaining_months, invested + initial_equity, target_equity
+            ),
+            total_invested=invested + initial_equity,
+            initial_equity_input=initial_equity,
+            annual_interest_rate=annual_rate,
+        )
+
+    @hybridmethod
+    def simulate_scenario(self, scenario: PlanningScenario) -> SimulationResult:
+        """Calculate an independent scenario without consulting or changing the saved plan."""
+        months = max(0, scenario.duration_years * 12)
+        result = self._calculate_simulation(
+            total_months=months,
+            remaining_months=months,
+            target_income=scenario.target_monthly_income,
+            annual_rate=scenario.annual_interest_rate,
+            initial_equity=scenario.initial_equity_input,
+            invested=0.0,
+        )
+        return replace(
+            result,
+            retirement_age=scenario.duration_years,
+            desired_income_fixed=scenario.target_monthly_income,
+        )
+
+    @hybridmethod
+    def get_scenario_projection(self, result: SimulationResult) -> ScenarioProjection:
+        """Prepare both projection datasets from one already calculated result."""
+        args = (
+            result["start_age_years"],
+            result["total_time_months"],
+            result["initial_equity_input"],
+            result["required_monthly_contribution"],
+            result["monthly_interest_rate"],
+        )
+        return ScenarioProjection(
+            self.build_projection_dataframe(*args, result["target_equity"]),
+            self.build_monthly_cashflow_dataframe(*args),
+        )
 
     @hybridmethod
     def save_configuration(
@@ -145,12 +262,12 @@ class SimulationService:
         return float(config[INITIAL_EQUITY_INPUT])
 
     @hybridmethod
-    def get_current_simulation(self):
+    def get_current_simulation(self) -> SimulationResult | None:
         """
         Runs the entire retirement simulation using DB parameters (Single Source of Truth).
         Calculates lifetime monthly contribution using total_time_months and PV=0.
         Calculates course-corrected monthly contribution using actual database invested capital as PV.
-        Returns a dictionary containing all computed parameters (DRY-compliant).
+        Returns named metrics with backwards-compatible mapping access.
         """
         config = self.get_configuration()
         if not config:
@@ -163,12 +280,7 @@ class SimulationService:
             else config[BIRTH_DATE]
         )
 
-        months_age = (
-            (today.year - birth_date.year) * 12
-            + today.month
-            - birth_date.month
-            - (today.day < birth_date.day)
-        )
+        months_age = self.get_age_months(birth_date, today)
         current_age = months_age / 12
 
         start_date = self._get_planning_start_date(config, today)
@@ -187,11 +299,6 @@ class SimulationService:
         else:  # FIXED
             target_monthly_income = config[DESIRED_INCOME_FIXED]
 
-        monthly_interest_rate = (1 + config[ANNUAL_INTEREST_RATE] / 100) ** (1 / 12) - 1
-        target_equity = (
-            target_monthly_income / monthly_interest_rate if monthly_interest_rate > 0 else 0.0
-        )
-
         if self._portfolio_provider is None:
             raise RuntimeError("Portfolio provider port is not configured on SimulationService.")
 
@@ -207,38 +314,26 @@ class SimulationService:
         if initial_equity_input is None:
             return None
 
-        required_monthly_contribution = self.pmt_annuity_due(
-            monthly_interest_rate, total_time_months, initial_equity_input, target_equity
+        result = self._calculate_simulation(
+            total_months=total_time_months,
+            remaining_months=remaining_time_months,
+            target_income=target_monthly_income,
+            annual_rate=config[ANNUAL_INTEREST_RATE],
+            initial_equity=initial_equity_input,
+            invested=total_invested,
+            current_age=current_age,
+            start_age=start_age_years,
         )
-
-        updated_monthly_contribution = self.pmt_annuity_due(
-            monthly_interest_rate,
-            remaining_time_months,
-            total_invested + initial_equity_input,
-            target_equity,
+        return replace(
+            result,
+            mw_value=config[MW_VALUE],
+            retirement_age=config[RETIREMENT_AGE],
+            desired_income_mw=config[DESIRED_INCOME_MW],
+            desired_income_fixed=config[DESIRED_INCOME_FIXED],
+            desired_income_type=config[DESIRED_INCOME_TYPE],
+            planning_start_date=config.get(PLANNING_START_DATE),
+            effective_planning_start_date=start_date.isoformat(),
         )
-
-        return {
-            "current_age": current_age,
-            "start_age_years": start_age_years,
-            "total_time_months": total_time_months,
-            "remaining_time_months": remaining_time_months,
-            "target_monthly_income": target_monthly_income,
-            "monthly_interest_rate": monthly_interest_rate,
-            "target_equity": target_equity,
-            "required_monthly_contribution": required_monthly_contribution,
-            "updated_monthly_contribution": updated_monthly_contribution,
-            "mw_value": config[MW_VALUE],
-            "total_invested": total_invested + initial_equity_input,
-            "initial_equity_input": initial_equity_input,
-            "retirement_age": config[RETIREMENT_AGE],
-            "desired_income_mw": config[DESIRED_INCOME_MW],
-            "desired_income_fixed": config[DESIRED_INCOME_FIXED],
-            "desired_income_type": config[DESIRED_INCOME_TYPE],
-            "annual_interest_rate": config[ANNUAL_INTEREST_RATE],
-            "planning_start_date": config.get(PLANNING_START_DATE),
-            "effective_planning_start_date": start_date.isoformat(),
-        }
 
     @hybridmethod
     def get_updated_required_contribution(self):
@@ -302,9 +397,15 @@ class SimulationService:
         cumulative_invested = initial_equity + months_array * required_monthly_contribution
 
         interest_factors = (1 + monthly_interest_rate) ** months_array
-        projected_equity = initial_equity * interest_factors + required_monthly_contribution * (
-            1 + monthly_interest_rate
-        ) * ((interest_factors - 1) / monthly_interest_rate)
+        annuity_factors = (
+            (interest_factors - 1) / monthly_interest_rate
+            if monthly_interest_rate != 0
+            else months_array
+        )
+        projected_equity = (
+            initial_equity * interest_factors
+            + required_monthly_contribution * (1 + monthly_interest_rate) * annuity_factors
+        )
 
         cumulative_interest = projected_equity - cumulative_invested
 

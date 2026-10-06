@@ -1145,6 +1145,7 @@ def test_quick_simulation_charts_start_with_entered_equity(monkeypatch, initial_
     from contextlib import nullcontext
     from views import planning_view
     from views.components.chart_theme import ChartThemeAdapter
+    from core.constants import SESSION_REQUIRED_CONTRIBUTION_CACHE
 
     inputs = {
         "sandbox_tempo_anos": 30,
@@ -1153,6 +1154,8 @@ def test_quick_simulation_charts_start_with_entered_equity(monkeypatch, initial_
         "sandbox_patrimonio_inicial": initial_equity,
     }
     figures = []
+    session_values = {**inputs, SESSION_REQUIRED_CONTRIBUTION_CACHE: 1234.0}
+    monkeypatch.setattr(planning_view.st, "session_state", session_values.copy())
     saved_configuration = SimulationService.get_configuration()
     monkeypatch.setattr(planning_view.st, "expander", lambda *args, **kwargs: nullcontext())
     monkeypatch.setattr(planning_view.st, "columns", lambda count: [nullcontext() for _ in range(count)])
@@ -1179,3 +1182,4 @@ def test_quick_simulation_charts_start_with_entered_equity(monkeypatch, initial_
     assert cumulative.data[0].y[-1] == pytest.approx(target)
     assert cashflow.data[1].y[0] == pytest.approx(initial_equity * monthly_rate)
     assert SimulationService.get_configuration() == saved_configuration
+    assert dict(planning_view.st.session_state) == session_values

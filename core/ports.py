@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 import pandas as pd
 
+from core.planning import SimulationResult
 from core.portfolio_read import (
     AssetRead,
     PortfolioHistory,
@@ -333,7 +334,7 @@ class PortfolioProviderPort(PortfolioReadPort, Protocol):
 class PlanningProviderPort(Protocol):
     """Outbound Port interface defining required simulation and planning operations (DIP compliant)."""
 
-    def get_current_simulation(self) -> dict | None: ...
+    def get_current_simulation(self) -> SimulationResult | None: ...
 
     def get_planned_annual_dividends(self, year: int | None = None) -> float: ...
 

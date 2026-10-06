@@ -42,6 +42,59 @@ OperationsView().render()
         assert sum(message.startswith(f"ativos.operacoes.{phase} duration:") for message in metrics) == 1
 
 
+@pytest.mark.parametrize("bound_ticker", [None, "TEST00001"])
+def test_large_catalog_does_not_delay_manual_form_options(monkeypatch, caplog, bound_ticker):
+    import pandas as pd
+    from streamlit.testing.v1 import AppTest
+    from views.components.manual_entry import MarketData
+
+    # Non-unique catalog codes must not turn every label lookup into a full scan.
+    codes = [f"TEST{index:05d}" for index in range(10000)]
+    codes.append(codes[0])
+    catalog = pd.DataFrame({"NOME": ["Ativo de teste"] * len(codes)}, index=codes)
+    monkeypatch.setattr(MarketData, "load_assets_catalog", lambda: catalog)
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.setenv("RENDA_PERENE_NAVIGATION_METRICS", "true")
+    caplog.set_level(logging.DEBUG, logger="core.performance")
+    app = AppTest.from_string(
+        "from views.components.manual_entry import ManualEntryWidget\n"
+        f"ManualEntryWidget().render({bound_ticker!r})"
+    ).run(timeout=30)
+    assert not app.exception
+    metrics = [record.message for record in caplog.records if record.name == "core.performance"]
+    duration = next(
+        message for message in metrics
+        if message.startswith("ativos.operacoes.manual_ticker_options duration:")
+    )
+    milliseconds = int(duration.rsplit(": ", 1)[1].split()[0])
+    assert milliseconds < 1000, duration
+    if bound_ticker is None:
+        assert "TEST00001 - Ativo de teste" in app.selectbox[1].options
+        assert len(app.selectbox[1].options) == 10001
+    else:
+        assert len(app.selectbox) == 1
+
+
+def test_manual_form_keeps_first_catalog_name_for_duplicate_code(monkeypatch):
+    import pandas as pd
+    from streamlit.testing.v1 import AppTest
+    from views.components.manual_entry import MarketData
+
+    catalog = pd.DataFrame(
+        {"NOME": ["Primeiro nome", "Outro nome", "Segundo ativo"]},
+        index=["TEST3", "TEST3", "TEST4"],
+    )
+    monkeypatch.setattr(MarketData, "load_assets_catalog", lambda: catalog)
+    app = AppTest.from_string(
+        "from views.components.manual_entry import ManualEntryWidget\n"
+        "ManualEntryWidget().render()"
+    ).run(timeout=30)
+    assert not app.exception
+    assert app.selectbox[1].options == [
+        "--- Selecione ---", "TEST3 - Primeiro nome", "TEST4 - Segundo ativo"
+    ]
+
+
 @pytest.mark.parametrize(
     ("screen", "phase"),
     [

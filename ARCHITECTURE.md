@@ -366,6 +366,21 @@ O DAO revalida o grupo e grava os vínculos e
 o registro de origem na mesma transação SQLite, sem criar ou apagar operações financeiras. As
 reimportações mantêm a identidade B3 e não duplicam o efeito na carteira. O histórico de
 movimentações continua mostrando apenas a data da operação.
+`core/b3_reconciliation.py` concentra a política pura compartilhada pela sugestão e pela
+confirmação: identidade do ativo/tipo, data única do grupo, intervalo de datas, quantidade,
+preço médio ponderado e valor informado. As tolerâncias são de 0,0005 por cota (com margem
+numérica de 1e-12) e, para o total, o maior entre 0,02 e `quantidade × 0,0005 + 0,01`.
+A busca usa intervalos conservadores para selecionar subconjuntos e aplica essa mesma política
+na decisão final. `PortfolioDAO` relê as operações e seus vínculos sob `BEGIN IMMEDIATE`
+antes de confirmar; alterações incompatíveis, remoções e vínculos concorrentes são rejeitados.
+`B3ImportContext` prepara a multiplicidade do lote e os IDs manuais confirmados, e cria
+`B3ImportRequest` para cada registro sem acrescentar campos ocultos ao registro normalizado.
+A multiplicidade descreve somente a exportação atual; não decide a identidade entre
+exportações parciais. O contexto acompanha operações B3 já consumidas pelo lote e só incorpora
+reconciliações após o commit; ele não é persistido nem compartilhado entre importações.
+`PortfolioPort.import_b3_transaction(request, context)` não exige um callback de custódia.
+Cada registro conserva sua própria transação: uma falha posterior não desfaz linhas já gravadas.
+Não há alteração de schema, migração ou cache de resultados financeiros nessa refatoração.
 A busca divide os lançamentos de cada data em duas metades e combina subconjuntos por quantidade
 e intervalo de valor, exibindo até 25 grupos válidos. Cada metade admite até 65.536 subconjuntos
 e visitas a estados parciais,
@@ -398,7 +413,7 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
 - Grupamentos são armazenados como transações `GROUP`, que substituem a quantidade atual pela quantidade informada.
 - Resgates são armazenados como transações `SELL`.
 - O parser distingue custódia, negociação e evento corporativo. Pares de `Transferência` com o mesmo ticker, data e quantidade, nas direções débito e crédito, representam troca de corretora e são marcados para serem ignorados. `Depósito` é uma aquisição recebida e é registrado como compra conhecida a custo zero. `Transferência - Liquidação` segue a direção de crédito ou débito como negociação; uma liquidação de crédito sem valor financeiro gera aquisição com custo pendente.
-- Para entradas de custódia sem par, `AssetService` avalia cronologicamente a quantidade com custo conhecido de dias anteriores; vendas reduzem essa cobertura proporcionalmente e grupamentos a ajustam. Custódia de saída é ignorada. Entradas com cobertura suficiente são ignoradas; as demais geram posição com custo pendente. A análise ocorre sob o mesmo bloqueio de escrita SQLite que registra a decisão.
+- Para entradas de custódia sem par, a política de `core/b3_reconciliation.py` avalia cronologicamente a quantidade com custo conhecido de dias anteriores; vendas reduzem essa cobertura proporcionalmente e grupamentos a ajustam. Custódia de saída é ignorada. Entradas com cobertura suficiente são ignoradas; as demais geram posição com custo pendente. O DAO consulta o histórico e aplica a política sob o mesmo bloqueio de escrita SQLite que registra a decisão.
 - `PortfolioDAO` grava origem e efeito na posição atomicamente (`BEGIN IMMEDIATE`). A identidade de origem é independente do custo corrigido. A regularização valida valores finitos, positivos e taxas não negativas, atualiza apenas operações pendentes e preserva a origem; os cálculos são refeitos no próximo carregamento.
 - Operações manuais não são conciliadas automaticamente por igualdade exata. A importação sugere grupos de compras/vendas do mesmo ticker, tipo e data, cuja quantidade total e média ponderada arredondada a três casas correspondem à linha B3. O usuário escolhe se cada linha B3 corresponde ao grupo ou deve ser importada separadamente. Cada operação manual só pode integrar uma conciliação; a confirmação preserva datas, taxas e preços individuais e guarda a data B3 no registro de origem, sem adicionar evento financeiro duplicado. Dados financeiros pessoais continuam apenas no SQLite local e na sessão atual.
 - A migração adiciona o status sem alterar custos antigos. Uma reimportação associa automaticamente apenas registros que já possuem origem B3 ou correções específicas reconhecidas pela assinatura completa do parser anterior; operações legadas sem proveniência permanecem separadas para não reclassificar silenciosamente uma compra manual. Quando a planilha não informa o custo de uma correção reconhecida, a operação existente é preservada e marcada como pendente. A regra atual de importação não atribui preços por ticker ou data. Decisões persistidas não são reclassificadas por importações posteriores de históricos mais antigos.
@@ -519,6 +534,12 @@ geram aviso; falhas de leitura geram erro sanitizado. A instrumentação de dese
 detalha `manual_entry` nas etapas
 `manual_catalog`, `manual_ticker_options` e `manual_controls`, sem registrar dados financeiros.
 O tempo de `manual_controls` inclui o processamento quando o formulário é enviado.
+O formulário prepara os nomes do catálogo em uma única passagem por
+`AssetService.get_asset_catalog_entries(catalog)`, preservando o primeiro nome de cada código
+duplicado. As opções não fazem consultas pandas por ticker e exibem cada código uma vez.
+No detalhamento de um ativo, o ticker já é fixo: o formulário não carrega o catálogo nem
+constrói opções de outros ativos. Vendas, proventos e eventos societários continuam verificando
+os tickers em carteira antes de permitir o lançamento.
 A apresentação destaca toda a linha com fundos adaptados ao tema em um `Styler`: compra em verde, venda
 em vermelho, dividendo em azul, JCP em lilás, rendimento em laranja e os demais em roxo, mantendo
 os nomes dos eventos visíveis. `ChartThemeAdapter.activity_row_colors()` centraliza as paletas

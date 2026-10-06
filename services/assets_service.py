@@ -9,6 +9,7 @@ from itertools import groupby, islice
 import pandas as pd
 
 from core.activity import ACTIVITY_EVENTS, activity_event
+from core.b3_reconciliation import B3ImportContext, B3ReconciliationPolicy
 from core.daos.portfolio_dao import PortfolioDAO
 from core.ports import (
     ExcelParserPort,
@@ -194,22 +195,9 @@ class AssetService:
 
         processed_transactions = 0
         processed_dividends = 0
-        reconciliation_context = set()
-        import_occurrence_counts = {}
-        for record in transactions_df.to_dict("records"):
-            if not record.get("source_key") or not record.get("source_record"):
-                continue
-            source = json.loads(record["source_record"])
-            identity = (
-                record["date"],
-                record["ticker"],
-                record["transaction_type"],
-                record["quantity"],
-                source.get("movement", ""),
-                source.get("direction", ""),
-                source.get("institution", ""),
-            )
-            import_occurrence_counts[identity] = import_occurrence_counts.get(identity, 0) + 1
+        context = B3ImportContext.from_records(
+            transactions_df.to_dict("records"), manual_trade_links
+        )
 
         # Record standardized transactions
         if not transactions_df.empty:
@@ -217,24 +205,10 @@ class AssetService:
         for _, row in transactions_df.iterrows():
             if row.get("source_key"):
                 record = row.to_dict()
-                record["_reconciliation_context"] = reconciliation_context
-                if manual_trade_links:
-                    record["_manual_transaction_id"] = manual_trade_links.get(record["source_key"])
                 if not record.get("source_record"):
                     continue
-                source = json.loads(record["source_record"])
-                identity = (
-                    record["date"],
-                    record["ticker"],
-                    record["transaction_type"],
-                    record["quantity"],
-                    source.get("movement", ""),
-                    source.get("direction", ""),
-                    source.get("institution", ""),
-                )
-                record["_import_occurrence_count"] = import_occurrence_counts[identity]
                 success = self._portfolio_repo.import_b3_transaction(
-                    record, self._has_sufficient_cost_history
+                    context.request(record), context
                 )
                 if (
                     success
@@ -426,19 +400,7 @@ class AssetService:
         """Match bounded half-subsets; abort rather than report an incomplete search as unmatched."""
         ordered = sorted(manual_records, key=lambda item: (item["date"], item["id"]))
         quantity = int(record["quantity"])
-        reported_value = source.get("value")
-        tolerance = max(0.02, quantity * 0.0005 + 0.01)
-        price = Decimal(str(record["unit_price"]))
-        price_margin = Decimal("0.0005") + Decimal("1e-12")
-        lower_value = quantity * (price - price_margin)
-        upper_value = quantity * (price + price_margin)
-        if reported_value is not None:
-            value = Decimal(str(reported_value))
-            lower_value = max(lower_value, value - Decimal(str(tolerance)))
-            upper_value = min(upper_value, value + Decimal(str(tolerance)))
-        # Widen only the lookup range; final validation uses the DAO's float comparisons.
-        lower_value -= Decimal("1e-8")
-        upper_value += Decimal("1e-8")
+        lower_value, upper_value = B3ReconciliationPolicy.search_value_bounds(record, source)
 
         def subsets(rows):
             states = [(0, Decimal(0), ())]
@@ -489,17 +451,12 @@ class AssetService:
                     if inspected_pairs > _MAX_B3_SUBSET_STATES:
                         AssetService._raise_b3_search_limit()
                     transactions = [*selected, *selections[index][1]]
+                    if not B3ReconciliationPolicy.matches_manual_group(record, transactions):
+                        continue
                     total_value = sum(
                         int(tx["quantity"]) * float(tx["unit_price"]) for tx in transactions
                     )
                     average = total_value / quantity
-                    if abs(average - float(record["unit_price"])) > 0.0005 + 1e-12:
-                        continue
-                    if (
-                        reported_value is not None
-                        and abs(float(reported_value) - total_value) > tolerance
-                    ):
-                        continue
                     yield {
                         "ids": [int(tx["id"]) for tx in transactions],
                         "transactions": transactions,
@@ -507,50 +464,6 @@ class AssetService:
                         "weighted_unit_price": average,
                         "total_value": total_value,
                     }
-
-    @staticmethod
-    def _has_sufficient_cost_history(history: pd.DataFrame, required_quantity: int) -> bool:
-        quantity, known_quantity, known_zero_cost_quantity, cost = 0, 0.0, 0.0, 0.0
-        for row in history.to_dict("records"):
-            qty = row["quantity"]
-            if row["transaction_type"] == "BUY":
-                if row.get("cost_status") != "PENDING":
-                    is_zero_cost_deposit = (
-                        row.get("event_kind") == "TRADE" and row["unit_price"] == 0
-                    )
-                    quantity_factor = known_quantity / quantity if quantity > 0 else 1.0
-                    known_quantity += (
-                        qty
-                        if is_zero_cost_deposit
-                        else qty * quantity_factor
-                        if row["unit_price"] == 0
-                        else qty
-                    )
-                    if is_zero_cost_deposit:
-                        known_zero_cost_quantity += qty
-                    elif row.get("event_kind") != "TRADE" and row["unit_price"] == 0:
-                        known_zero_cost_quantity += (
-                            qty * quantity_factor if known_zero_cost_quantity > 0 else 0.0
-                        )
-                    cost += qty * row["unit_price"] + row["fees"]
-                quantity += qty
-            elif row["transaction_type"] == "SELL":
-                remaining = max(0, quantity - qty)
-                cost = cost * remaining / quantity if quantity else 0.0
-                known_quantity = known_quantity * remaining / quantity if quantity else 0.0
-                known_zero_cost_quantity = (
-                    known_zero_cost_quantity * remaining / quantity if quantity else 0.0
-                )
-                quantity = remaining
-            elif row["transaction_type"] == "GROUP":
-                known_quantity = known_quantity * qty / quantity if quantity else 0.0
-                known_zero_cost_quantity = (
-                    known_zero_cost_quantity * qty / quantity if quantity else 0.0
-                )
-                quantity = qty
-        return known_quantity >= required_quantity and (
-            cost > 0 or known_zero_cost_quantity >= required_quantity
-        )
 
     @hybridmethod
     def get_pending_costs(self) -> pd.DataFrame:
@@ -777,16 +690,23 @@ class AssetService:
         }
 
     @hybridmethod
-    def get_asset_catalog_entries(self) -> list[tuple[str, str]]:
+    def get_asset_catalog_entries(
+        self, catalog: pd.DataFrame | None = None
+    ) -> list[tuple[str, str]]:
         """Return unique catalog tickers and names sorted for UI consumers."""
-        catalog = self._market_data_api.load_assets_catalog()
+        if catalog is None:
+            catalog = self._market_data_api.load_assets_catalog()
         if catalog.empty:
             return []
 
         catalog = catalog.loc[~catalog.index.duplicated(keep="first")]
+        names = (
+            catalog["NOME"].tolist()
+            if "NOME" in catalog.columns
+            else ["Nome não disponível"] * len(catalog)
+        )
         entries = [
-            (str(ticker), str(row.get("NOME", "Nome não disponível")))
-            for ticker, row in catalog.iterrows()
+            (str(ticker), str(name)) for ticker, name in zip(catalog.index, names, strict=True)
         ]
         return sorted(entries, key=lambda entry: entry[0])
 

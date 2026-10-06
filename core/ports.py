@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 import pandas as pd
 
+from core.b3_reconciliation import B3ImportContext, B3ImportRequest
 from core.planning import SimulationResult
 from core.portfolio_read import (
     AssetRead,
@@ -108,7 +109,7 @@ class PortfolioReadPort(Protocol):
 class PortfolioPort(Protocol):
     """Outbound Port interface defining portfolio ledger operations (DIP compliant)."""
 
-    def import_b3_transaction(self, record: dict, transfer_classifier: Any) -> bool: ...
+    def import_b3_transaction(self, request: B3ImportRequest, context: B3ImportContext) -> bool: ...
 
     def get_manual_trade_candidates(self, record: dict) -> list[dict]: ...
 

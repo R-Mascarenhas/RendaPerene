@@ -35,6 +35,10 @@ Baixe o pacote mais recente para Windows ou Ubuntu na página de
 - **Múltiplas carteiras locais:** seleção, criação e exclusão recuperável de carteiras pela barra lateral.
 - **Backup local consistente:** seleção de uma ou mais carteiras para criar um único conjunto de backup, inclusive quando o SQLite está em uso ou opera com WAL.
 
+O seletor de ativos nas operações manuais prepara o catálogo em uma única passagem, inclusive
+quando há códigos repetidos. No detalhamento da carteira, **Registrar movimentação** usa o
+ticker do ativo exibido e dispensa a preparação da lista completa de ativos.
+
 ## Dados e privacidade
 
 Os dados da carteira são armazenados localmente em bancos SQLite fora da pasta da aplicação.
@@ -190,6 +194,11 @@ individualmente, sem seleção automática.
 
 Se houver combinações demais para concluir a comparação com segurança, a aplicação interrompe
 a importação e pede a revisão dos lançamentos. Nenhuma linha dessa planilha é gravada nesse caso.
+
+Sugestão e confirmação usam a mesma política de compatibilidade. Ao confirmar, a aplicação
+relê os lançamentos sob bloqueio SQLite e rejeita escolhas que deixaram de corresponder à
+linha B3 ou já foram vinculadas. Cada linha é gravada atomicamente; se uma linha posterior
+falhar, as anteriores permanecem gravadas e a reimportação não as duplica.
 
 Os lançamentos manuais conciliados mantêm a origem `MANUAL`; o vínculo com a B3 registra a
 confirmação da importação. Ao abrir a carteira, a aplicação corrige a origem das operações que

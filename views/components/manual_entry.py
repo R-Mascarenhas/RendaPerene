@@ -58,26 +58,27 @@ class ManualEntryWidget:
             key=f"{context_key}_type",
         )
 
-        # Load the assets catalog dynamically to construct the autocompleting ticker + name options
-        with measure_navigation("ativos.operacoes", "manual_catalog"):
-            catalog = MarketData.load_assets_catalog()
-
         is_sale = "Venda" in entry_type
         is_earning = "Dividendo" in entry_type or "JCP" in entry_type or "Rendimento" in entry_type
         is_corp_event = "Desdobro" in entry_type or "Grupamento" in entry_type
-        with measure_navigation("ativos.operacoes", "manual_ticker_options"):
-            available_tickers = self._get_available_tickers(entry_type, catalog)
+        requires_owned_ticker = is_sale or is_earning or is_corp_event
+        with measure_navigation("ativos.operacoes", "manual_catalog"):
+            catalog = MarketData.load_assets_catalog() if ticker is None else pd.DataFrame()
 
+        with measure_navigation("ativos.operacoes", "manual_ticker_options"):
+            available_tickers = (
+                self._get_available_tickers(entry_type, catalog)
+                if ticker is None or requires_owned_ticker
+                else [ticker]
+            )
             options = ["--- Selecione ---"]
-            for available_ticker in available_tickers:
-                if not catalog.empty and available_ticker in catalog.index:
-                    catalog_row = catalog.loc[available_ticker]
-                    if isinstance(catalog_row, pd.DataFrame):
-                        catalog_row = catalog_row.iloc[0]
-                    name = catalog_row.get("NOME", "Nome não disponível")
-                else:
-                    name = "Ativo não catalogado"
-                options.append(f"{available_ticker} - {name}")
+            if ticker is None:
+                catalog_names = dict(AssetService.get_asset_catalog_entries(catalog))
+                options.extend(
+                    f"{available_ticker} - "
+                    f"{catalog_names.get(available_ticker, 'Ativo não catalogado')}"
+                    for available_ticker in dict.fromkeys(available_tickers)
+                )
 
         with (
             measure_navigation("ativos.operacoes", "manual_controls"),

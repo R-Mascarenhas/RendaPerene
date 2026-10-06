@@ -4,6 +4,7 @@ import unicodedata
 import pandas as pd
 
 from core.activity import ACTIVITY_EVENT_FIELDS, ACTIVITY_PAGE_SIZE, activity_event
+from core.b3_reconciliation import B3ImportContext, B3ImportRequest, B3ReconciliationPolicy
 from core.database import db
 from core.portfolio_read import PortfolioLedger
 
@@ -64,8 +65,7 @@ class PortfolioDAO:
     def get_manual_trade_candidates(self, record: dict) -> list[dict]:
         """Return unlinked manual trades with matching identity and a plausible settlement gap."""
         matching_date = record["date"]
-        minimum_gap = 0 if record.get("date_is_business") else 2
-        maximum_gap = 0 if record.get("date_is_business") else 6
+        minimum_gap, maximum_gap = B3ReconciliationPolicy.date_gap(record)
         conn = self.get_personal_connection()
         try:
             already_imported = self._find_imported_source(conn, record)
@@ -145,23 +145,19 @@ class PortfolioDAO:
                 return (transaction_id,)
         return None
 
-    def import_b3_transaction(self, record: dict, transfer_classifier) -> bool:
+    def import_b3_transaction(self, request: B3ImportRequest, context: B3ImportContext) -> bool:
         """Persist source identity and ledger effect together under a SQLite write lock."""
+        record = request.record
         conn = self.get_personal_connection()
         try:
             conn.execute("BEGIN IMMEDIATE")
             existing_source = self._find_imported_source(conn, record)
             if existing_source:
                 if existing_source[0] is not None:
-                    record.get("_reconciliation_context", set()).add(existing_source[0])
+                    context.consumed_transaction_ids.add(existing_source[0])
                 return False
-            manual_transaction_id = record.get("_manual_transaction_id")
-            if manual_transaction_id is not None:
-                manual_ids = (
-                    [int(value) for value in manual_transaction_id]
-                    if isinstance(manual_transaction_id, (list, tuple, set))
-                    else [int(manual_transaction_id)]
-                )
+            if request.confirmed_manual_ids is not None:
+                manual_ids = request.confirmed_manual_ids
                 if not self._link_manual_trade_group(conn, record, manual_ids):
                     conn.rollback()
                     raise ValueError("A seleção manual não corresponde mais à linha B3.")
@@ -182,7 +178,9 @@ class PortfolioDAO:
                     conn,
                     params=(record["ticker"], record["date"]),
                 )
-                ignored = transfer_classifier(history, record["quantity"])
+                ignored = B3ReconciliationPolicy.has_sufficient_cost_history(
+                    history, record["quantity"]
+                )
             transaction_id = None
             created = False
             reconciled_legacy = False
@@ -213,7 +211,7 @@ class PortfolioDAO:
                 existing = conn.execute(exact_query, values).fetchone()
                 legacy_custody = None
                 if record["event_kind"] == "CUSTODY" and record["cost_status"] == "PENDING":
-                    legacy_custody = self._find_legacy_custody_transaction(conn, record)
+                    legacy_custody = self._find_legacy_custody_transaction(conn, record, context)
                     if legacy_custody is not None:
                         existing = (legacy_custody,)
                         reconciled_legacy = True
@@ -222,10 +220,9 @@ class PortfolioDAO:
                     if legacy_correction is not None:
                         existing = (legacy_correction,)
                         reconciled_legacy = True
-                reconciled_b3 = self._find_reconcilable_b3_transaction(conn, record)
+                reconciled_b3 = self._find_reconcilable_b3_transaction(conn, record, context)
                 if reconciled_b3 is not None:
                     existing = (reconciled_b3[0],)
-                    record.get("_reconciliation_context", set()).add(reconciled_b3[0])
                     conn.execute(
                         "UPDATE transactions SET transaction_origin='B3' WHERE id=? AND transaction_origin='LEGACY'",
                         (reconciled_b3[0],),
@@ -319,12 +316,14 @@ class PortfolioDAO:
                     ),
                 )
             conn.commit()
+            if reconciled_b3 is not None:
+                context.consumed_transaction_ids.add(reconciled_b3[0])
             return created
         finally:
             conn.close()
 
     @staticmethod
-    def _link_manual_trade_group(conn, record: dict, manual_ids: list[int]) -> bool:
+    def _link_manual_trade_group(conn, record: dict, manual_ids: tuple[int, ...]) -> bool:
         """Validate and link a B3 aggregate to its original manual trade rows atomically."""
         if not manual_ids or len(set(manual_ids)) != len(manual_ids):
             return False
@@ -337,32 +336,17 @@ class PortfolioDAO:
         ).fetchall()
         if len(rows) != len(manual_ids):
             return False
-        matching_date = record["date"]
-        minimum_gap = 0 if record.get("date_is_business") else 2
-        maximum_gap = 0 if record.get("date_is_business") else 6
-        if (
-            any(
-                row[2] != record["ticker"]
-                or row[3] != record["transaction_type"]
-                or row[6] != "MANUAL"
-                or not minimum_gap
-                <= (pd.Timestamp(matching_date) - pd.Timestamp(row[1])).days
-                <= maximum_gap
-                for row in rows
-            )
-            or len({row[1] for row in rows}) != 1
-        ):
-            return False
-        total_quantity = sum(int(row[4]) for row in rows)
-        if total_quantity != int(record["quantity"]):
-            return False
-        weighted_price = sum(int(row[4]) * float(row[5]) for row in rows) / total_quantity
-        if abs(weighted_price - float(record["unit_price"])) > 0.0005 + 1e-12:
-            return False
-        source_value = json.loads(record["source_record"]).get("value")
-        expected_value = sum(int(row[4]) * float(row[5]) for row in rows)
-        tolerance = max(0.02, total_quantity * 0.0005 + 0.01)
-        if source_value is not None and abs(float(source_value) - expected_value) > tolerance:
+        columns = (
+            "id",
+            "date",
+            "ticker",
+            "transaction_type",
+            "quantity",
+            "unit_price",
+            "transaction_origin",
+        )
+        manual_records = [dict(zip(columns, row, strict=True)) for row in rows]
+        if not B3ReconciliationPolicy.matches_manual_group(record, manual_records):
             return False
         if conn.execute(
             f"""SELECT transaction_id FROM b3_manual_reconciliations
@@ -387,7 +371,9 @@ class PortfolioDAO:
         return True
 
     @staticmethod
-    def _find_legacy_custody_transaction(conn, record: dict) -> int | None:
+    def _find_legacy_custody_transaction(
+        conn, record: dict, context: B3ImportContext
+    ) -> int | None:
         """Finds an already-provenanced custody entry with a superseded source key."""
         source = json.loads(record["source_record"])
         candidates = conn.execute(
@@ -402,7 +388,7 @@ class PortfolioDAO:
             (record["date"], record["ticker"], record["quantity"]),
         ).fetchall()
         for candidate_id, old_source_json in candidates:
-            if candidate_id in record.get("_reconciliation_context", set()):
+            if candidate_id in context.consumed_transaction_ids:
                 continue
             old_source = json.loads(old_source_json)
             stable_fields = ("date", "ticker", "quantity", "direction", "institution")
@@ -419,7 +405,9 @@ class PortfolioDAO:
         return None
 
     @staticmethod
-    def _find_reconcilable_b3_transaction(conn, record: dict) -> tuple[int, str, bool] | None:
+    def _find_reconcilable_b3_transaction(
+        conn, record: dict, context: B3ImportContext
+    ) -> tuple[int, str, bool] | None:
         """Finds a B3 transaction whose stable source fields still match."""
         source = json.loads(record["source_record"])
         candidates = conn.execute(
@@ -443,7 +431,7 @@ class PortfolioDAO:
         stable_fields = ("date", "ticker", "movement", "direction", "institution")
         matches = []
         for candidate_id, cost_status, unit_price, fees, old_source_json in candidates:
-            if candidate_id in record.get("_reconciliation_context", set()):
+            if candidate_id in context.consumed_transaction_ids:
                 continue
             old_source = json.loads(old_source_json)
             same_occurrence = (

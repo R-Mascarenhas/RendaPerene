@@ -27,6 +27,120 @@ def b3_trade(date, kind="Compra", price=20.0, quantity=100):
     )
 
 
+def test_repository_import_accepts_explicit_confirmation_and_batch_context():
+    from core.b3_reconciliation import B3ImportContext
+
+    assert AssetService.add_transaction("BBAS3", "2026-10-02", "BUY", 100, 20.0, 7.5)
+    frame = b3_trade("2026-10-06")
+    candidate = AssetService.find_b3_manual_trade_candidates(frame)[0]
+    transactions, _ = AssetService.get_default()._excel_parser.parse_b3_excel(frame)
+    records = transactions.to_dict("records")
+    context = B3ImportContext.from_records(
+        records, {candidate["source_key"]: candidate["manual_groups"][0]["ids"]}
+    )
+    request = context.request(records[0])
+
+    assert request.occurrence_count == 1
+    assert PortfolioDAO().import_b3_transaction(request, context)
+    assert not PortfolioDAO().import_b3_transaction(request, context)
+    activity = AssetService.get_portfolio_activity(limit=None)
+    assert len(activity) == 1
+    assert activity.iloc[0]["date"] == "2026-10-02"
+    assert activity.iloc[0]["value"] == 2007.5
+
+
+@pytest.mark.parametrize(
+    ("manual_date", "business_date", "price", "reported_value", "compatible"),
+    [
+        ("2026-10-02", False, 20.0005, 2000.05, True),
+        ("2026-10-02", False, 20.000501, 2000.05, False),
+        ("2026-10-02", False, 20.0, 2000.059999, True),
+        ("2026-10-02", False, 20.0, 2000.060001, False),
+        ("2026-09-30", False, 20.0, 2000.0, True),
+        ("2026-09-29", False, 20.0, 2000.0, False),
+        ("2026-10-04", False, 20.0, 2000.0, True),
+        ("2026-10-05", False, 20.0, 2000.0, False),
+        ("2026-10-06", True, 20.0, 2000.0, True),
+        ("2026-10-05", True, 20.0, 2000.0, False),
+    ],
+)
+def test_suggestion_and_confirmation_agree_at_price_value_and_date_limits(
+    manual_date, business_date, price, reported_value, compatible
+):
+    assert AssetService.add_transaction("BBAS3", manual_date, "BUY", 100, 20.0, 7.5)
+    manual_id = int(PortfolioDAO().load_ledger().transactions.iloc[0]["id"])
+    frame = b3_trade("2026-10-06", price=price)
+    frame.loc[0, "Valor da Operação"] = reported_value
+    if business_date:
+        frame = frame.rename(columns={"Data": "Data do Negócio"})
+    transactions, _ = AssetService.get_default()._excel_parser.parse_b3_excel(frame)
+    source_key = transactions.iloc[0]["source_key"]
+
+    assert bool(AssetService.find_b3_manual_trade_candidates(frame)) == compatible
+    if compatible:
+        assert AssetService.process_b3_import(
+            frame, manual_trade_links={source_key: manual_id}
+        ) == (1, 0)
+        assert AssetService.process_b3_import(frame) == (0, 0)
+    else:
+        with pytest.raises(ValueError, match="não corresponde mais"):
+            AssetService.process_b3_import(frame, manual_trade_links={source_key: manual_id})
+    activity = AssetService.get_portfolio_activity(limit=None)
+    assert len(activity) == 1
+    assert activity.iloc[0]["value"] == 2007.5
+    assert activity.iloc[0]["date"] == manual_date
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "UPDATE transactions SET unit_price=21 WHERE id=?",
+        "UPDATE transactions SET date='2026-09-29' WHERE id=?",
+        "UPDATE transactions SET transaction_origin='B3' WHERE id=?",
+        "DELETE FROM transactions WHERE id=?",
+    ],
+)
+def test_confirmation_rejects_changed_or_removed_manual_candidate(change):
+    assert AssetService.add_transaction("BBAS3", "2026-10-02", "BUY", 100, 20.0, 7.5)
+    frame = b3_trade("2026-10-06")
+    candidate = AssetService.find_b3_manual_trade_candidates(frame)[0]
+    manual_id = candidate["manual_groups"][0]["ids"][0]
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        conn.execute(change, (manual_id,))
+        conn.commit()
+    before = PortfolioDAO().load_ledger().transactions
+
+    with pytest.raises(ValueError, match="não corresponde mais"):
+        AssetService.process_b3_import(
+            frame, manual_trade_links={candidate["source_key"]: manual_id}
+        )
+
+    pd.testing.assert_frame_equal(PortfolioDAO().load_ledger().transactions, before)
+
+
+def test_failed_confirmation_preserves_previously_imported_batch_record():
+    assert AssetService.add_transaction("BBAS3", "2026-10-02", "BUY", 100, 20.0, 7.5)
+    frame = b3_trade("2026-10-06")
+    candidate = AssetService.find_b3_manual_trade_candidates(frame)[0]
+    manual_id = candidate["manual_groups"][0]["ids"][0]
+    earlier = b3_trade("2026-09-01", quantity=10)
+    batch = pd.concat([earlier, frame], ignore_index=True)
+    with closing(PortfolioDAO().get_personal_connection()) as conn:
+        conn.execute("UPDATE transactions SET quantity=99 WHERE id=?", (manual_id,))
+        conn.commit()
+
+    with pytest.raises(ValueError, match="não corresponde mais"):
+        AssetService.process_b3_import(
+            batch, manual_trade_links={candidate["source_key"]: manual_id}
+        )
+
+    activity = AssetService.get_portfolio_activity(limit=None)
+    assert len(activity) == 2
+    assert activity.iloc[1]["date"] == "2026-09-01"
+    assert activity.iloc[1]["value"] == 200.0
+    assert AssetService.process_b3_import(earlier) == (0, 0)
+
+
 def test_b3_source_identity_remains_compatible_with_existing_date_only_imports():
     transactions, _ = AssetService.get_default()._excel_parser.parse_b3_excel(
         b3_trade("2026-10-06")

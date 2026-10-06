@@ -1,12 +1,15 @@
 """MarketDataPort adapter that never performs network I/O in the reader's thread."""
 
 import math
+from collections.abc import Callable
 
 import pandas as pd
 
 from core.market_data_cache import MarketDataCache, MarketDataStatus
 from core.performance import measure_navigation
 from core.ports import RemoteMarketDataPort
+
+MINIMUM_WAGE_KEY = ("minimum_wage",)
 
 
 def _positive(value) -> bool:
@@ -22,8 +25,18 @@ class BackgroundMarketData:
     def __init__(self, source: RemoteMarketDataPort, cache: MarketDataCache):
         self._source = source
         self.cache = cache
+        self._observer: Callable[[tuple], None] | None = None
+
+    def observed(self, observer: Callable[[tuple], None]) -> "BackgroundMarketData":
+        """Share remote resources, notifying only in the caller's thread before reads."""
+        reader = BackgroundMarketData(self._source, self.cache)
+        reader._observer = observer
+        return reader
 
     def _read(self, key, loader, ttl, default, valid):
+        if self._observer is not None:
+            self._observer(key)
+
         def measured():
             with measure_navigation("atualizacao.mercado", f"remote_{key[0]}"):
                 return loader()
@@ -48,7 +61,7 @@ class BackgroundMarketData:
             return float("nan")
         return self._read(
             ("quote", normalized),
-            lambda: self._source.get_batch_quotes([normalized]).get(normalized),
+            lambda source=self._source: source.get_batch_quotes([normalized]).get(normalized),
             600,
             float("nan"),
             _positive,
@@ -60,7 +73,9 @@ class BackgroundMarketData:
             return {}
         return self._read(
             ("snapshot", normalized, reference_year),
-            lambda: self._source.get_ticker_market_snapshot(normalized, reference_year),
+            lambda source=self._source: source.get_ticker_market_snapshot(
+                normalized, reference_year
+            ),
             600,
             {},
             lambda value: isinstance(value, dict) and _positive(value.get("current_price")),
@@ -71,7 +86,7 @@ class BackgroundMarketData:
         return (
             self._read(
                 ("history", normalized, period, interval),
-                lambda: self._source.get_ticker_history(
+                lambda source=self._source: source.get_ticker_history(
                     normalized, period=period, interval=interval
                 ),
                 3600,
@@ -87,7 +102,7 @@ class BackgroundMarketData:
         return (
             self._read(
                 ("intraday", normalized, period, interval),
-                lambda: self._source.get_ticker_intraday_history(
+                lambda source=self._source: source.get_ticker_intraday_history(
                     normalized, period=period, interval=interval
                 ),
                 600,
@@ -100,7 +115,7 @@ class BackgroundMarketData:
 
     def _indicator(self, name, loader, fallback):
         return self._read(
-            (name,),
+            MINIMUM_WAGE_KEY if name == "minimum_wage" else (name,),
             loader,
             2592000,
             fallback,
@@ -109,15 +124,19 @@ class BackgroundMarketData:
 
     def get_current_ipca_l12m(self) -> float:
         return self._indicator(
-            "ipca", lambda: self._source.get_current_ipca_l12m(strict=True), 4.50
+            "ipca", lambda source=self._source: source.get_current_ipca_l12m(strict=True), 4.50
         )
 
     def get_current_selic(self) -> float:
-        return self._indicator("selic", lambda: self._source.get_current_selic(strict=True), 10.50)
+        return self._indicator(
+            "selic", lambda source=self._source: source.get_current_selic(strict=True), 10.50
+        )
 
     def get_current_minimum_wage(self) -> float:
         return self._indicator(
-            "minimum_wage", lambda: self._source.get_current_minimum_wage(strict=True), 1621.0
+            "minimum_wage",
+            lambda source=self._source: source.get_current_minimum_wage(strict=True),
+            1621.0,
         )
 
     def load_assets_catalog(self) -> pd.DataFrame:

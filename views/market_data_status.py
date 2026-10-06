@@ -2,28 +2,19 @@
 
 import streamlit as st
 
-from views.cached_market_data import StreamlitCachedMarketData
+from views.cached_market_data import get_market_data_observer
 
 
 @st.fragment(run_every=2)
 def render_market_data_status() -> None:
-    requests = st.session_state.get("market_data_requests", {})
-    if not requests:
-        return
-    StreamlitCachedMarketData.retry_due(set(requests))
-    statuses = [(key, StreamlitCachedMarketData.status(key)) for key in requests]
-    poll_ready = st.session_state.get("market_data_poll_ready", False)
-    st.session_state["market_data_poll_ready"] = True
-    changed = [(key, status) for key, status in statuses if status.revision != requests[key]]
-    if poll_ready and changed:
-        for key, status in changed:
-            requests[key] = status.revision
+    poll = get_market_data_observer().poll()
+    if poll.changed:
         st.rerun(scope="app")
 
-    updating = sum(status.updating for _, status in statuses)
-    missing = sum(not status.available for _, status in statuses)
-    stale = sum(status.stale for _, status in statuses)
-    failed = any(status.failed for _, status in statuses)
+    updating = sum(status.updating for status in poll.statuses)
+    missing = sum(not status.available for status in poll.statuses)
+    stale = sum(status.stale for status in poll.statuses)
+    failed = any(status.failed for status in poll.statuses)
     if updating:
         st.caption(
             "Atualizando dados de mercado em segundo plano. A carteira local está disponível."
@@ -39,6 +30,6 @@ def render_market_data_status() -> None:
         st.caption(
             "Não foi possível atualizar os dados de mercado. A carteira local continua disponível."
         )
-    ages = [status.age_seconds for _, status in statuses if status.age_seconds is not None]
+    ages = [status.age_seconds for status in poll.statuses if status.age_seconds is not None]
     if ages:
         st.caption(f"Idade do dado de mercado mais antigo nesta tela: {int(max(ages) // 60)} min.")

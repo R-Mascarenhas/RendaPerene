@@ -339,8 +339,11 @@ DashboardView().render()
         release.set()
 
 
-@pytest.mark.parametrize(("reply", "manual_edit"), [(1700.0, None), (None, None), (1700.0, 1650.0)])
-def test_manual_minimum_wage_update_waits_for_valid_reply_before_saving(monkeypatch, reply, manual_edit, app_test_environment):
+@pytest.mark.parametrize(
+    ("reply", "manual_edit", "save_failure"),
+    [(1700.0, None, False), (None, None, False), (1700.0, 1650.0, False), (1700.0, None, True)],
+)
+def test_manual_minimum_wage_update_waits_for_valid_reply_before_saving(monkeypatch, reply, manual_edit, save_failure, app_test_environment):
     from streamlit.testing.v1 import AppTest
     from core.constants import MW_VALUE, SESSION_MW_VALUE
     from core.strings import MSG_UPDATE_MW_BTN
@@ -384,12 +387,18 @@ PlanningView().render()
             assert SimulationService.get_configuration()[MW_VALUE] == manual_edit
         release.set()
         assert get_background_market_data().cache.wait_idle(2)
+        if save_failure:
+            def fail_save(*args, **kwargs):
+                raise RuntimeError("controlled save failure")
+            monkeypatch.setattr(SimulationService, "save_planning_configuration", fail_save)
         app.run(timeout=20)
         assert not app.exception
-        expected = manual_edit if manual_edit is not None else reply if reply is not None else original
+        expected = original if save_failure else manual_edit if manual_edit is not None else reply if reply is not None else original
         assert app.session_state[SESSION_MW_VALUE] == expected
         assert SimulationService.get_configuration()[MW_VALUE] == expected
-        assert "market_minimum_wage_refresh" not in app.session_state
+        assert not app.session_state["market_data_observer"].minimum_wage_pending
+        if save_failure:
+            assert any("Não foi possível salvar o salário mínimo" in error.value for error in app.error)
     finally:
         release.set()
 
@@ -397,16 +406,18 @@ PlanningView().render()
 def test_switching_portfolio_cancels_pending_market_ui_actions(monkeypatch):
     import streamlit as st
     from core.utils.session import SessionManager
+    from core.utils.market_data import MarketData
+    from views.cached_market_data import get_market_data_observer
 
-    state = {
-        "active_db": "first.db",
-        "market_minimum_wage_refresh": ("first.db", 1),
-        "market_data_requests": {("minimum_wage",): 1},
-        "market_data_poll_ready": True,
-    }
+    monkeypatch.setattr(MarketData, "get_current_minimum_wage", lambda *, strict=False: 1700.0)
+    state = {"active_db": "first.db"}
     monkeypatch.setattr(st, "session_state", state)
+    observer = get_market_data_observer()
+    observer.request_minimum_wage_refresh(("first.db", None))
     assert SessionManager.switch_portfolio("second.db")
     assert state == {"active_db": "second.db"}
+    assert not observer.minimum_wage_pending
+    assert not observer.poll().statuses
 
 
 def test_remote_metrics_are_separate_and_do_not_identify_tickers(monkeypatch, caplog):

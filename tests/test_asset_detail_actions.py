@@ -7,7 +7,11 @@ import pandas as pd
 import pytest
 import streamlit as st
 
-from core.constants import WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX
+from core.constants import (
+    WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX,
+    WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX,
+    WIDGET_ASSET_ANNUAL_GOAL_PREFIX,
+)
 from core.daos.planning_dao import PlanningDAO
 from core.database import db
 from services.assets_service import AssetService
@@ -45,7 +49,12 @@ def test_bound_form_saves_only_selected_ticker_and_refreshes_projections(mock_db
     monkeypatch.setattr(st, "form_submit_button", lambda *a, **kw: True)
     reruns = []
     monkeypatch.setattr(st, "rerun", lambda: reruns.append(True))
-    state = {f"{WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX}testsnapshotpending": True}
+    state = {
+        f"{WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX}testsnapshotpending": True,
+        f"{WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX}test": {"edited_rows": {}},
+        f"{WIDGET_ASSET_ANNUAL_GOAL_PREFIX}test_error": "stale error",
+        f"{WIDGET_ASSET_ANNUAL_GOAL_PREFIX}test_quantity": 150,
+    }
     monkeypatch.setattr(st, "session_state", state)
     StreamlitCachedPortfolioRepository._load_ledger.clear()
     PortfolioReadService.set_adapters(repository=StreamlitCachedPortfolioRepository())
@@ -132,6 +141,49 @@ def test_manual_entry_persistence_error_does_not_rerun(mock_db, monkeypatch):
     assert errors == ["Não foi possível salvar a movimentação. Tente novamente."]
 
 
+def _render_operations_goal_refresh(action):
+    import pandas as pd
+    import streamlit as st
+    from core.constants import (
+        WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX,
+        WIDGET_ASSET_ANNUAL_GOAL_PREFIX,
+    )
+    from views.operations_view import OperationsView
+
+    if not st.session_state.get("test_initialized"):
+        st.session_state["test_initialized"] = True
+        st.session_state[f"{WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX}testsnapshotpending"] = True
+        st.session_state[f"{WIDGET_ASSET_ANNUAL_GOAL_PREFIX}test_error"] = "previous error"
+        st.session_state.processed_files = set()
+        st.session_state.b3_uploader_key = 0
+    if action == "import":
+        if st.button("Confirmar importação"):
+            OperationsView._process_b3_frame(pd.DataFrame(), "test-import", {})
+    else:
+        OperationsView()._render_pending_costs()
+
+
+@pytest.mark.parametrize("action", ["import", "regularize"])
+def test_operations_refresh_discards_both_goal_editors(monkeypatch, action):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setattr(AssetService, "process_b3_import", lambda *a, **kw: (1, 0))
+    monkeypatch.setattr(AssetService, "get_pending_costs", lambda: pd.DataFrame([{
+        "id": 1, "ticker": "BBAS3", "date": "2026-01-02", "quantity": 10,
+        "movement": "Aquisição", "institution": "Test",
+    }]))
+    monkeypatch.setattr(AssetService, "regularize_cost", lambda *a, **kw: True)
+    app = AppTest.from_function(
+        _render_operations_goal_refresh, args=(action,), default_timeout=30
+    ).run()
+    assert not app.exception
+    app.button[0].click().run()
+    assert not app.exception
+    assert f"{WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX}testsnapshotpending" not in app.session_state
+    assert f"{WIDGET_ASSET_ANNUAL_GOAL_PREFIX}test_error" not in app.session_state
+    assert app.session_state["test_initialized"] is True
+
+
 def _render_goal_screens():
     import streamlit as st
     from views.components.asset_annual_goal import AssetAnnualGoalWidget
@@ -142,6 +194,22 @@ def _render_goal_screens():
         AssetAnnualGoalWidget().render("BBAS3")
     else:
         GoalsView().render()
+
+
+def _submit_goal_table_edit(app, target):
+    import json
+    from streamlit.proto.WidgetStates_pb2 import WidgetStates
+
+    states = WidgetStates()
+    state = states.widgets.add()
+    state.id = app.dataframe[0].proto.id
+    state.string_value = json.dumps({
+        "edited_rows": {"0": {"target_quantity": target}},
+        "added_rows": [],
+        "deleted_rows": [],
+    })
+    app._run(states)
+    assert not app.exception
 
 
 def test_native_goal_form_synchronizes_with_goals_tab_without_enabled_plan(mock_db, monkeypatch):
@@ -168,7 +236,8 @@ def test_native_goal_form_synchronizes_with_goals_tab_without_enabled_plan(mock_
     app.selectbox[0].set_value("Metas").run()
     assert not app.exception
     assert app.dataframe[0].value.iloc[0]["target_quantity"] == 120
-    service.save_portfolio_goal_plan({"BBAS3": 150})
+    _submit_goal_table_edit(app, 150)
+    assert PlanningDAO().list_accumulation_goals()[0]["target_quantity"] == 150
     app.selectbox[0].set_value("Detalhamento").run()
     assert not app.exception
     assert app.number_input[0].value == 150
@@ -206,7 +275,14 @@ def test_native_goal_percentage_is_explained_when_january_baseline_is_zero(mock_
     assert PlanningDAO().list_accumulation_goals()[0]["target_quantity"] == 25
 
 
-def test_native_goal_autosave_failure_preserves_target_and_shows_error(mock_db, monkeypatch):
+@pytest.mark.parametrize("save_error", [
+    ValueError("Meta inválida."),
+    RuntimeError("private storage details"),
+    sqlite3.OperationalError("private database details"),
+])
+def test_native_goal_autosave_failure_preserves_target_and_allows_retry(
+    mock_db, monkeypatch, save_error
+):
     from streamlit.testing.v1 import AppTest
 
     year = datetime.date.today().year
@@ -219,16 +295,30 @@ def test_native_goal_autosave_failure_preserves_target_and_shows_error(mock_db, 
     monkeypatch.setattr(service, "_market_analysis_api", Market())
     service.set_goal_enabled(False)
     service.save_portfolio_goal_plan({"BBAS3": 150})
-    def fail(goals):
-        raise sqlite3.OperationalError("failed")
-    monkeypatch.setattr(service._goal_repo, "upsert_accumulation_goals", fail)
     app = AppTest.from_function(_render_goal_screens, default_timeout=30).run()
-    app.number_input[0].set_value(160).run()
+    snapshot_key = f"{WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX}testsnapshot"
+    app.session_state[snapshot_key] = {"saved_target": 150}
+    def fail(goals):
+        raise save_error
+    with monkeypatch.context() as patch:
+        patch.setattr(service._goal_repo, "upsert_accumulation_goals", fail)
+        app.number_input[0].set_value(160).run()
     assert not app.exception
     assert PlanningDAO().list_accumulation_goals()[0]["target_quantity"] == 150
     assert app.number_input[0].value == 150
     assert app.number_input[1].value == 50
-    assert app.error[0].value == "Não foi possível salvar a meta. Tente novamente."
+    assert app.error[0].value == (
+        str(save_error) if isinstance(save_error, ValueError)
+        else "Não foi possível salvar a meta. Tente novamente."
+    )
+    assert app.session_state[snapshot_key] == {"saved_target": 150}
+    app.number_input[0].set_value(160).run()
+    assert not app.exception
+    assert not app.error
+    assert PlanningDAO().list_accumulation_goals()[0]["target_quantity"] == 160
+    assert app.number_input[0].value == 160
+    assert app.number_input[1].value == 60
+    assert snapshot_key not in app.session_state
 
 
 def _render_bound_manual_form():

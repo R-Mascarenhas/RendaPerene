@@ -367,6 +367,39 @@ def test_session_manager_invalidates_state_when_portfolio_generation_changes(mon
     assert mock_session[SESSION_ACTIVE_DATABASE_GENERATION] == "replacement-generation"
 
 
+@pytest.mark.parametrize("change", ["switch", "restore"])
+def test_portfolio_change_discards_both_goal_editors(monkeypatch, change):
+    from core.constants import (
+        SESSION_ACTIVE_DATABASE_GENERATION,
+        WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX,
+        WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX,
+        WIDGET_ASSET_ANNUAL_GOAL_PREFIX,
+    )
+
+    editor_keys = {
+        f"{WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX}testsnapshot": {"saved_target": 150},
+        f"{WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX}testsnapshotpending": True,
+        f"{WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX}testsnapshot_error": "table error",
+        f"{WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX}test": {"edited_rows": {}},
+        f"{WIDGET_ASSET_ANNUAL_GOAL_PREFIX}test_error": "detail error",
+        f"{WIDGET_ASSET_ANNUAL_GOAL_PREFIX}test_revision": 3,
+        f"{WIDGET_ASSET_ANNUAL_GOAL_PREFIX}test_quantity": 150,
+    }
+    state = {
+        **editor_keys,
+        "active_db": "test.db",
+        SESSION_ACTIVE_DATABASE_GENERATION: "original",
+        "unrelated_preference": True,
+    }
+    monkeypatch.setattr(st, "session_state", state)
+    if change == "switch":
+        assert SessionManager.switch_portfolio("other.db") is True
+    else:
+        assert SessionManager.refresh_portfolio_generation("restored") is True
+    assert editor_keys.keys().isdisjoint(state)
+    assert state["unrelated_preference"] is True
+
+
 def test_active_portfolio_deletion_selects_fallback_and_clears_derived_state(
     monkeypatch, tmp_path
 ):

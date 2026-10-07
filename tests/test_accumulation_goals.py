@@ -1894,16 +1894,80 @@ def test_automatic_save_failure_keeps_displayed_and_persisted_target(mock_db, mo
     with monkeypatch.context() as patch:
         patch.setattr(service._goal_repo, "upsert_accumulation_goals", failed_write)
         AccumulationGoalPlanningWidget._on_editor_change(
-            plan, "editor", "snapshot", "revision", "error"
+            plan, "editor", "snapshot"
         )
     assert state["snapshot"]["rows"].iloc[0]["target_quantity"] == 150
     assert service._goal_repo.list_accumulation_goals()[0]["target_quantity"] == 150
-    assert "Não foi possível salvar" in state["error"]
+    assert "Não foi possível salvar" in state["snapshot_error"]
     AccumulationGoalPlanningWidget._on_editor_change(
-        plan, "editor", "snapshot", "revision", "error"
+        plan, "editor", "snapshot"
     )
-    assert "error" not in state
+    assert "snapshot_error" not in state
     assert service._goal_repo.list_accumulation_goals()[0]["target_quantity"] == 200
+
+
+@pytest.mark.parametrize("save_error", [
+    ValueError("Meta inválida."),
+    RuntimeError("private storage details"),
+    sqlite3.OperationalError("private database details"),
+])
+def test_table_save_failure_restores_snapshot_and_retry_invalidates_detail(
+    monkeypatch, save_error
+):
+    import json
+    from streamlit.testing.v1 import AppTest
+    from streamlit.proto.WidgetStates_pb2 import WidgetStates
+    from core.constants import WIDGET_ASSET_ANNUAL_GOAL_PREFIX
+
+    service = build_service([{"ticker": "BBAS3", "quantity": 100}])
+    service.save_portfolio_goal_plan({"BBAS3": 150})
+    monkeypatch.setattr(ShareQuantityGoalService, "_default_instance", service)
+    app = AppTest.from_function(_render_accumulation_editor, default_timeout=30).run()
+    assert not app.exception
+    detail_error_key = f"{WIDGET_ASSET_ANNUAL_GOAL_PREFIX}test_error"
+    app.session_state[detail_error_key] = "previous detail error"
+
+    def unexpected_query(*args, **kwargs):
+        raise AssertionError("Cell edits must retain the displayed snapshot")
+
+    monkeypatch.setattr(service, "get_portfolio_goal_plan", unexpected_query)
+    monkeypatch.setattr(service._market_analysis_api, "get_ticker_market_analysis", unexpected_query)
+    monkeypatch.setattr(service._portfolio_provider, "read_planning", unexpected_query)
+    monkeypatch.setattr(service._planning_provider, "get_current_simulation", unexpected_query)
+
+    def submit_target():
+        states = WidgetStates()
+        state = states.widgets.add()
+        state.id = app.dataframe[0].proto.id
+        state.string_value = json.dumps({
+            "edited_rows": {"0": {"target_quantity": 200}},
+            "added_rows": [],
+            "deleted_rows": [],
+        })
+        app._run(states)
+        assert not app.exception
+
+    def fail(goals):
+        raise save_error
+
+    initial_editor = app.dataframe[0].proto.id
+    with monkeypatch.context() as patch:
+        patch.setattr(service._goal_repo, "upsert_accumulation_goals", fail)
+        submit_target()
+    assert service._goal_repo.list_accumulation_goals()[0]["target_quantity"] == 150
+    assert app.dataframe[0].value.iloc[0]["target_quantity"] == 150
+    assert app.dataframe[0].proto.id != initial_editor
+    assert app.error[0].value == (
+        str(save_error) if isinstance(save_error, ValueError)
+        else "Não foi possível salvar a meta. Tente novamente."
+    )
+    assert app.session_state[detail_error_key] == "previous detail error"
+
+    submit_target()
+    assert not app.error
+    assert service._goal_repo.list_accumulation_goals()[0]["target_quantity"] == 200
+    assert app.dataframe[0].value.iloc[0]["target_quantity"] == 200
+    assert detail_error_key not in app.session_state
 
 
 def test_automatic_multi_row_save_is_atomic_on_database_failure(mock_db):

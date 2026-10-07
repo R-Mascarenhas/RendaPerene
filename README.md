@@ -162,7 +162,9 @@ remoto válido, inclusive após a expiração do cache ou uma falha de rede. No 
 campos dependentes de cotações mostram `N/D` até a resposta; patrimônio total, rentabilidade,
 pesos e gráficos de composição aguardam cotações completas. Os indicadores econômicos usam
 referências provisórias quando ainda não há resposta, identificadas na tela. A interface acompanha
-as atualizações a cada dois segundos e mostra a idade dos dados usados.
+as atualizações a cada dois segundos e mostra a idade dos dados usados. Cada sessão acompanha
+os pedidos da tela atual, incluindo respostas concluídas durante sua preparação; falhas permitem
+nova tentativa automática após o intervalo de espera existente.
 
 Cotações e análises têm validade de 10 minutos, históricos de uma hora e indicadores econômicos
 de 30 dias. O último dado válido também fica em um arquivo SQLite local e descartável na pasta
@@ -170,7 +172,9 @@ de 30 dias. O último dado válido também fica em um arquivo SQLite local e des
 enquanto uma atualização ocorre em segundo plano. O arquivo não é uma carteira nem entra nos
 backups; se estiver indisponível, a aplicação continua usando o cache em memória.
 O botão de atualização do salário mínimo consulta o BCB sem bloquear a tela e mantém o valor
-atual até receber uma resposta válida; somente essa resposta é salva no planejamento.
+atual até receber uma resposta válida; somente essa resposta é salva no planejamento da carteira
+solicitante. Editar o valor manualmente, trocar de carteira ou restaurá-la cancela a atualização
+pendente, sem limpar os dados remotos compartilhados.
 Para medir consultas remotas separadamente em desenvolvimento, use `APP_ENV=dev` e
 `RENDA_PERENE_NAVIGATION_METRICS=true`. As métricas não contêm dados da carteira.
 

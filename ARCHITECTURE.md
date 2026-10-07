@@ -449,12 +449,23 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
   descartável. Na abertura, entradas remotas válidas no arquivo local são recuperadas; entradas
   vencidas continuam legíveis com sua idade e são atualizadas em segundo plano. A atualização
   manual marca também a cópia persistida como vencida.
-- `views/market_data_status.py` acompanha somente as entradas solicitadas pela sessão. Um fragmento
-  verifica suas revisões a cada dois segundos e solicita rerun na thread Streamlit após uma resposta.
+- `core/market_data_observer.py` concentra a observação por sessão: início de execução,
+  registro de pedidos, revisões, polling, retry e reset. `BackgroundMarketData.observed()`
+  compartilha a fonte e o cache existentes e registra a identidade normalizada antes de cada
+  leitura, somente na thread leitora. A apresentação não reconstrói chaves do cache. Revisões
+  concluídas entre leitura e polling são preservadas até provocarem a atualização da página.
+  Cada execução renova os pedidos relevantes, mantendo a solicitação explícita de salário
+  mínimo. Troca/restauração descarta o observador e ações pendentes, sem limpar o cache remoto.
+- `views/market_data_status.py` renderiza os estados retornados pelo observador. Um fragmento
+  verifica revisões a cada dois segundos e solicita rerun na thread Streamlit após uma resposta.
   A interface informa idade, atualização, referências provisórias e falhas. Sem todas as cotações,
   patrimônio total, rentabilidade e pesos mostram `N/D`; os gráficos de composição aguardam dados
   completos. Capital e proventos locais continuam disponíveis. A atualização manual do salário
   mínimo mantém o parâmetro atual e salva somente uma resposta válida do BCB na carteira solicitante.
+  O observador associa a ação à carteira e à geração do arquivo; `PlanningView` consome a resposta
+  antes dos widgets e salva pelo caso de uso existente. Edição manual, troca ou restauração
+  cancela a ação; falha remota ou de gravação preserva o parâmetro anterior. O observador não
+  executa comandos Streamlit nem acessa o SQLite da carteira.
 - Em Ativos → Carteira, cada ticker possui uma aba nativa com estado: somente a aba ativa
   executa seu detalhamento, inclusive ao trocar de carteira ou alterar a lista de ativos.
   Em Carteira e no Raio-X, gráficos, históricos e indicadores são preparados

@@ -45,7 +45,7 @@ from core.strings import (
 )
 from core.utils.formatter import Formatter
 from services.planning_service import SimulationService
-from views.cached_market_data import StreamlitCachedMarketData as MarketData
+from views.cached_market_data import get_market_data_observer, market_data_portfolio_context
 from views.components.projection_chart import ProjectionChartWidget
 from views.components.simulation_results import SimulationResultsWidget
 from views.components.time_metrics import TimeMetricsWidget
@@ -116,7 +116,7 @@ class PlanningView:
 
     def _on_mw_value_change(self):
         """Syncs the custom widget key-input back to the core session state and saves it."""
-        st.session_state.pop("market_minimum_wage_refresh", None)
+        get_market_data_observer().cancel_minimum_wage_refresh()
         # Retrieve value from dynamic state key
         dynamic_key = f"{WIDGET_MW_VALUE_PREFIX}{st.session_state[SESSION_MW_VALUE]}"
         if dynamic_key in st.session_state:
@@ -215,25 +215,15 @@ class PlanningView:
 
     def _finish_minimum_wage_refresh(self):
         """Apply a user-requested valid reply in the UI thread before widgets render."""
-        pending = st.session_state.get("market_minimum_wage_refresh")
-        if pending is None:
+        result = get_market_data_observer().take_minimum_wage_refresh(
+            market_data_portfolio_context()
+        )
+        if result is None:
             return
-        portfolio, revision = pending
-        if portfolio != st.session_state.get("active_db", "portfolio.db"):
-            st.session_state.pop("market_minimum_wage_refresh", None)
-            return
-        status = MarketData.status(("minimum_wage",))
-        if status.revision == revision or status.updating:
-            MarketData.get_current_minimum_wage()
-            return
-        st.session_state.pop("market_minimum_wage_refresh", None)
-        if status.failed or not status.available:
+        if result.failed:
             st.error(MSG_BCB_FETCH_ERROR)
             return
-        live_mw = MarketData.get_current_minimum_wage()
-        if not 1000 <= live_mw <= 5000:
-            st.error(MSG_BCB_FETCH_ERROR)
-            return
+        live_mw = result.value
         previous_mw = st.session_state[SESSION_MW_VALUE]
         st.session_state[SESSION_MW_VALUE] = live_mw
         try:
@@ -376,13 +366,10 @@ class PlanningView:
                 st.write("")  # Spacer label alignment
                 st.write("")
                 if st.button(MSG_UPDATE_MW_BTN, help=HELP_UPDATE_MW):
-                    MarketData.get_current_minimum_wage.clear()
-                    st.session_state["market_minimum_wage_refresh"] = (
-                        st.session_state.get("active_db", "portfolio.db"),
-                        MarketData.status(("minimum_wage",)).revision,
+                    get_market_data_observer().request_minimum_wage_refresh(
+                        market_data_portfolio_context()
                     )
-                    MarketData.get_current_minimum_wage()
-                if "market_minimum_wage_refresh" in st.session_state:
+                if get_market_data_observer().minimum_wage_pending:
                     st.caption("Consultando o BCB. O valor atual será mantido até a confirmação.")
 
         # Renders the custom start date parameters on a small second row

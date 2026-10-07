@@ -37,6 +37,7 @@ GEMINI.md
 git_commit_features.py
 docs/reports/
 docs/architecture_review/
+docs/plans/
 docs/backlog/
 generate_synthetic_demo.py
 

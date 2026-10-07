@@ -7,14 +7,17 @@ import streamlit as st
 
 from core.application_paths import ApplicationPaths
 from core.background_market_data import BackgroundMarketData
+from core.constants import SESSION_ACTIVE_DATABASE_GENERATION
 from core.daos.portfolio_dao import PortfolioDAO
 from core.market_data_cache import MarketDataCache
+from core.market_data_observer import MarketDataObserver
 from core.portfolio_read import PortfolioLedger
 from core.screen_cache import ScreenCache
 from core.utils.market_data import MarketData
 
 _cache_configuration: dict[str, Path | None] = {"path": None}
 _PROJECTION_VERSION = 2
+_OBSERVER_SESSION_KEY = "market_data_observer"
 
 
 def configure_screen_cache(path: Path) -> None:
@@ -39,6 +42,30 @@ def get_background_market_data() -> BackgroundMarketData:
     return _background_market_data(str(path) if path else None)
 
 
+def get_market_data_observer() -> MarketDataObserver:
+    """Keep presentation observation per session over the shared remote cache."""
+    background = get_background_market_data()
+    observer = st.session_state.get(_OBSERVER_SESSION_KEY)
+    if observer is None or observer.market_data.cache is not background.cache:
+        observer = MarketDataObserver(background)
+        st.session_state[_OBSERVER_SESSION_KEY] = observer
+    return observer
+
+
+def reset_market_data_observer() -> None:
+    observer = st.session_state.pop(_OBSERVER_SESSION_KEY, None)
+    if observer is not None:
+        observer.reset()
+
+
+def market_data_portfolio_context() -> tuple[str, str | None]:
+    """Identity for UI actions, independent of changes to the portfolio ledger."""
+    return (
+        st.session_state.get("active_db", "portfolio.db"),
+        st.session_state.get(SESSION_ACTIVE_DATABASE_GENERATION),
+    )
+
+
 class StreamlitCachedMarketData:
     """
     Streamlit caching adapter for MarketDataPort.
@@ -47,41 +74,27 @@ class StreamlitCachedMarketData:
     """
 
     @staticmethod
-    def _remember(key: tuple) -> None:
-        """Track revisions in the UI thread so completed work can refresh the page."""
-        requests = st.session_state.setdefault("market_data_requests", {})
-        requests.setdefault(key, get_background_market_data().status(key).revision)
-
-    @staticmethod
     def get_batch_quotes(tickers: list) -> dict:
-        for ticker in tickers:
-            StreamlitCachedMarketData._remember(("quote", ticker.strip().upper()))
-        return get_background_market_data().get_batch_quotes(tickers)
+        return get_market_data_observer().market_data.get_batch_quotes(tickers)
 
     @staticmethod
     def get_last_price(ticker: str) -> float:
-        StreamlitCachedMarketData._remember(("quote", ticker.strip().upper()))
-        return get_background_market_data().get_last_price(ticker)
+        return get_market_data_observer().market_data.get_last_price(ticker)
 
     @staticmethod
     def get_ticker_intraday_history(ticker: str, period="1d", interval="5m") -> pd.DataFrame:
-        StreamlitCachedMarketData._remember(("intraday", ticker.strip().upper(), period, interval))
-        return get_background_market_data().get_ticker_intraday_history(ticker, period, interval)
+        return get_market_data_observer().market_data.get_ticker_intraday_history(
+            ticker, period, interval
+        )
 
     @staticmethod
     def get_ticker_history(ticker: str, period="1y", interval="1d") -> pd.DataFrame:
-        StreamlitCachedMarketData._remember(("history", ticker.strip().upper(), period, interval))
-        return get_background_market_data().get_ticker_history(ticker, period, interval)
+        return get_market_data_observer().market_data.get_ticker_history(ticker, period, interval)
 
     @staticmethod
     def get_ticker_market_snapshot(ticker: str, reference_year: int) -> dict:
-        """Normalize remote inputs before consulting the portfolio-independent cache."""
-        normalized_ticker = ticker.strip().upper()
-        if not normalized_ticker:
-            return {}
-        StreamlitCachedMarketData._remember(("snapshot", normalized_ticker, reference_year))
-        return get_background_market_data().get_ticker_market_snapshot(
-            normalized_ticker, reference_year
+        return get_market_data_observer().market_data.get_ticker_market_snapshot(
+            ticker, reference_year
         )
 
     @staticmethod
@@ -106,30 +119,19 @@ class StreamlitCachedMarketData:
 
     @staticmethod
     def get_current_ipca_l12m() -> float:
-        StreamlitCachedMarketData._remember(("ipca",))
-        return get_background_market_data().get_current_ipca_l12m()
+        return get_market_data_observer().market_data.get_current_ipca_l12m()
 
     @staticmethod
     def get_current_selic() -> float:
-        StreamlitCachedMarketData._remember(("selic",))
-        return get_background_market_data().get_current_selic()
+        return get_market_data_observer().market_data.get_current_selic()
 
     @staticmethod
     def get_current_minimum_wage() -> float:
-        StreamlitCachedMarketData._remember(("minimum_wage",))
-        return get_background_market_data().get_current_minimum_wage()
-
-    @staticmethod
-    def status(key: tuple):
-        return get_background_market_data().status(key)
+        return get_market_data_observer().market_data.get_current_minimum_wage()
 
     @staticmethod
     def refresh(prefix: tuple):
         get_background_market_data().cache.refresh(prefix)
-
-    @staticmethod
-    def retry_due(keys: set[tuple] | None = None) -> int:
-        return get_background_market_data().cache.retry_due(keys)
 
 
 for _method, _prefix in (

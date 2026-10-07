@@ -72,6 +72,7 @@ from core.constants import (
 )
 from core.strings import MODEL_CLASSIC
 from views.cached_market_data import StreamlitCachedMarketData as MarketData
+from views.cached_market_data import reset_market_data_observer
 
 logger = logging.getLogger(__name__)
 
@@ -104,10 +105,8 @@ class SessionManager:
     @staticmethod
     def reset_portfolio_state():
         """Discard session values derived from the active portfolio database."""
+        reset_market_data_observer()
         portfolio_keys = (
-            "market_minimum_wage_refresh",
-            "market_data_requests",
-            "market_data_poll_ready",
             "db_loaded",
             "processed_files",
             "b3_uploader_key",

@@ -6,7 +6,7 @@ import streamlit as st
 from core.constants import WIDGET_ASSET_ANNUAL_GOAL_PREFIX
 from core.utils.formatter import Formatter
 from services.share_quantity_goal_service import ShareQuantityGoalService
-from views.components.goal_editor_state import invalidate_goal_editor_state
+from views.components.goal_editor_state import GoalEditorState, invalidate_goal_plan_state
 
 
 class AssetAnnualGoalWidget:
@@ -15,20 +15,11 @@ class AssetAnnualGoalWidget:
     @staticmethod
     def _on_change(plan, ticker, target_mode, context, input_key) -> None:
         """Save a confirmed edit and rebuild both controls from persisted targets."""
-        error_key = f"{context}_error"
-        try:
+        with GoalEditorState(context).editing():
             ShareQuantityGoalService.save_asset_goal(
                 plan, ticker, target_mode, st.session_state[input_key]
             )
-        except ValueError as error:
-            st.session_state[error_key] = str(error)
-        except (RuntimeError, sqlite3.Error):
-            st.session_state[error_key] = "Não foi possível salvar a meta. Tente novamente."
-        else:
-            st.session_state.pop(error_key, None)
-            invalidate_goal_editor_state()
-        revision_key = f"{context}_revision"
-        st.session_state[revision_key] = st.session_state.get(revision_key, 0) + 1
+            invalidate_goal_plan_state()
 
     def render(self, ticker: str) -> None:
         st.subheader("Meta anual deste ativo")
@@ -51,8 +42,8 @@ class AssetAnnualGoalWidget:
         st.caption(f"Ativo: {ticker} · Base em 01/01: {baseline:g} cotas")
         database = st.session_state.get("active_db", "portfolio.db")
         context = f"{WIDGET_ASSET_ANNUAL_GOAL_PREFIX}{database}_{ticker}"
-        revision = st.session_state.get(f"{context}_revision", 0)
-        widget_context = f"{context}_{baseline}_{target}_{revision}"
+        editor_state = GoalEditorState(context)
+        widget_context = f"{context}_{baseline}_{target}_{editor_state.revision}"
         quantity_key = f"{widget_context}_quantity"
         percentage_key = f"{widget_context}_percentage"
         quantity_column, percentage_column = st.columns(2)
@@ -85,7 +76,7 @@ class AssetAnnualGoalWidget:
             st.info(
                 "Crescimento percentual indisponível: não há posição em 01/01. Defina a meta por cotas."
             )
-        if error := st.session_state.get(f"{context}_error"):
+        if error := editor_state.error:
             st.error(error)
         if service.get_goal_enabled():
             goals = service.list_goals_with_progress(ticker=ticker)

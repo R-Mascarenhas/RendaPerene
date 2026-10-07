@@ -13,6 +13,7 @@ from core.strings import (
 )
 from core.utils.formatter import Formatter
 from services.assets_service import AssetService
+from views.components.goal_editor_state import invalidate_goal_editor_state
 from views.components.manual_entry import ManualEntryWidget
 from views.components.portfolio_activity import PortfolioActivityWidget
 
@@ -77,6 +78,7 @@ class OperationsView:
                 if AssetService.regularize_cost(
                     selected, value, value_is_total=mode == "Valor total da aquisição", fees=fees
                 ):
+                    invalidate_goal_editor_state()
                     st.rerun()
                 else:
                     st.warning("Esta operação já foi regularizada. Atualize a página.")
@@ -257,4 +259,5 @@ class OperationsView:
         st.session_state.pop("b3_import_preview", None)
         st.session_state.processed_files.add(file_key)
         st.session_state.b3_uploader_key += 1
+        invalidate_goal_editor_state()
         st.rerun()

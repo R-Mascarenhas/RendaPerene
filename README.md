@@ -39,6 +39,12 @@ O seletor de ativos nas operações manuais prepara o catálogo em uma única pa
 quando há códigos repetidos. No detalhamento da carteira, **Registrar movimentação** usa o
 ticker do ativo exibido e dispensa a preparação da lista completa de ativos.
 
+Os editores de metas na tabela e no detalhamento compartilham a meta salva. Se uma edição
+falhar, a apresentação volta ao último alvo salvo e permite tentar novamente; o erro desaparece
+após uma gravação bem-sucedida. Salvar em um editor atualiza o outro na próxima renderização.
+Movimentações manuais, importações da B3, regularização de custos, troca de carteira e
+restauração descartam os estados derivados dos editores.
+
 ## Dados e privacidade
 
 Os dados da carteira são armazenados localmente em bancos SQLite fora da pasta da aplicação.

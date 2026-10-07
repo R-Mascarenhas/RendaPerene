@@ -575,6 +575,27 @@ Reimportações idênticas não duplicam registros. Dados já conhecidos não s�
 divergências e múltiplas correspondências antigas impedem a complementação. O retorno indica
 inserção ou complementação, refletida na contagem de proventos da mensagem de importação.
 
+### Decisão de desenho: transições dos editores de metas (#91)
+
+Os editores da tabela de metas e do detalhamento compartilham o tratamento de erros de
+validação e persistência, a remoção do erro após sucesso e o avanço da revisão que reconstrói
+os controles após cada tentativa. Essas transições ficam em `GoalEditorState`, no módulo
+`views/components/goal_editor_state.py`. Os chamadores passam a conhecer apenas o contexto
+do editor e a operação de edição; deixam de repetir a seleção de exceções, a mensagem de
+falha de persistência e a atualização das chaves de erro e revisão.
+
+A tabela conserva seu snapshot e o marcador de atualização pendente: sucesso substitui o
+snapshot pelo resultado salvo, enquanto falha conserva o anterior. O detalhamento reconstrói
+os controles pela meta persistida. Essas diferenças permanecem nos respectivos widgets.
+Uma edição bem-sucedida invalida os estados derivados do outro editor; movimentações
+invalidam ambos. Troca de carteira e restauração continuam limpando esses estados por
+`SessionManager`. A edição em fragmento não faz novas consultas de mercado, carteira ou
+simulação por célula.
+
+O módulo compartilhado coordena somente apresentação e estado de sessão. As chamadas de
+validação, cálculo e persistência continuam explícitas nos widgets e pertencem a
+`ShareQuantityGoalService`. Não há novo serviço, protocolo, esquema ou migração.
+
 ## Validação
 
 O Pytest usa o `pytest.ini` para disponibilizar a raiz do repositório durante as importações. A fixture compartilhada de testes redireciona a persistência para um banco isolado e configura os adaptadores de teste.

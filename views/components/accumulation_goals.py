@@ -1,5 +1,4 @@
 import math
-import sqlite3
 
 import streamlit as st
 
@@ -10,6 +9,7 @@ from core.constants import (
 )
 from core.utils import Formatter
 from services.share_quantity_goal_service import ShareQuantityGoalService
+from views.components.goal_editor_state import GoalEditorState, invalidate_asset_goal_state
 from views.components.goal_progress import GoalProgressBar
 
 
@@ -70,25 +70,18 @@ class AccumulationGoalPlanningWidget:
     """Displays and edits the annual accumulation plan for the whole portfolio."""
 
     @staticmethod
-    def _on_editor_change(original_plan, editor_key, plan_key, revision_key, error_key):
+    def _on_editor_change(original_plan, editor_key, plan_key):
         """Validate and save a cell edit using the snapshot shown to the user."""
         original_rows = original_plan["rows"]
-        try:
+        updated_plan = original_plan
+        with GoalEditorState(plan_key).editing():
             targets = ShareQuantityGoalService.targets_from_editor_changes(
                 original_rows, st.session_state.get(editor_key, {})
             )
             updated_plan = ShareQuantityGoalService.save_edited_goal_plan(original_plan, targets)
-        except ValueError as error:
-            st.session_state[error_key] = str(error)
-            updated_plan = original_plan
-        except (sqlite3.Error, RuntimeError):
-            st.session_state[error_key] = "Não foi possível salvar a meta. Tente novamente."
-            updated_plan = original_plan
-        else:
-            st.session_state.pop(error_key, None)
+            invalidate_asset_goal_state()
         st.session_state[plan_key] = updated_plan
         st.session_state[f"{plan_key}pending"] = True
-        st.session_state[revision_key] = st.session_state.get(revision_key, 0) + 1
 
     def render(self) -> None:
         """Refresh the snapshot on page runs and isolate subsequent editor reruns."""
@@ -111,11 +104,9 @@ class AccumulationGoalPlanningWidget:
             "Defina a meta anual por cotas ou pela variação da posição em relação a 01/01. Use 0% para manter a posição, valores negativos para reduzir e −100% para zerar."
         )
         st.caption("Alterações válidas são salvas automaticamente ao confirmar a célula.")
-        revision_key = f"{plan_key}revision"
-        error_key = f"{plan_key}error"
+        editor_state = GoalEditorState(plan_key)
         editor_key = (
-            f"{WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX}{active_database}_"
-            f"{st.session_state.get(revision_key, 0)}"
+            f"{WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX}{active_database}_{editor_state.revision}"
         )
         if plan["rows"].empty:
             st.info("Adicione ativos à carteira para criar metas de acumulação.")
@@ -205,9 +196,9 @@ class AccumulationGoalPlanningWidget:
             width="stretch",
             key=editor_key,
             on_change=self._on_editor_change,
-            args=(plan, editor_key, plan_key, revision_key, error_key),
+            args=(plan, editor_key, plan_key),
         )
-        editor_error = st.session_state.get(error_key)
+        editor_error = editor_state.error
         if editor_error:
             st.error(editor_error)
 

@@ -7,9 +7,9 @@ class Formatter:
     """Utility class for visual data and currency formatting."""
 
     @staticmethod
-    def format_currency(value: float) -> str:
+    def format_currency(value: float, *, decimal_places: int = 2) -> str:
         """Format BRL values, compacting amounts whose magnitude reaches millions."""
-        return Formatter._format_compact_value(value, prefix="R$ ", decimal_places=2)
+        return Formatter._format_compact_value(value, prefix="R$ ", decimal_places=decimal_places)
 
     @staticmethod
     def format_market_value(value, value_type: str) -> str:

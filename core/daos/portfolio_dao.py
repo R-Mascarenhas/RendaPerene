@@ -5,6 +5,7 @@ import pandas as pd
 
 from core.activity import ACTIVITY_EVENT_FIELDS, ACTIVITY_PAGE_SIZE, activity_event
 from core.b3_reconciliation import B3ImportContext, B3ImportRequest, B3ReconciliationPolicy
+from core.daos.dividend_sync import DividendSyncRepository
 from core.database import db
 from core.portfolio_read import PortfolioLedger
 
@@ -19,7 +20,7 @@ _ACTIVITY_SQL = """
 """
 
 
-class PortfolioDAO:
+class PortfolioDAO(DividendSyncRepository):
     """Data Access Object (DAO) for managing SQLite database access on database/portfolio.db."""
 
     def __init__(self, db_manager=None):
@@ -671,52 +672,55 @@ class PortfolioDAO:
     ) -> bool:
         """Insert a receipt or atomically complete its missing metadata on reimport."""
         conn = self.get_personal_connection()
-        cursor = conn.cursor()
         try:
             conn.execute("BEGIN IMMEDIATE")
-            existing = cursor.execute(
-                "SELECT id, quantity, unit_price FROM dividends "
-                "WHERE date=? AND ticker=? AND dividend_type=? AND total_value=?",
-                (date, ticker, dividend_type, total_value),
-            ).fetchall()
-            if existing:
-                # Never guess which legacy duplicate should receive new source metadata.
-                if len(existing) != 1:
-                    return False
-                receipt_id, stored_quantity, stored_price = existing[0]
-                if (
-                    stored_quantity is not None
-                    and quantity is not None
-                    and stored_quantity != quantity
-                ) or (
-                    stored_price is not None
-                    and unit_price is not None
-                    and stored_price != unit_price
-                ):
-                    return False
-                cursor.execute(
-                    "UPDATE dividends SET quantity=COALESCE(quantity, ?), "
-                    "unit_price=COALESCE(unit_price, ?) WHERE id=? AND "
-                    "((quantity IS NULL AND ? IS NOT NULL) OR "
-                    "(unit_price IS NULL AND ? IS NOT NULL))",
-                    (quantity, unit_price, receipt_id, quantity, unit_price),
-                )
-                changed = cursor.rowcount > 0
-                conn.commit()
-                return changed
-            cursor.execute(
-                """
-                INSERT INTO dividends (date, ticker, dividend_type, total_value, quantity, unit_price)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """,
-                (date, ticker, dividend_type, total_value, quantity, unit_price),
+            changed, _ = self._upsert_dividend_receipt(
+                conn,
+                date,
+                ticker,
+                dividend_type,
+                total_value,
+                quantity,
+                unit_price,
             )
             conn.commit()
-            return True
+            return changed
         except Exception:
             return False
         finally:
             conn.close()
+
+    @staticmethod
+    def _upsert_dividend_receipt(conn, date, ticker, kind, total, quantity, unit_price):
+        existing = conn.execute(
+            "SELECT id, quantity, unit_price FROM dividends "
+            "WHERE date=? AND ticker=? AND dividend_type=? AND total_value=?",
+            (date, ticker, kind, total),
+        ).fetchall()
+        if existing:
+            if len(existing) != 1:
+                return False, None
+            receipt_id, stored_quantity, stored_price = existing[0]
+            if (
+                stored_quantity is not None and quantity is not None and stored_quantity != quantity
+            ) or (
+                stored_price is not None and unit_price is not None and stored_price != unit_price
+            ):
+                return False, None
+            cursor = conn.execute(
+                "UPDATE dividends SET quantity=COALESCE(quantity, ?), "
+                "unit_price=COALESCE(unit_price, ?) WHERE id=? AND "
+                "((quantity IS NULL AND ? IS NOT NULL) OR "
+                "(unit_price IS NULL AND ? IS NOT NULL))",
+                (quantity, unit_price, receipt_id, quantity, unit_price),
+            )
+            return cursor.rowcount > 0, receipt_id
+        cursor = conn.execute(
+            "INSERT INTO dividends (date,ticker,dividend_type,total_value,quantity,unit_price) "
+            "VALUES (?,?,?,?,?,?)",
+            (date, ticker, kind, total, quantity, unit_price),
+        )
+        return True, cursor.lastrowid
 
     def get_quantity_on_date(self, ticker: str, date_str: str, conn=None) -> int:
         """Returns the sum of quantities owned of a specific ticker on or before a given date."""

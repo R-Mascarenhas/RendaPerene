@@ -522,11 +522,14 @@ class PortfolioView:
                 st.write(MSG_NO_TX_RECORDED)
 
         with col_t2:
-            st.subheader(MSG_RECEIVED_DIVIDENDS)
+            st.subheader("Proventos recebidos e a receber")
             if not asset.dividends.empty:
                 df_div_display = asset.dividend_details.copy()
+                df_div_display["Data"] = pd.to_datetime(df_div_display["Data"]).dt.strftime(
+                    "%d/%m/%Y"
+                )
                 df_div_display["Unitário"] = df_div_display["Unitário"].map(
-                    Formatter.format_currency
+                    lambda value: Formatter.format_currency(value, decimal_places=8)
                 )
                 df_div_display["Total"] = df_div_display["Total"].map(Formatter.format_currency)
                 st.dataframe(df_div_display, width="stretch", hide_index=True)

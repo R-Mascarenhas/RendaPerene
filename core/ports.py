@@ -6,6 +6,7 @@ from typing import Any, Protocol
 import pandas as pd
 
 from core.b3_reconciliation import B3ImportContext, B3ImportRequest
+from core.dividends import DividendEvent
 from core.planning import SimulationResult
 from core.portfolio_read import (
     AssetRead,
@@ -177,6 +178,26 @@ class PortfolioPort(Protocol):
     def get_activity_tickers(self) -> list[str]: ...
 
     def get_local_projection_revision(self) -> int: ...
+
+    def load_ledger(self) -> PortfolioLedger: ...
+
+    def get_dividend_reviews(self) -> dict: ...
+
+    def save_dividend_review(self, event, kind, payments, expected_revision) -> bool: ...
+
+    def dividend_b3_key(self, record) -> str: ...
+
+    def find_b3_dividend_candidates(self, record) -> list[dict]: ...
+
+    def import_b3_dividend(self, record, choices, batch_sources=()) -> bool: ...
+
+    def reschedule_dividend(self, receipt_id: int, date: str, expected_revision: int) -> bool: ...
+
+
+class DividendProvider(Protocol):
+    """Remote ex-date events, never evidence of a portfolio cash receipt."""
+
+    def get_events(self, ticker: str, start_date: str) -> list[DividendEvent]: ...
 
 
 class AssetsCatalogPort(Protocol):

@@ -5,6 +5,7 @@ import datetime
 import pandas as pd
 
 from core.daos.portfolio_dao import PortfolioDAO
+from core.dividends import payment_event_label
 from core.portfolio_read import AssetRead, PortfolioHistory, PortfolioOverview, PortfolioPlanning
 from core.ports import (
     MarketAnalysisPort,
@@ -142,6 +143,7 @@ class PortfolioReadService:
     @hybridmethod
     def read_asset(self, ticker: str, *, today_date=None, target_yield=6.0) -> AssetRead:
         ticker = normalize_b3_ticker(ticker)
+        today_date = today_date or datetime.date.today()
         projection = self._projection()
         positions = projection.calculate_positions(today_date)
         selected = (
@@ -175,9 +177,10 @@ class PortfolioReadService:
         dividends = receipts.rename(
             columns={"date": "Data", "dividend_type": "Tipo", "total_value": "Total"}
         )
-        dividends["Tipo"] = (
-            dividends["Tipo"].map({"DIVIDEND": "Dividendo", "JCP": "JCP"}).fillna("Rendimento")
-        )
+        dividends["Tipo"] = [
+            payment_event_label(row["Tipo"], row["Data"], today_date)
+            for row in dividends.to_dict("records")
+        ]
         dividends = dividends[["Data", "Tipo", "Total", "quantity", "unit_price"]].reset_index(
             drop=True
         )
@@ -193,8 +196,9 @@ class PortfolioReadService:
         ]
         dividend_details = dividend_details[["Data", "Tipo", "Unitário", "Total"]]
         annual = {}
-        for year in sorted(receipts["date"].str[:4].unique(), reverse=True):
-            mask = receipts["date"].str.startswith(year)
+        received = receipts["date"].le(today_date.isoformat())
+        for year in sorted(receipts.loc[received, "date"].str[:4].unique(), reverse=True):
+            mask = receipts["date"].str.startswith(year) & received
             totals = receipts.loc[mask].groupby("dividend_type")["total_value"].sum()
             per_share = sum(
                 value

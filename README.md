@@ -263,6 +263,54 @@ e, na ausência desses metadados, a posição histórica na data do pagamento.
 A migração automática adiciona campos opcionais ao banco local e mantém os registros
 existentes; backups antigos continuam sendo aceitos e atualizados ao restaurar.
 
+### Detectar proventos e informar pagamentos
+
+Ao abrir a carteira, o aplicativo verifica novos proventos em segundo plano, sem bloquear a
+navegação, e mostra um aviso com os ativos
+encontrados acima da navegação. Abra **Detectar proventos e informar pagamentos** para revisar.
+A verificação é reutilizada durante a sessão e repetida ao mudar o dia ou a carteira, ou após
+uma alteração nos registros. Para consultar novamente, clique em **Buscar proventos no Yahoo
+Finance**. Falhas do Yahoo são informadas apenas para ativos com posição atual positiva e não
+impedem usar a carteira offline. A consulta apresenta apenas
+sugestões: a data do Yahoo é a **data-ex**, e não a data-com ou a data de pagamento. O Yahoo
+também não distingue JCP de dividendos nem informa as parcelas ou os impostos de cada crédito.
+Eventos já confirmados ou ignorados não aparecem novamente. Possíveis correspondências com
+pagamentos cadastrados também são omitidas da análise, sem aviso de duplicidade nem gravação
+de uma decisão. O filtro considera o mesmo ativo, pagamento igual ou posterior à data-ex e
+valor por ação compatível, inclusive parcelas, valores líquidos e arredondamento. Como esses
+indícios não comprovam a identidade do evento, o filtro pode ocultar eventos distintos; os
+pagamentos existentes são preservados. Eventos sem correspondência continuam disponíveis para
+confirmação ou para ignorar. A aba de detecção aparece somente quando há eventos pendentes. Se a busca falhar, o botão
+**Buscar proventos no Yahoo Finance** permanece disponível junto ao aviso para tentar novamente.
+
+Confirme o tipo, a quantidade remunerada, o valor por ação de cada parcela e suas datas de
+pagamento. A quantidade histórica é uma sugestão; confira seus comprovantes, inclusive quando
+houver desdobramentos ou transferência de custódia. Você pode corrigir o valor por ação para
+representar o crédito líquido. Use **Revisar parcelas**, confira os totais arredondados em
+centavos e escolha **Confirmar e salvar pagamentos**. Se o pagamento já estiver cadastrado,
+associe-o para evitar duplicidade; seus valores existentes serão preservados. Também é possível
+ignorar um evento. As decisões são preservadas na carteira, inclusive depois de fechar o app.
+
+Datas futuras aparecem como **JCP - a receber**, **Dividendo - a receber** ou **Rendimento - a
+receber** nas movimentações e no detalhe do ativo. Esses valores não entram nos recebidos do
+ano, últimos 12 meses, YoC, preço ajustado, histórico ou meta de reinvestimento. Na data
+informada, passam automaticamente a recebidos, sem confirmação adicional do crédito. Se houver
+adiamento, use **Ajustar data de pagamento de provento cadastrado** em **Ativos → Operações**;
+o ajuste mantém quantidade
+e valor. A classificação é refeita nas leituras, usando o dia local, sem gravar um novo status.
+
+Ao importar a B3, possíveis correspondências com parcelas cadastradas exigem uma escolha:
+associar ao pagamento existente ou importar separadamente. A associação aplica a data, o total
+e os metadados disponíveis da B3 à parcela escolhida, sem criar outro recebimento. Cada parcela
+só pode ser associada a uma linha da mesma importação. Alterações da carteira durante a revisão
+exigem conferir novamente. Mudanças posteriores do Yahoo não sobrescrevem pagamentos confirmados;
+falhas de consulta são informadas e não impedem o uso offline da carteira.
+
+Este fluxo reutiliza as tabelas existentes, sem nova migração. A data-ex e o valor original
+ficam no registro de origem; `dividends.date` guarda exclusivamente a data de pagamento
+confirmada pelo usuário ou informada pela B3. Os eventos do Yahoo não alimentam diretamente
+os totais financeiros da carteira.
+
 Transferências de custódia não são aportes ou resgates. Pares de **Transferência** com o mesmo
 ativo, data e quantidade, sendo um débito e um crédito, representam apenas a troca de corretora
 e são ignorados mesmo sem valor financeiro. Uma entrada de **Transferência** sem o par é ignorada

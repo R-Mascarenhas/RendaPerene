@@ -75,7 +75,10 @@ def test_reimport_completes_legacy_receipt_once_without_changing_total():
     assert len(history) == 1
     assert history.iloc[0]["quantity"] == 80
     assert history["value"].sum() == 10
-    assert AssetService.process_b3_import(receipt(quantity=90)) == (0, 0)
+    revision = AssetService.get_local_projection_revision()
+    with pytest.raises(ValueError, match="Confirme"):
+        AssetService.process_b3_import(receipt(quantity=90))
+    assert AssetService.get_local_projection_revision() == revision
     assert AssetService.get_portfolio_activity().iloc[0]["quantity"] == 80
 
 

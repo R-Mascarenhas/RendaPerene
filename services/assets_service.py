@@ -11,7 +11,9 @@ import pandas as pd
 from core.activity import ACTIVITY_EVENTS, activity_event
 from core.b3_reconciliation import B3ImportContext, B3ReconciliationPolicy
 from core.daos.portfolio_dao import PortfolioDAO
+from core.dividends import payment_event_label
 from core.ports import (
+    DividendProvider,
     ExcelParserPort,
     MarketAnalysisPort,
     MarketDataPort,
@@ -22,6 +24,7 @@ from core.ports import (
 from core.strings import MODEL_IPCA_SPREAD, MODEL_SELIC
 from core.utils.market_data import MarketData
 from core.utils.ticker import normalize_b3_ticker
+from services._dividend_sync import DividendSync
 from services.valuation_service import ValuationService
 
 logger = logging.getLogger(__name__)
@@ -31,19 +34,21 @@ _MAX_B3_SUBSET_STATES = 65_536
 class AssetService:
     """Own portfolio writes, B3 import, operation history, watchlist and catalog use cases."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - independently injected portfolio and market adapters
         self,
         portfolio_repo: PortfolioPort = None,
         market_data_api: MarketDataPort = None,
         market_analysis_api: MarketAnalysisPort = None,
         excel_parser: ExcelParserPort = None,
         read_provider: PortfolioReadPort = None,
+        dividend_provider: DividendProvider = None,
     ):
         self._portfolio_repo = portfolio_repo or PortfolioDAO()
         self._market_data_api = market_data_api or MarketData
         self._market_analysis_api = market_analysis_api
         self._excel_parser = excel_parser
         self._read_provider = read_provider
+        self._dividend_provider = dividend_provider
 
     @property
     def _reads(self):
@@ -68,13 +73,14 @@ class AssetService:
         return cls._default_instance
 
     @classmethod
-    def set_adapters(
+    def set_adapters(  # noqa: PLR0913 - composition root configures independent adapters
         cls,
         portfolio_repo: PortfolioPort = None,
         market_data_api: MarketDataPort = None,
         market_analysis_api: MarketAnalysisPort = None,
         excel_parser: ExcelParserPort = None,
         read_provider: PortfolioReadPort = None,
+        dividend_provider: DividendProvider = None,
     ):
         """Dynamic dependency injection mechanism for testing and custom environment mocks."""
         inst = cls.get_default()
@@ -88,11 +94,58 @@ class AssetService:
             inst._market_analysis_api = market_analysis_api
         if excel_parser is not None:
             inst._excel_parser = excel_parser
+        if dividend_provider is not None:
+            inst._dividend_provider = dividend_provider
+
+    @hybridmethod
+    def get_dividend_suggestions(self, ticker=None):
+        return DividendSync(self._portfolio_repo, self._dividend_provider).suggestions(ticker)
+
+    @hybridmethod
+    def prepare_dividend_search(self, ticker=None):
+        return DividendSync(self._portfolio_repo, self._dividend_provider).prepare_search(ticker)
+
+    @hybridmethod
+    def prepare_dividend_payments(self, event, kind, payments):
+        return DividendSync.prepare(event, kind, payments)
+
+    @hybridmethod
+    def confirm_dividend(self, event, kind, payments, expected_revision):
+        return DividendSync(self._portfolio_repo, self._dividend_provider).confirm(
+            event,
+            kind,
+            payments,
+            expected_revision,
+        )
+
+    @hybridmethod
+    def ignore_dividend(self, event, expected_revision):
+        return DividendSync(self._portfolio_repo, self._dividend_provider).ignore(
+            event,
+            expected_revision,
+        )
 
     @hybridmethod
     def get_local_projection_revision(self) -> int:
         """Return the current portfolio revision for temporary local projections."""
         return self._portfolio_repo.get_local_projection_revision()
+
+    @hybridmethod
+    def get_dividend_payments(self, ticker=None):
+        receipts = self._portfolio_repo.load_ledger().dividends
+        if ticker is not None:
+            receipts = receipts.loc[receipts["ticker"].eq(normalize_b3_ticker(ticker))]
+        return receipts.iloc[::-1].to_dict("records")
+
+    @hybridmethod
+    def reschedule_dividend(self, receipt_id, date, expected_revision):
+        try:
+            normalized = datetime.date.fromisoformat(date).isoformat()
+        except (ValueError, TypeError) as error:
+            raise ValueError("Informe uma data de pagamento válida.") from error
+        if isinstance(receipt_id, bool) or not isinstance(receipt_id, int) or receipt_id <= 0:
+            raise ValueError("Selecione um provento cadastrado.")
+        return self._portfolio_repo.reschedule_dividend(receipt_id, normalized, expected_revision)
 
     @hybridmethod
     def add_transaction(
@@ -184,6 +237,8 @@ class AssetService:
         df: pd.DataFrame,
         progress_callback=None,
         manual_trade_links: dict[str, int | list[int]] | None = None,
+        dividend_links: dict[str, int | None] | None = None,
+        expected_revision: int | None = None,
     ) -> tuple[int, int]:
         """Processes a DataFrame imported from B3, routing and translating row categories to English."""
         if self._excel_parser is None:
@@ -192,6 +247,12 @@ class AssetService:
         transactions_df, dividends_df = self._excel_parser.parse_b3_excel(
             df, progress_callback=progress_callback
         )
+        if (
+            expected_revision is not None
+            and expected_revision != self.get_local_projection_revision()
+        ):
+            raise ValueError("A carteira mudou. Revise a importação B3 novamente.")
+        dividend_choices = self._prepare_b3_dividend_choices(dividends_df, dividend_links or {})
 
         processed_transactions = 0
         processed_dividends = 0
@@ -229,17 +290,17 @@ class AssetService:
                 processed_transactions += 1
 
         # Record standardized dividends
+        batch_dividend_sources = set()
         for _, row in dividends_df.iterrows():
-            success = self.add_dividend(
-                ticker=row["ticker"],
-                date=row["date"],
-                dividend_type=row["dividend_type"],
-                total_value=row["total_value"],
-                quantity=row.get("quantity"),
-                unit_price=row.get("unit_price"),
+            record = self._b3_dividend_record(row)
+            success = self._portfolio_repo.import_b3_dividend(
+                record,
+                dividend_choices,
+                batch_dividend_sources,
             )
             if success:
                 processed_dividends += 1
+                batch_dividend_sources.add(self._portfolio_repo.dividend_b3_key(record))
 
         logger.info(
             "b3_import.completed transactions=%s dividends=%s",
@@ -247,6 +308,50 @@ class AssetService:
             processed_dividends,
         )
         return processed_transactions, processed_dividends
+
+    def _b3_dividend_record(self, row):
+        record = dict(row)
+        for field in ("quantity", "unit_price"):
+            record[field] = self._positive_number(record.get(field))
+        return record
+
+    @hybridmethod
+    def find_b3_dividend_candidates(self, df):
+        if self._excel_parser is None:
+            raise RuntimeError("No ExcelParserPort adapter was injected into AssetService.")
+        _, dividends = self._excel_parser.parse_b3_excel(df)
+        return self._dividend_candidates_for_frame(dividends)
+
+    def _dividend_candidates_for_frame(self, dividends):
+        candidates = []
+        for row in dividends.to_dict("records"):
+            record = self._b3_dividend_record(row)
+            payments = self._portfolio_repo.find_b3_dividend_candidates(record)
+            if payments:
+                candidates.append(
+                    {
+                        "source_key": self._portfolio_repo.dividend_b3_key(record),
+                        "b3": record,
+                        "payments": payments,
+                    }
+                )
+        return candidates
+
+    def _prepare_b3_dividend_choices(self, dividends, links):
+        selected_ids = [value for value in links.values() if value is not None]
+        if len(selected_ids) != len(set(selected_ids)):
+            raise ValueError("Cada pagamento pode corresponder a apenas uma linha B3.")
+        result = {}
+        for candidate in self._dividend_candidates_for_frame(dividends):
+            key = candidate["source_key"]
+            if key not in links:
+                raise ValueError("Confirme se o pagamento B3 já foi cadastrado antes de importar.")
+            selected = links[key]
+            expected = next((row for row in candidate["payments"] if row["id"] == selected), None)
+            if selected is not None and expected is None:
+                raise ValueError("O pagamento escolhido mudou. Revise a importação B3.")
+            result[key] = {"id": selected, "expected": expected}
+        return result
 
     @hybridmethod
     def find_b3_manual_trade_candidates(self, df: pd.DataFrame) -> list[dict]:
@@ -601,6 +706,7 @@ class AssetService:
             quantity = row["quantity"]
             quantity_status = "reported"
             if row["source"] == "dividend":
+                event = payment_event_label(row["event_type"], row["date"])
                 value = row["total_value"]
                 quantity = self._positive_number(quantity)
                 if quantity is None:

@@ -13,11 +13,12 @@ class PortfolioProjection:
         self._market_analysis_api = analysis
         self._catalog = catalog
 
-    def _dividends_sum(self, ticker, start_date=None):
+    def _dividends_sum(self, ticker, start_date=None, end_date=None):
         records = self._ledger.dividends
         selected = records["ticker"].eq(ticker)
         if start_date is not None:
             selected &= records["date"].ge(start_date)
+        selected &= records["date"].le(end_date or datetime.date.today().isoformat())
         return float(records.loc[selected, "total_value"].sum())
 
     def quantity_on_date(self, ticker, date):
@@ -249,12 +250,14 @@ class PortfolioProjection:
                     display_sector = sector
 
                 if start_date is not None:
-                    total_dividends = self._dividends_sum(ticker, start_date)
+                    total_dividends = self._dividends_sum(
+                        ticker, start_date, today_date.isoformat()
+                    )
                 else:
-                    total_dividends = self._dividends_sum(ticker)
+                    total_dividends = self._dividends_sum(ticker, end_date=today_date.isoformat())
 
-                l12m_dividends = self._dividends_sum(ticker, l12m_limit)
-                ytd_dividends = self._dividends_sum(ticker, ytd_limit)
+                l12m_dividends = self._dividends_sum(ticker, l12m_limit, today_date.isoformat())
+                ytd_dividends = self._dividends_sum(ticker, ytd_limit, today_date.isoformat())
 
                 active_assets.append(
                     {
@@ -285,6 +288,7 @@ class PortfolioProjection:
         """
         df_transactions = self._ledger.transactions.copy()
         df_dividends = self._ledger.dividends.copy()
+        df_dividends = df_dividends[df_dividends["date"] <= datetime.date.today().isoformat()]
 
         from core.constants import (
             CUMULATIVE_DIVIDENDS,

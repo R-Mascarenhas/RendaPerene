@@ -244,6 +244,12 @@ vermelho, dividendo em azul, JCP em lilás, rendimento em laranja e os demais em
 Os fundos usam tons suaves com texto escuro no tema claro e tons escuros com texto claro no
 tema escuro, acompanhando o tema ativo da interface. Para proventos, a importação preserva
 a quantidade e o preço unitário informados pela B3, sem recalcular o Valor da Operação.
+Movimentos de proventos classificados como **Transferido**, como **Juros Sobre Capital Próprio -
+Transferido**, representam transferência do direito entre instituições e são ignorados na
+importação: não geram recebimentos nem alteram a posição em ações. Pagamentos de dividendos,
+JCP e rendimentos continuam sendo importados normalmente. O filtro vale para novas importações;
+registros antigos não são removidos automaticamente, pois não preservam a descrição original
+necessária para identificar esses movimentos com segurança.
 O histórico usa essa quantidade; quando ela falta, mostra **Total ÷ Unitário** como quantidade
 **estimada**, usando valores sem arredondamento prévio. Em registros antigos, o unitário é
 calculado pela posição na data do pagamento, que pode diferir da quantidade remunerada.

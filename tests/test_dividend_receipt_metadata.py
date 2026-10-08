@@ -31,6 +31,40 @@ def test_imported_receipt_preserves_quantity_price_and_authoritative_total(kind,
     assert detailed["Total"] == 9.25
 
 
+@pytest.mark.parametrize("kind", [
+    "Juros Sobre Capital Próprio", "Dividendo", "Rendimento",
+])
+@pytest.mark.parametrize("direction", ["Crédito", "Débito"])
+@pytest.mark.parametrize("movement_column", ["Movimentação", "Tipo de Movimentação"])
+def test_transferred_dividend_right_does_not_create_receipt_or_position(
+    kind, direction, movement_column,
+):
+    statement = receipt(f"{kind} - Transferido").rename(
+        columns={"Movimentação": movement_column},
+    )
+    statement["Entrada/Saída"] = direction
+
+    assert AssetService.process_b3_import(statement) == (0, 0)
+    assert AssetService.get_portfolio_activity(limit=None).empty
+    assert PortfolioReadService.read_planning().positions.empty
+
+
+def test_transferred_right_does_not_duplicate_or_enrich_actual_payment():
+    payment = receipt("Juros Sobre Capital Próprio", quantity=None, unit_price=None)
+    transfer = receipt("Juros Sobre Capital Próprio - Transferido")
+
+    assert AssetService.process_b3_import(payment) == (0, 1)
+    revision = AssetService.get_local_projection_revision()
+    assert AssetService.process_b3_import(transfer) == (0, 0)
+    assert AssetService.get_local_projection_revision() == revision
+    assert AssetService.process_b3_import(payment) == (0, 0)
+    activity = AssetService.get_portfolio_activity(limit=None)
+    assert len(activity) == 1
+    assert activity.iloc[0]["event"] == "JCP"
+    assert activity.iloc[0]["value"] == 10
+    assert pd.isna(activity.iloc[0]["quantity"])
+
+
 def test_reimport_completes_legacy_receipt_once_without_changing_total():
     AssetService.add_dividend("BBAS3", "2026-01-02", "DIVIDEND", 10)
     before_revision = AssetService.get_local_projection_revision()

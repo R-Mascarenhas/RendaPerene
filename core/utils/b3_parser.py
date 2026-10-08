@@ -80,6 +80,9 @@ class B3ExcelParserAdapter:
                     continue
 
                 is_dividend = any(term in movement for term in ["Dividendo", "Juros", "Rendimento"])
+                if is_dividend and "transfer" in self._canonical_text(movement):
+                    # Moving a dividend entitlement between custodians is not a cash receipt.
+                    continue
                 quantity = (
                     self._optional_positive_number(row.get("Quantidade"))
                     if is_dividend

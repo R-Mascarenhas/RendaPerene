@@ -412,6 +412,11 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
 - Desdobramentos e bonificações da B3 são armazenados como transações `BUY` com custo zero.
 - Grupamentos são armazenados como transações `GROUP`, que substituem a quantidade atual pela quantidade informada.
 - Resgates são armazenados como transações `SELL`.
+- Movimentos de dividendos, JCP e rendimentos cuja descrição indica transferência, como
+  `Juros Sobre Capital Próprio - Transferido`, são descartados pelo parser antes da classificação
+  financeira. Representam transferência do direito ao provento, sem recebimento ou alteração da
+  quantidade de ações. Pagamentos normais mantêm o fluxo existente. Não há migração nem limpeza
+  automática de recebimentos antigos, que não armazenam a descrição B3 para distingui-los com segurança.
 - O parser distingue custódia, negociação e evento corporativo. Pares de `Transferência` com o mesmo ticker, data e quantidade, nas direções débito e crédito, representam troca de corretora e são marcados para serem ignorados. `Depósito` é uma aquisição recebida e é registrado como compra conhecida a custo zero. `Transferência - Liquidação` segue a direção de crédito ou débito como negociação; uma liquidação de crédito sem valor financeiro gera aquisição com custo pendente.
 - Para entradas de custódia sem par, a política de `core/b3_reconciliation.py` avalia cronologicamente a quantidade com custo conhecido de dias anteriores; vendas reduzem essa cobertura proporcionalmente e grupamentos a ajustam. Custódia de saída é ignorada. Entradas com cobertura suficiente são ignoradas; as demais geram posição com custo pendente. O DAO consulta o histórico e aplica a política sob o mesmo bloqueio de escrita SQLite que registra a decisão.
 - `PortfolioDAO` grava origem e efeito na posição atomicamente (`BEGIN IMMEDIATE`). A identidade de origem é independente do custo corrigido. A regularização valida valores finitos, positivos e taxas não negativas, atualiza apenas operações pendentes e preserva a origem; os cálculos são refeitos no próximo carregamento.

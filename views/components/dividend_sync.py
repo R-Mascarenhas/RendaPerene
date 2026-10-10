@@ -52,6 +52,12 @@ class DividendSyncWidget:
                 + ", ".join(tickers)
                 + ". Confira os valores e informe as datas de pagamento abaixo."
             )
+        if result and result["revision"] == revision and result["changed"]:
+            st.info(
+                "O Yahoo alterou valores de eventos já revisados de "
+                + ", ".join(result["changed"])
+                + ". Seus pagamentos confirmados foram preservados."
+            )
         if st.session_state.get(prefix + "search_failed"):
             st.warning(
                 "Não foi possível verificar novos proventos. A carteira continua disponível. "
@@ -85,12 +91,6 @@ class DividendSyncWidget:
                     st.warning("A carteira mudou. Busque novamente para revisar os proventos.")
                     st.session_state.pop(prefix + "draft", None)
                     return
-                if result["changed"]:
-                    st.info(
-                        "O Yahoo alterou valores de eventos já revisados de "
-                        + ", ".join(result["changed"])
-                        + ". Seus pagamentos confirmados foram preservados."
-                    )
                 suggestions = result["suggestions"]
                 if not suggestions:
                     st.info("Nenhum novo provento disponível para revisão.")

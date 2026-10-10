@@ -272,3 +272,17 @@ def test_failed_search_can_be_retried_without_opening_detection_form(dividend_ap
     assert any("Foram encontrados proventos para CMIG4" in item.value for item in app.warning)
     assert any(item.label == "Detectar proventos e informar pagamentos" for item in app.expander)
     assert calls == []
+
+
+def test_source_change_notice_is_visible_without_pending_suggestions(dividend_app, monkeypatch):
+    app, calls = dividend_app
+    result = AssetService.get_dividend_suggestions("CMIG4")
+    result["suggestions"] = []
+    result["changed"] = ["CMIG4"]
+    monkeypatch.setattr(AssetService, "get_dividend_suggestions", lambda ticker=None: result)
+    app.run()
+    assert not app.exception
+    assert any("O Yahoo alterou valores" in item.value and "CMIG4" in item.value
+               and "pagamentos confirmados foram preservados" in item.value for item in app.info)
+    assert not any(item.label == "Detectar proventos e informar pagamentos" for item in app.expander)
+    assert calls == []

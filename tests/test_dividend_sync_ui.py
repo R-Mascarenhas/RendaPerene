@@ -286,3 +286,27 @@ def test_source_change_notice_is_visible_without_pending_suggestions(dividend_ap
                and "pagamentos confirmados foram preservados" in item.value for item in app.info)
     assert not any(item.label == "Detectar proventos e informar pagamentos" for item in app.expander)
     assert calls == []
+
+
+def test_empty_search_can_be_manually_refreshed_when_source_publishes_new_event(dividend_app, monkeypatch):
+    app, calls = dividend_app
+    available = AssetService.get_dividend_suggestions("CMIG4")
+    published = [False]
+    searches = []
+
+    def search(ticker=None):
+        searches.append(ticker)
+        return available if published[0] else {**available, "suggestions": []}
+
+    monkeypatch.setattr(AssetService, "get_dividend_suggestions", search)
+    app.run()
+    app.run()
+    assert not app.exception
+    assert searches == ["CMIG4"]
+    assert not any(item.label == "Detectar proventos e informar pagamentos" for item in app.expander)
+    published[0] = True
+    button(app, "Buscar proventos no Yahoo Finance").click().run()
+    assert not app.exception
+    assert searches == ["CMIG4", "CMIG4"]
+    assert any("Foram encontrados proventos para CMIG4" in item.value for item in app.warning)
+    assert calls == []

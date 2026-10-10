@@ -496,3 +496,62 @@ def test_b3_metadata_conflict_requires_review_even_when_date_and_total_match(ori
     assert payments[0]["unit_price"] == 0.035
     assert payments[0]["total_value"] == 7
     assert AssetService.process_b3_import(corrected) == (0, 0)
+
+
+@pytest.mark.parametrize("confirmed_kind,b3_movement,b3_kind", [
+    ("DIVIDEND", "Juros Sobre Capital Próprio", "JCP"),
+    ("JCP", "Dividendo", "DIVIDEND"),
+])
+@pytest.mark.parametrize("separate", [False, True])
+def test_b3_reviews_yahoo_payment_with_different_type(confirmed_kind, b3_movement, b3_kind, separate):
+    event = DividendEvent("CMIG4", "2026-09-23", 0.07)
+    AssetService.confirm_dividend(event, confirmed_kind, [
+        DividendPayment("2027-06-30", 100, 0.07),
+    ], AssetService.get_local_projection_revision())
+    payment_id = AssetService.get_dividend_payments("CMIG4")[0]["id"]
+    statement = pd.DataFrame([{
+        "Movimentação": b3_movement, "Data": "30/06/2027", "Produto": "CMIG4",
+        "Quantidade": 100, "Preço unitário": 0.07, "Valor da Operação": 7,
+        "Entrada/Saída": "Crédito", "Instituição": "Banco de teste A",
+    }])
+    candidates = AssetService.find_b3_dividend_candidates(statement)
+    assert len(candidates) == 1
+    assert candidates[0]["payments"][0]["id"] == payment_id
+    revision = AssetService.get_local_projection_revision()
+    with pytest.raises(ValueError, match="Confirme"):
+        AssetService.process_b3_import(statement)
+    assert AssetService.get_local_projection_revision() == revision
+    assert AssetService.process_b3_import(statement, dividend_links={
+        candidates[0]["source_key"]: None if separate else payment_id,
+    }) == (0, 1)
+    payments = AssetService.get_dividend_payments("CMIG4")
+    assert len(payments) == (2 if separate else 1)
+    assert sum(row["total_value"] for row in payments) == (14 if separate else 7)
+    authoritative = next(row for row in payments if row["dividend_type"] == b3_kind)
+    assert authoritative["quantity"] == 100
+    assert authoritative["unit_price"] == 0.07
+    if not separate:
+        assert authoritative["id"] == payment_id
+    assert AssetService.process_b3_import(statement) == (0, 0)
+
+
+def test_yahoo_payment_already_reconciled_by_b3_is_not_offered_across_types():
+    event = DividendEvent("CMIG4", "2026-09-23", 0.07)
+    AssetService.confirm_dividend(event, "JCP", [
+        DividendPayment("2027-06-30", 100, 0.07),
+    ], AssetService.get_local_projection_revision())
+    statement = pd.DataFrame([{
+        "Movimentação": "Juros Sobre Capital Próprio", "Data": "30/06/2027",
+        "Produto": "CMIG4", "Quantidade": 100, "Preço unitário": 0.07,
+        "Valor da Operação": 7, "Entrada/Saída": "Crédito",
+        "Instituição": "Banco de teste A",
+    }])
+    candidate = AssetService.find_b3_dividend_candidates(statement)[0]
+    receipt_id = candidate["payments"][0]["id"]
+    AssetService.process_b3_import(statement, dividend_links={candidate["source_key"]: receipt_id})
+    statement["Movimentação"] = "Dividendo"
+    assert AssetService.find_b3_dividend_candidates(statement) == []
+    assert AssetService.process_b3_import(statement) == (0, 1)
+    payments = AssetService.get_dividend_payments("CMIG4")
+    assert len(payments) == 2
+    assert {row["dividend_type"] for row in payments} == {"JCP", "DIVIDEND"}

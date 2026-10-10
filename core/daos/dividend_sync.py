@@ -139,14 +139,18 @@ class DividendSyncRepository:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT id, date, ticker, dividend_type, total_value, quantity, unit_price "
-            "FROM dividends WHERE ticker=? AND dividend_type=? ORDER BY date,id",
-            (record["ticker"], record["dividend_type"]),
+            "FROM dividends WHERE ticker=? ORDER BY date,id",
+            (record["ticker"],),
         ).fetchall()
         batch_ids.difference_update(previous_ids)
         return [
             dict(row)
             for row in rows
             if row["id"] not in batch_ids
+            and (
+                row["dividend_type"] == record["dividend_type"]
+                or (row["id"] in yahoo_ids and row["id"] not in b3_ids)
+            )
             and (
                 (
                     row["id"] not in b3_ids
@@ -236,10 +240,11 @@ class DividendSyncRepository:
                 if actual is None or actual != choice["expected"]:
                     raise ValueError("O provento escolhido mudou. Revise a importação B3.")
                 conn.execute(
-                    "UPDATE dividends SET date=?, total_value=?, "
+                    "UPDATE dividends SET date=?, dividend_type=?, total_value=?, "
                     "quantity=COALESCE(?,quantity), unit_price=COALESCE(?,unit_price) WHERE id=?",
                     (
                         record["date"],
+                        record["dividend_type"],
                         record["total_value"],
                         record["quantity"],
                         record["unit_price"],

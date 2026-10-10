@@ -69,10 +69,7 @@ class DividendSyncWidget:
                 + ", ".join(result["unavailable"])
                 + ". Você pode continuar usando a carteira offline."
             )
-        retry_needed = not pending and (
-            st.session_state.get(prefix + "search_failed") or (result and result["unavailable"])
-        )
-        if retry_needed and st.button("Buscar proventos no Yahoo Finance", key=prefix + "retry"):
+        if not pending and st.button("Buscar proventos no Yahoo Finance", key=prefix + "retry"):
             self._search(prefix, ticker, revision)
             st.rerun()
         if pending:

@@ -280,8 +280,9 @@ de uma decisão. O filtro considera o mesmo ativo, pagamento igual ou posterior 
 valor por ação compatível, inclusive parcelas, valores líquidos e arredondamento. Como esses
 indícios não comprovam a identidade do evento, o filtro pode ocultar eventos distintos; os
 pagamentos existentes são preservados. Eventos sem correspondência continuam disponíveis para
-confirmação ou para ignorar. A aba de detecção aparece somente quando há eventos pendentes. Se a busca falhar, o botão
-**Buscar proventos no Yahoo Finance** permanece disponível junto ao aviso para tentar novamente.
+confirmação ou para ignorar. A aba de detecção aparece somente quando há eventos pendentes. O botão
+**Buscar proventos no Yahoo Finance** permanece disponível após uma busca vazia ou uma falha,
+permitindo consultar novamente eventos publicados durante o dia.
 
 Confirme o tipo, a quantidade remunerada, o valor por ação de cada parcela e suas datas de
 pagamento. A quantidade histórica é uma sugestão; confira seus comprovantes, inclusive quando
@@ -300,7 +301,9 @@ o ajuste mantém quantidade
 e valor. A classificação é refeita nas leituras, usando o dia local, sem gravar um novo status.
 
 Ao importar a B3, possíveis correspondências com parcelas cadastradas exigem uma escolha:
-associar ao pagamento existente ou importar separadamente. A associação aplica a data, o total
+associar ao pagamento existente ou importar separadamente. Pagamentos confirmados a partir do
+Yahoo também são oferecidos quando o tipo informado pela B3 difere do confirmado. A associação
+aplica o tipo, a data, o total
 e os metadados disponíveis da B3 à parcela escolhida, sem criar outro recebimento. Cada parcela
 só pode ser associada a uma linha da mesma importação. Alterações da carteira durante a revisão
 exigem conferir novamente. Mudanças posteriores do Yahoo não sobrescrevem pagamentos confirmados;

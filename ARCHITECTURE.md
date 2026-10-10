@@ -609,8 +609,9 @@ silenciosamente a sugestão. O filtro admite parcelas, valores líquidos e arred
 casas; metadados ausentes usam total/quantidade informada ou estimada. Trata-se de uma heurística
 que pode ocultar eventos distintos; não registra uma decisão, não associa nem altera recibos.
 Pagamentos sem essa correspondência permanecem disponíveis para associação explícita durante
-a confirmação. O formulário de detecção aparece somente quando há eventos pendentes. Em falhas da busca,
-o botão de nova tentativa fica disponível junto ao aviso, mesmo sem eventos pendentes.
+a confirmação. O formulário de detecção aparece somente quando há eventos pendentes.
+O botão de busca manual permanece disponível sem pendências, inclusive após uma busca vazia
+ou uma falha da fonte.
 
 Sem alterar o schema ou sua versão, `PortfolioDAO` reutiliza `b3_import_records` como registro
 de origem de proventos: `event_kind='DIVIDEND'`, `transaction_id=NULL`, chaves nos namespaces
@@ -624,12 +625,14 @@ uma nova consulta não duplica nem sobrescreve pagamentos, mesmo se o Yahoo muda
 
 `core/daos/dividend_sync.py` contém a implementação interna das escritas de proventos do DAO.
 As decisões e pagamentos são gravados sob `BEGIN IMMEDIATE`; a revisão local também avança
-quando apenas a decisão muda. A importação B3 sugere parcelas Yahoo ainda não conciliadas e
-pagamentos manuais ou legados do mesmo ticker/tipo com data ou total divergente, mesmo após a
+quando apenas a decisão muda. A importação B3 sugere parcelas Yahoo ainda não conciliadas
+do mesmo ticker, inclusive quando o tipo confirmado difere do informado pela B3, e pagamentos
+manuais ou legados do mesmo ticker/tipo com data ou total divergente, mesmo após a
 data prevista; divergências de total em pagamentos B3 da mesma
 data também exigem revisão. Divergências de quantidade ou unitário conhecidos exigem
 revisão mesmo quando data e total coincidem. O usuário escolhe associar ou importar separadamente. A associação
-atualiza a data e o total pela B3, preservando metadados existentes quando a B3 não os informa.
+atualiza tipo, data e total pela B3, preservando metadados existentes quando a B3 não os informa.
+Pagamentos já conciliados pela B3 continuam sujeitos ao filtro por tipo.
 As escolhas são validadas antes de importar operações e os registros escolhidos são revalidados
 sob bloqueio. Cada linha permanece atômica; reimportar a origem já confirmada não a duplica.
 O contexto do lote distingue novos créditos importados na mesma execução de pagamentos

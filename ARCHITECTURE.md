@@ -320,7 +320,7 @@ somente leitura e pode ser substituído por uma nova versão sem migração.
 | `transactions` | Registro das movimentações da carteira: `id`, `date`, `ticker`, `transaction_type`, `quantity`, `unit_price`, `fees`, `transaction_origin` e `cost_status` (`KNOWN`, `PENDING`, `CORRECTED`). `date` mantém a data manual nas operações conciliadas e recebe a data da planilha nas novas importações. `transaction_origin` identifica a origem do cadastro: operações manuais permanecem `MANUAL` após a conciliação; novas importações são `B3`. Os tipos persistidos são `BUY`, `SELL` e `GROUP`; entradas de custódia usam o efeito de quantidade de `BUY`, mas sua origem as exclui de aportes e metas de compras. |
 | `b3_import_records` | Identidade SHA-256 dos campos normalizados da movimentação, registro original normalizado em JSON, natureza do evento, vínculo opcional à transação e decisão de importação. Transferências ignoradas e conciliações de grupos permanecem registradas sem uma transação agregada. |
 | `b3_manual_reconciliations` | Liga uma linha B3 a uma ou mais operações manuais preservadas individualmente. Cada operação manual só pode integrar uma conciliação. |
-| `dividends` | Proventos recebidos: `id`, `date`, `ticker`, `dividend_type`, `total_value` e os campos opcionais `quantity` e `unit_price` (`REAL`); os tipos são `DIVIDEND`, `JCP` e `YIELD`. |
+| `dividends` | Pagamentos confirmados, recebidos ou futuros: `id`, `date` (pagamento), `ticker`, `dividend_type`, `total_value` e os campos opcionais `quantity` e `unit_price` (`REAL`); os tipos são `DIVIDEND`, `JCP` e `YIELD`. O dia local determina se o pagamento ainda está a receber. |
 | `tracked_market_assets` | Tickers acompanhados manualmente. Os ativos em carteira são combinados com essa lista no monitor de mercado. |
 | `dividend_corrections` | Ajustes de dividendos por ticker e por ano, identificados por `(ticker, year)`. |
 | `planning_configuration` | Configuração única (`id = 1`): data de nascimento, idade de aposentadoria, dados de renda, taxa de juros anual, salário mínimo, patrimônio inicial, modalidade de renda, parâmetros do modelo de Bazin e data opcional de início do planejamento. |
@@ -579,6 +579,84 @@ somente metadados ausentes de um recebimento identificado por data, ticker, tipo
 Reimportações idênticas não duplicam registros. Dados já conhecidos não são sobrescritos;
 divergências e múltiplas correspondências antigas impedem a complementação. O retorno indica
 inserção ou complementação, refletida na contagem de proventos da mensagem de importação.
+
+### Proventos confirmados e pagamentos futuros (#67)
+
+`DividendProvider`, em `core/ports.py`, fornece eventos por ticker e data inicial. O adapter
+`YahooDividendProvider`, conectado em `app.py`, consulta tickers normalizados com `.SA` e retorna
+data-ex e valor por ação. Não infere tipo, data-com, quantidade remunerada, imposto ou pagamento.
+Ausência de eventos retorna uma coleção vazia; falhas remotas propagam para a orquestração e
+são apresentadas como indisponibilidade, sem produzir um recebimento de valor zero.
+
+`AssetService` é dono dos casos de uso de consulta, revisão, confirmação e ajuste de datas.
+`services/_dividend_sync.py` implementa internamente a seleção de eventos ainda não revisados,
+sugere a quantidade histórica anterior à data-ex e exige confirmação de tipo, quantidade,
+valor por ação e datas das parcelas. A consulta só lê a carteira; as views não calculam totais.
+O total de cada nova parcela é quantidade × unitário, arredondado em centavos por `ROUND_HALF_UP`.
+Associar um pagamento já cadastrado preserva os seus valores. A confirmação de todas as parcelas
+é atômica; uma revisão obsoleta ou associação inválida provoca rollback.
+`prepare_dividend_search()` captura o ledger, decisões e provedor na thread de apresentação;
+a consulta em segundo plano usa apenas esse snapshot e o provedor remoto, sem acessar SQLite
+ou o estado da sessão. A quantidade histórica usa a projeção existente sobre esse ledger.
+Falhas por ticker só são apresentadas como indisponibilidade quando há posição positiva na
+data atual. Ativos zerados continuam elegíveis para eventos com direito histórico, sem avisos
+de indisponibilidade da fonte.
+O resultado apresenta em `suggestions` apenas eventos ainda não revisados e sem possível
+correspondência com pagamentos cadastrados. Confirmados ou ignorados são excluídos pela
+identidade Yahoo. Pagamentos do mesmo ativo, ainda não vinculados a outro evento, com data
+igual ou posterior à data-ex e unitário menor ou aproximadamente igual ao anunciado, suprimem
+silenciosamente a sugestão. O filtro admite parcelas, valores líquidos e arredondamento a três
+casas; metadados ausentes usam total/quantidade informada ou estimada. Trata-se de uma heurística
+que pode ocultar eventos distintos; não registra uma decisão, não associa nem altera recibos.
+Pagamentos sem essa correspondência permanecem disponíveis para associação explícita durante
+a confirmação. O formulário de detecção aparece somente quando há eventos pendentes.
+O botão de busca manual permanece disponível sem pendências, inclusive após uma busca vazia
+ou uma falha da fonte.
+
+Sem alterar o schema ou sua versão, `PortfolioDAO` reutiliza `b3_import_records` como registro
+de origem de proventos: `event_kind='DIVIDEND'`, `transaction_id=NULL`, chaves nos namespaces
+`yahoo-dividend:` e `b3-dividend:`, e decisões `DIVIDEND_CONFIRMED`, `DIVIDEND_IGNORED` ou
+`DIVIDEND_B3`. O JSON Yahoo preserva ticker, data-ex, valor original e IDs das parcelas;
+o registro B3 identifica os pagamentos associados e preserva a linha de origem, incluindo
+instituição e ocorrência para distinguir créditos iguais. Essas linhas não participam dos joins de
+transações nem das conciliações de negociações. Permanecem nos backups da carteira, dispensando
+um arquivo auxiliar. O ID do evento Yahoo depende de ticker/data-ex, e não do valor corrigível:
+uma nova consulta não duplica nem sobrescreve pagamentos, mesmo se o Yahoo mudar o valor.
+
+`core/daos/dividend_sync.py` contém a implementação interna das escritas de proventos do DAO.
+As decisões e pagamentos são gravados sob `BEGIN IMMEDIATE`; a revisão local também avança
+quando apenas a decisão muda. A importação B3 sugere parcelas Yahoo ainda não conciliadas
+do mesmo ticker, inclusive quando o tipo confirmado difere do informado pela B3, e pagamentos
+manuais ou legados do mesmo ticker/tipo com data ou total divergente, mesmo após a
+data prevista; divergências de total em pagamentos B3 da mesma
+data também exigem revisão. Divergências de quantidade ou unitário conhecidos exigem
+revisão mesmo quando data e total coincidem. O usuário escolhe associar ou importar separadamente. A associação
+atualiza tipo, data e total pela B3, preservando metadados existentes quando a B3 não os informa.
+Pagamentos já conciliados pela B3 continuam sujeitos ao filtro por tipo.
+As escolhas são validadas antes de importar operações e os registros escolhidos são revalidados
+sob bloqueio. Cada linha permanece atômica; reimportar a origem já confirmada não a duplica.
+O contexto do lote distingue novos créditos importados na mesma execução de pagamentos
+anteriores, evitando solicitar conciliação entre linhas legítimas do próprio extrato.
+
+`PortfolioReadService` e `PortfolioProjection` consideram somente pagamentos com data menor
+ou igual ao dia de referência para totais recebidos, séries históricas, YoC, preço ajustado e
+reinvestimento. As tabelas mantêm os futuros com o sufixo `- a receber`. Ao chegar a data
+informada, o registro passa automaticamente a recebido, por convenção explícita do usuário,
+sem comprovar um crédito bancário. O ajuste de data altera somente `dividends.date` e preserva
+quantidade e valor. O cache contém o ledger bruto; datas e totais são classificados novamente
+em cada leitura, inclusive após a mudança de dia sem qualquer escrita no SQLite.
+
+`DividendSyncWidget` aparece na área comum de `app.py`, acima da navegação, inclusive no Dashboard.
+A busca inicial é automática, executada em segundo plano por um executor compartilhado com
+dois workers, e apresenta os tickers com eventos pendentes fora do expander. Um fragmento
+acompanha o término sem bloquear a navegação; resultados obsoletos são descartados.
+O resultado e a tentativa são reutilizados durante a sessão por carteira, geração, dia e revisão,
+inclusive em caso de falha, para não repetir consultas a cada rerun. O botão permite consultar
+novamente; falhas são visíveis e preservam o uso offline. O formulário exige revisar antes de salvar
+e oferece associação a pagamentos existentes. O estado é separado por carteira, geração,
+dia e revisão; mudanças invalidam a confirmação. Logs registram apenas eventos sanitizados.
+O formulário de ajuste de data é renderizado exclusivamente em **Ativos → Operações** por
+`render_reschedule()`, com estado separado da detecção global de proventos.
 
 ### Decisão de desenho: transições dos editores de metas (#91)
 

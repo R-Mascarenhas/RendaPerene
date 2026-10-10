@@ -13,6 +13,7 @@ from core.strings import (
 )
 from core.utils.formatter import Formatter
 from services.assets_service import AssetService
+from views.components.dividend_sync import DividendSyncWidget
 from views.components.goal_editor_state import invalidate_goal_editor_state
 from views.components.manual_entry import ManualEntryWidget
 from views.components.portfolio_activity import PortfolioActivityWidget
@@ -36,6 +37,8 @@ class OperationsView:
 
         with measure_navigation("ativos.operacoes", "pending_costs"):
             self._render_pending_costs()
+
+        DividendSyncWidget().render_reschedule()
 
         PortfolioActivityWidget().render_history()
 
@@ -128,21 +131,24 @@ class OperationsView:
                         reconciliation_candidates = AssetService.find_b3_manual_trade_candidates(
                             df_excel
                         )
+                        dividend_candidates = AssetService.find_b3_dividend_candidates(df_excel)
                         serial = st.session_state.get("b3_import_preview_serial", 0) + 1
                         st.session_state.b3_import_preview_serial = serial
                         preview = {
                             "context": preview_context,
                             "frame": df_excel,
                             "candidates": reconciliation_candidates,
+                            "dividend_candidates": dividend_candidates,
                             "serial": serial,
                         }
                         st.session_state.b3_import_preview = preview
                     df_excel = preview["frame"]
                     reconciliation_candidates = preview["candidates"]
-                    if reconciliation_candidates:
+                    dividend_candidates = preview["dividend_candidates"]
+                    if reconciliation_candidates or dividend_candidates:
                         st.info(
-                            "Encontramos operações manuais que podem corresponder a linhas da B3. "
-                            "Confira cada sugestão; a importação só vincula operações que você confirmar."
+                            "Encontramos lançamentos que podem corresponder a linhas da B3. "
+                            "Confira cada sugestão; a importação só vincula registros que você confirmar."
                         )
                         links = {}
                         choices_complete = True
@@ -203,6 +209,11 @@ class OperationsView:
                             duplicate_links = len(set(linked_transaction_ids)) != len(
                                 linked_transaction_ids
                             )
+                            dividend_links, dividend_complete = self._render_dividend_choices(
+                                dividend_candidates,
+                                preview["serial"],
+                            )
+                            choices_complete = choices_complete and dividend_complete
                             if duplicate_links:
                                 st.error(
                                     "Cada lançamento manual pode corresponder a apenas uma linha B3."
@@ -213,7 +224,13 @@ class OperationsView:
                                 disabled=not choices_complete or duplicate_links,
                             )
                         if submitted and choices_complete and not duplicate_links:
-                            self._process_b3_frame(df_excel, file_key, links)
+                            self._process_b3_frame(
+                                df_excel,
+                                file_key,
+                                links,
+                                dividend_links,
+                                preview["context"][-1],
+                            )
                     else:
                         self._process_b3_frame(df_excel, file_key, {})
                 except Exception as e:
@@ -232,7 +249,13 @@ class OperationsView:
                 st.session_state.pop(key, None)
 
     @staticmethod
-    def _process_b3_frame(df_excel, file_key, manual_trade_links):
+    def _process_b3_frame(
+        df_excel,
+        file_key,
+        manual_trade_links,
+        dividend_links=None,
+        expected_revision=None,
+    ):
         progress_bar = st.progress(0.0, text="Lendo arquivo Excel da B3...")
         last_pct = -1.0
 
@@ -251,6 +274,8 @@ class OperationsView:
             df_excel,
             progress_callback=update_progress,
             manual_trade_links=manual_trade_links,
+            dividend_links=dividend_links,
+            expected_revision=expected_revision,
         )
         progress_bar.progress(1.0, text="✅ Importação concluída!")
         st.session_state.b3_import_success_msg = MSG_SMART_IMPORTER_SUCCESS.format(
@@ -261,3 +286,43 @@ class OperationsView:
         st.session_state.b3_uploader_key += 1
         invalidate_goal_editor_state()
         st.rerun()
+
+    @staticmethod
+    def _render_dividend_choices(candidates, serial):
+        links = {}
+        complete = True
+        if candidates:
+            st.info(
+                "Há pagamentos B3 que podem corresponder a proventos já cadastrados. "
+                "Ao associar, a data e os valores da B3 terão prioridade."
+            )
+        for index, candidate in enumerate(candidates):
+            b3 = candidate["b3"]
+            st.write(
+                f"{b3['ticker']} · {b3['date']} · {Formatter.format_currency(b3['total_value'])}"
+            )
+            if b3.get("institution"):
+                st.caption(f"Instituição na B3: {b3['institution']}")
+            selected = st.selectbox(
+                "Pagamento correspondente",
+                ["new", *[row["id"] for row in candidate["payments"]]],
+                index=None,
+                placeholder="Selecione uma opção",
+                key=f"b3_match_dividend_{serial}_{index}",
+                format_func=lambda item, payments=candidate["payments"]: (
+                    "Importar como pagamento separado"
+                    if item == "new"
+                    else DividendSyncWidget._payment_label(
+                        next(row for row in payments if row["id"] == item)
+                    )
+                ),
+            )
+            if selected is None:
+                complete = False
+            else:
+                links[candidate["source_key"]] = None if selected == "new" else selected
+        selected_ids = [value for value in links.values() if value is not None]
+        if len(selected_ids) != len(set(selected_ids)):
+            st.error("Cada pagamento pode corresponder a apenas uma linha B3.")
+            complete = False
+        return links, complete

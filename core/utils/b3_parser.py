@@ -50,6 +50,7 @@ class B3ExcelParserAdapter:
         dividends_list = []
         occurrence_counts = {}
         identity_occurrence_counts = {}
+        dividend_occurrence_counts = {}
         total_rows = len(df)
 
         for idx, (_, row) in enumerate(df.iterrows()):
@@ -224,6 +225,21 @@ class B3ExcelParserAdapter:
                     dividend_type = "DIVIDEND" if "Dividendo" in movement else "JCP"
                     if "Rendimento" in movement:
                         dividend_type = "YIELD"
+                    raw_institution = row.get("Instituição", "")
+                    institution = self._canonical_text(
+                        "" if pd.isna(raw_institution) else raw_institution
+                    )
+                    dividend_identity = (
+                        date,
+                        ticker,
+                        dividend_type,
+                        total_value,
+                        quantity,
+                        price,
+                        institution,
+                    )
+                    occurrence = dividend_occurrence_counts.get(dividend_identity, 0) + 1
+                    dividend_occurrence_counts[dividend_identity] = occurrence
                     dividends_list.append(
                         {
                             "ticker": ticker,
@@ -232,6 +248,8 @@ class B3ExcelParserAdapter:
                             "total_value": total_value,
                             "quantity": quantity,
                             "unit_price": price,
+                            "institution": institution,
+                            "occurrence": occurrence,
                         }
                     )
 
@@ -278,7 +296,16 @@ class B3ExcelParserAdapter:
                 transactions_df.loc[matched, "matched_custody_transfer"] = True
         dividends_df = pd.DataFrame(
             dividends_list,
-            columns=["ticker", "date", "dividend_type", "total_value", "quantity", "unit_price"],
+            columns=[
+                "ticker",
+                "date",
+                "dividend_type",
+                "total_value",
+                "quantity",
+                "unit_price",
+                "institution",
+                "occurrence",
+            ],
         )
 
         return transactions_df, dividends_df

@@ -411,6 +411,7 @@ st.set_page_config(page_title=f"Renda Perene v{app_version}", page_icon="💼", 
 
 # Configure dependency injection adapters for Streamlit presentation environment
 from core.utils.b3_parser import B3ExcelParserAdapter
+from core.utils.dividend_provider import YahooDividendProvider
 from services.assets_service import AssetService
 from services.goals_service import GoalService
 from services.market_analysis_service import MarketAnalysisService
@@ -442,6 +443,7 @@ AssetService.set_adapters(
     market_analysis_api=market_analysis,
     excel_parser=B3ExcelParserAdapter(),
     read_provider=PortfolioReadService.get_default(),
+    dividend_provider=YahooDividendProvider(),
 )
 SimulationService.set_adapters(portfolio_provider=PortfolioReadService.get_default())
 GoalService.set_adapters(
@@ -462,8 +464,11 @@ render_update_notification(app_version, update_checker)
 
 from core.strings import TAB_ASSETS, TAB_DASHBOARD, TAB_PLANNING
 from views.assets_view import AssetsView
+from views.components.dividend_sync import DividendSyncWidget
 from views.dashboard_view import DashboardView
 from views.planning_view import PlanningView
+
+DividendSyncWidget().render()
 
 selected_tab = st.segmented_control(
     "Navegação Principal",

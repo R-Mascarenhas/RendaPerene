@@ -1,25 +1,25 @@
-## Novidades em 0.11.1
+## Novidades em 0.12.0
 
-- Cotações, históricos e indicadores econômicos são atualizados em segundo plano, sem bloquear
-  a navegação. A carteira abre com os dados locais e o último dado de mercado válido; a interface
-  informa a idade dos dados, as atualizações em andamento e eventuais falhas de conexão.
-- Enquanto faltam cotações, campos dependentes delas mostram **N/D**, e patrimônio total,
-  rentabilidade, pesos e gráficos de composição aguardam dados completos. Indicadores econômicos
-  sem resposta usam referências provisórias identificadas na tela. A atualização do salário mínimo
-  pelo BCB mantém o valor atual até receber e salvar uma resposta válida.
-- O cache de mercado e as projeções locais passam a ser reutilizados após reiniciar a aplicação,
-  reduzindo consultas e recálculos. O cache é local, descartável e fica fora dos backups da carteira.
-- Em **Ativos → Carteira**, cada ticker tem uma aba, e apenas o ativo selecionado é carregado.
-  Os formulários **Registrar movimentação** e **Meta anual deste ativo** são preparados ao abrir
-  seus blocos expansíveis; indicadores, gráficos e históricos aparecem automaticamente.
-- A importação da B3 permite conciliar uma operação consolidada com um ou mais lançamentos
-  manuais correspondentes, evitando duplicidade mediante confirmação. As sugestões comparam
-  ticker, tipo, datas, quantidade total e preço médio ponderado. Você escolhe os lançamentos
-  existentes ou **Importar como nova operação** antes de confirmar; datas, taxas e origem manual
-  são preservadas, e um lançamento não pode ser vinculado a mais de uma linha B3.
-- As escolhas da conciliação reutilizam a prévia da planilha e são revalidadas na confirmação.
-  Sugestões são renovadas ao mudar o arquivo ou a carteira. Se houver combinações demais para
-  comparar com segurança, a importação é interrompida antes de gravar a planilha.
+- Em **Ativos → Operações**, proventos detectados no Yahoo Finance passam por confirmação
+  antes de entrar na carteira. A data do Yahoo é apresentada como data-ex; você confere o tipo,
+  a quantidade remunerada, o valor por ação e as datas de pagamento de cada parcela antes de salvar.
+  Também é possível associar um pagamento existente ou ignorar o evento, preservando as decisões
+  na carteira. Novas consultas ficam disponíveis pelo botão **Buscar proventos no Yahoo Finance**.
+- Pagamentos com datas futuras aparecem como **a receber** e só entram nos indicadores de
+  proventos recebidos na data informada. Se houver adiamento, a data pode ser ajustada em
+  **Ativos → Operações**, mantendo a quantidade e o valor cadastrados.
+- A importação da B3 permite associar proventos a parcelas já cadastradas, inclusive pagamentos
+  confirmados a partir do Yahoo com tipo diferente. A associação atualiza os dados da parcela
+  com as informações da B3, evitando um novo recebimento. Transferências de direitos a proventos
+  entre custodiantes deixam de ser tratadas como pagamentos.
+- O planejamento automático de carteiras sem movimentações começa na data atual, permitindo
+  simular a aposentadoria antes de registrar o primeiro investimento.
+- As leituras da carteira, os cenários de planejamento e a observação dos dados de mercado
+  passam a usar fluxos compartilhados. A edição de metas anuais mantém as mesmas regras em
+  Planejamento e no detalhe do ativo, e os formulários de movimentação manual foram simplificados.
+- A conciliação de operações B3 usa as mesmas regras na sugestão e na confirmação, revalidando
+  os lançamentos sob bloqueio do banco local para rejeitar vínculos que deixaram de corresponder
+  à operação ou já foram utilizados.
 
 ## Sistemas suportados
 

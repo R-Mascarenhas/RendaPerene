@@ -154,6 +154,48 @@ def test_drive_quota_error_keeps_service_connected_and_retries_next_interval(tmp
     assert len(service.provider.uploads) == 1
 
 
+def test_retryable_token_refresh_failure_retries_without_new_google_login(tmp_path, monkeypatch):
+    import json
+    from datetime import datetime
+    from google.auth.exceptions import RefreshError
+    from google.oauth2.credentials import Credentials
+    from tests.test_google_drive_backup import FakeHTTP, Response, make_provider
+
+    service, backups, clock, paths = make_service(tmp_path)
+    create_portfolio(paths, 'Família')
+    service.connect()
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
+    drive, vault = make_provider(FakeHTTP([Response({'files': []})]))
+    credential = json.loads(vault.content)
+    credential['expiry'] = '2000-01-01T00:00:00Z'
+    vault.content = json.dumps(credential)
+    original = vault.content
+    attempts = []
+
+    def refresh(credentials, request):
+        attempts.append(True)
+        if len(attempts) == 1:
+            raise RefreshError('synthetic response', retryable=True)
+        credentials.token = 'renewed-access'
+        credentials.expiry = datetime(2099, 1, 1)
+
+    monkeypatch.setattr(Credentials, 'refresh', refresh)
+    service.provider.list_backups = drive.list_backups
+    clock.value = 600
+    service.check_due()
+    assert service.status().connected
+    assert not service.provider.uploads
+    assert vault.content == original
+    clock.value = 1199
+    service.check_due()
+    assert len(attempts) == 1
+    clock.value = 1200
+    service.check_due()
+    assert service.status().connected
+    assert len(service.provider.uploads) == 1
+    assert len(attempts) == 2
+
+
 def test_legacy_duplicate_identity_selection_does_not_upload_either_copy(tmp_path):
     service, backups, clock, paths = make_service(tmp_path)
     create_portfolio(paths, 'Família')

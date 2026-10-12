@@ -161,6 +161,30 @@ def test_drive_unauthorized_error_requires_reconnection():
         provider.list_backups()
 
 
+@pytest.mark.parametrize('retryable', [True, False])
+def test_refresh_errors_preserve_connection_only_when_retryable(monkeypatch, retryable):
+    from google.auth.exceptions import RefreshError
+    from google.oauth2.credentials import Credentials
+
+    http = FakeHTTP([])
+    provider, vault = make_provider(http)
+    credential = json.loads(vault.content)
+    credential['expiry'] = '2000-01-01T00:00:00Z'
+    vault.content = json.dumps(credential)
+    original = vault.content
+
+    def fail_refresh(credentials, request):
+        raise RefreshError('synthetic sensitive response', retryable=retryable)
+
+    monkeypatch.setattr(Credentials, 'refresh', fail_refresh)
+    with pytest.raises(CloudBackupError) as failure:
+        provider.list_backups()
+    assert isinstance(failure.value, CloudAuthorizationError) is (not retryable)
+    assert 'synthetic' not in str(failure.value)
+    assert vault.content == original
+    assert not http.calls
+
+
 def test_concurrently_created_folders_converge_new_uploads_without_deleting_backups():
     http = FakeHTTP([
         Response({'files': []}), Response({'files': []}),

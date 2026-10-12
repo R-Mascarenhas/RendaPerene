@@ -261,7 +261,7 @@ class GoogleDriveBackupProvider:
             response.close()
 
     def _token(self) -> str:
-        from google.auth.exceptions import TransportError
+        from google.auth.exceptions import RefreshError, TransportError
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
 
@@ -312,6 +312,14 @@ class GoogleDriveBackupProvider:
         except (TransportError, requests.RequestException):
             raise CloudBackupError(
                 "Não foi possível renovar a conexão Google. Tente novamente mais tarde."
+            ) from None
+        except RefreshError as error:
+            if error.retryable:
+                raise CloudBackupError(
+                    "Não foi possível renovar a conexão Google. Tente novamente mais tarde."
+                ) from None
+            raise CloudAuthorizationError(
+                "A autorização Google expirou ou foi revogada. Conecte novamente."
             ) from None
         except Exception:
             raise CloudAuthorizationError(

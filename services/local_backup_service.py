@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from core.application_paths import ApplicationPaths
+from core.cloud_backup.models import CloudBackupArtifact
+from core.cloud_backup.package import CloudBackupPackageService
 from core.encrypted_backup_package import BackupPackageError, EncryptedBackupPackageService
 from core.ports import (
     PortfolioBackupIdentityError,
@@ -82,6 +84,43 @@ class LocalBackupService:
         self._source_factory = source_factory
         self._paths = application_paths
         self._app_version = app_version
+
+    def create_cloud_backup(
+        self, selection: PortfolioBackupSelection, machine_name: str
+    ) -> CloudBackupArtifact:
+        """Package one consistent snapshot and remove its unencrypted staging files."""
+        if not isinstance(machine_name, str) or not machine_name.strip() or len(machine_name) > 60:
+            raise BackupCreationError("Informe um nome de computador de até 60 caracteres.")
+        result = self.create_backup((selection,))
+        try:
+            entry = result.manifest["portfolios"][0]
+            database = result.directory / entry["relative_path"] / "backup.sqlite3"
+            digest = self._paths.snapshot_content_digest(database)
+            fingerprint = hashlib.sha256(
+                json.dumps(
+                    [digest, selection.display_name, machine_name, self._app_version],
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ).hexdigest()
+            return CloudBackupArtifact(
+                CloudBackupPackageService().create(result.directory, machine_name),
+                entry["portfolio_id"],
+                result.manifest["installation_id"],
+                selection.display_name,
+                machine_name,
+                fingerprint,
+            )
+        except (OSError, ValueError) as error:
+            raise BackupCreationError(
+                "Não foi possível preparar o pacote de backup na nuvem."
+            ) from error
+        finally:
+            try:
+                shutil.rmtree(result.directory)
+            except OSError as error:
+                raise BackupCreationError(
+                    "A limpeza do backup temporário falhou. Verifique a pasta de backups locais."
+                ) from error
 
     def create_backup(
         self,

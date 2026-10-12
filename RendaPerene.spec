@@ -19,6 +19,18 @@ datas = [
 binaries = []
 hiddenimports = []
 
+# Desktop OAuth client configuration contains no user tokens and is optional.
+oauth_client = ROOT / "google-oauth-client.json"
+if oauth_client.is_file():
+    from core.cloud_backup.google_drive import load_oauth_client
+
+    load_oauth_client(oauth_client)
+    datas.append((str(oauth_client), "."))
+for package in ("google.auth", "google.oauth2", "google_auth_oauthlib", "keyring"):
+    hiddenimports.extend(collect_submodules(package))
+for distribution in ("google-auth", "google-auth-oauthlib", "keyring"):
+    datas.extend(copy_metadata(distribution))
+
 # Streamlit and Plotly load templates, static files, and plugins dynamically.
 for package in ("streamlit", "plotly", "openpyxl"):
     package_datas, package_binaries, package_hiddenimports = collect_all(package)

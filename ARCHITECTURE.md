@@ -6,6 +6,42 @@ O RendaPerene é uma aplicação Python e Streamlit para acompanhar carteiras de
 
 A aplicação prioriza o armazenamento local. Ela não utiliza banco de dados em nuvem, autenticação de usuários, telemetria ou scraping automatizado do portal da B3.
 
+### Backup opcional no Google Drive (#58)
+
+A [ADR-0001](docs/adr/0001-optional-google-drive-backup.md) define as decisões de autorização,
+proteção e recuperação. O recurso mantém os SQLite locais como fonte autoritativa e reutiliza
+os mecanismos existentes de snapshot, validação e publicação com rollback.
+
+Os módulos ficam em `core/cloud_backup/` (modelos, pacote, estado e adaptadores),
+`services/cloud_backup/` (coordenação e execução) e `views/cloud_backup/` (interface e popup).
+Os protocolos permanecem em `core/ports.py`; `app.py` conecta as implementações de produção.
+
+`CloudBackupService` coordena seleção, descoberta e envio. `CloudBackupRuntime` executa uma
+operação por vez fora do Streamlit; um fragmento acompanha os resultados e agenda as verificações.
+`CloudBackupStateStore` publica preferências não secretas por conta em `cloud-backup-state.json`,
+com gravação atômica e lock entre processos. `SystemCredentialVault` mantém tokens no cofre do SO.
+
+`BrowserAuthorization` entrega a URL de consentimento somente à sessão que iniciou a conexão.
+A interface abre o popup no clique e o direciona ao Google quando a URL está pronta, com link
+alternativo e cancelamento. O backend mantém listener loopback, verificador PKCE e troca de tokens.
+Os eventos `google_oauth.*` registram as etapas sem URLs, códigos, tokens ou dados da conta.
+
+`GoogleDriveBackupProvider` usa listagem paginada e `appProperties` para identificar a pasta e
+cada par carteira/instalação; atualiza pelo ID do arquivo, sem exclusão prévia nem horário local.
+`LocalBackupService.create_cloud_backup()` cria o snapshot completo e remove os arquivos temporários.
+`core/cloud_backup/package.py` gera ZIPs `.rpbc`, com `package_kind=rendaperene-cloud-backup`,
+`cloud_format_version=1`, manifesto, metadados e um SQLite. A restauração valida estrutura,
+limites, hashes, identidade e schema; o formato criptografado `.rpb` permanece independente.
+
+`LocalRestoreService` fixa destino, identidade recebida, identidade substituída, geração e
+conteúdo locais. Revalida essas condições sob lock antes de publicar, preservando cópia anterior
+e rollback. Um identificador já instalado em outro arquivo impede duplicação. Todas as tabelas,
+inclusive decisões sobre proventos, participam do snapshot e da detecção de mudanças no conteúdo.
+Não há nova migração do schema das carteiras para essa integração.
+
+O [guia de configuração](docs/google-drive-setup.md) descreve a preparação de
+`GOOGLE_OAUTH_CLIENT_JSON` pelo workflow, o empacotamento e a validação em Windows e Ubuntu.
+
 ## Execução e composição
 
 A interface requer Streamlit 1.55.0 ou superior, conforme `pyproject.toml`. Esse mínimo
@@ -426,6 +462,11 @@ O importador da B3 recebe a planilha selecionada pelo usuário, normaliza suas c
 - Os cálculos dos aportes para aposentadoria usam pagamentos de anuidade antecipada (`type = 1`) por meio de `SimulationService.pmt_annuity_due()`. A soma do capital investido preserva somente custos conhecidos, inclusive a parcela conhecida de posições com aquisições pendentes; não estima os custos faltantes. Uma base inicial automática com custo pendente impede a simulação até a regularização.
 - As projeções locais descartáveis do Dashboard e de Ativos usam uma revisão monotônica armazenada no SQLite. Gatilhos avançam a revisão após mudanças de transações, proventos, ativos acompanhados e correções anuais; a chave também inclui a geração publicada do arquivo, impedindo reutilização entre carteiras ou após restauração. Os caches remotos Yahoo e BCB não são limpos por essas mutações.
 - `core/screen_cache.py` guarda apenas dados reconstruíveis em `cache/screens.db`, fora de `database/` e `backups/`. O arquivo tem esquema próprio versionado, payload JSON tipado com checksum e limites de 8 MiB por entrada e 128 MiB de payload total; nunca recebe operações ou credenciais como fonte autoritativa. Erro de leitura, gravação ou versão desconhecida desativa apenas aquele acesso ao cache. `StreamlitCachedPortfolioRepository` guarda snapshots descartáveis do ledger, separados das cotações, identificados por carteira, geração e revisão. A versão da chave foi alterada para ignorar as projeções anteriores. As consultas aplicam catálogo e filtros de data atuais depois do cache local e obtêm os dados de mercado novamente de suas interfaces públicas. Resultados enriquecidos não são persistidos, evitando composição desatualizada após resposta remota, troca de catálogo ou mudança de mês.
+
+Na recuperação do ledger persistido em JSON, `StreamlitCachedPortfolioRepository` desabilita
+a conversão automática de datas do pandas. As colunas `date` mantêm o texto ISO usado pelo
+SQLite e pelos filtros e agrupamentos históricos, inclusive após reiniciar a aplicação.
+A projeção histórica também aceita tabelas vazias cujas datas tenham tipo inferido numérico.
 
 ## Integrações externas
 

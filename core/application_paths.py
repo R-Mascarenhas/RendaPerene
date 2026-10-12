@@ -299,6 +299,7 @@ class PortfolioRestoreTarget:
     last_modified_at_utc: str | None
     state_token: str
     requested_name: str | None = None
+    replaced_portfolio_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -398,7 +399,11 @@ class ApplicationPaths:
         return self.database_dir / filename
 
     def plan_portfolio_restore(
-        self, portfolio_id: str, requested_name: str | None = None
+        self,
+        portfolio_id: str,
+        requested_name: str | None = None,
+        *,
+        replace_filename: str | None = None,
     ) -> PortfolioRestoreTarget:
         """Resolve one stable portfolio identity to a pinned local destination."""
         portfolio_id = self._canonical_portfolio_id(portfolio_id)
@@ -409,6 +414,29 @@ class ApplicationPaths:
         if len(matches) > 1:
             raise PortfolioRestoreConflictError(
                 "More than one local portfolio has the requested identity."
+            )
+        if replace_filename is not None:
+            if requested_name is not None:
+                raise ValueError("Choose one restore destination mode.")
+            database = self.portfolio_database(replace_filename)
+            if (
+                database not in self.inspect_portfolios().valid
+                or portfolio_deletion_marker(database).exists()
+            ):
+                raise PortfolioRestoreConflictError("The chosen local portfolio is unavailable.")
+            replaced_id = self._read_portfolio_id(database)
+            if replaced_id is None or any(match != database for match in matches):
+                raise PortfolioRestoreConflictError(
+                    "The portfolio identity already exists at another destination."
+                )
+            return PortfolioRestoreTarget(
+                portfolio_id=portfolio_id,
+                filename=database.name,
+                expected_generation=self.database_generation(database),
+                replaces_existing=True,
+                last_modified_at_utc=self._portfolio_last_modified_at_utc(database),
+                state_token=self._portfolio_content_token(database),
+                replaced_portfolio_id=replaced_id,
             )
         if matches:
             if requested_name is not None:
@@ -627,7 +655,12 @@ class ApplicationPaths:
             for candidate in self.inspect_portfolios().valid
             if self._read_portfolio_id(candidate) == target.portfolio_id
         }
-        expected_matches = {database.resolve()} if target.replaces_existing else set()
+        expected_matches = (
+            {database.resolve()}
+            if target.replaces_existing
+            and target.replaced_portfolio_id in (None, target.portfolio_id)
+            else set()
+        )
         if identity_matches != expected_matches:
             raise PortfolioRestoreConflictError(
                 "The local portfolio identity mapping changed after preview."
@@ -637,7 +670,9 @@ class ApplicationPaths:
                 raise PortfolioRestoreConflictError(
                     "The local portfolio is no longer a valid SQLite database."
                 )
-            if self._read_portfolio_id(database) != target.portfolio_id:
+            if self._read_portfolio_id(database) != (
+                target.replaced_portfolio_id or target.portfolio_id
+            ):
                 raise PortfolioRestoreConflictError(
                     "The local portfolio identity changed after preview."
                 )
@@ -711,6 +746,21 @@ class ApplicationPaths:
         content_digest = ApplicationPaths._sqlite_content_digest(database)
         marker_exists = portfolio_deletion_marker(database).exists()
         return hashlib.sha256(f"{content_digest}:{marker_exists}".encode("ascii")).hexdigest()
+
+    @staticmethod
+    def snapshot_content_digest(database: Path) -> str:
+        """Fingerprint a completed snapshot independently of SQLite page layout."""
+        return ApplicationPaths._sqlite_content_digest(database)
+
+    @property
+    def cloud_backup_state_file(self) -> Path:
+        return self.data_root / "cloud-backup-state.json"
+
+    @contextmanager
+    def cloud_backup_lock(self):
+        """Serialize automatic backup state and publication across local processes."""
+        with _exclusive_file_lock(self.data_root / ".cloud-backup.lock", wait_for_readers=False):
+            yield
 
     @staticmethod
     def _portfolio_state_token(database: Path) -> str:

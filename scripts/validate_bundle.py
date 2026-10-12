@@ -8,7 +8,15 @@ def main() -> int:
     bundle = Path(sys.argv[1])
     expected_version = sys.argv[2]
     resource_root = bundle / "_internal" if (bundle / "_internal").is_dir() else bundle
-    required = ("app.py", "assets.csv", "version.txt", "core", "views", "services")
+    required = (
+        "app.py",
+        "assets.csv",
+        "version.txt",
+        "core",
+        "views",
+        "services",
+        "views/cloud_backup/oauth_popup.js",
+    )
     missing = [item for item in required if not (resource_root / item).exists()]
     if missing:
         raise SystemExit(f"Bundle is missing required resources: {', '.join(missing)}")
@@ -24,7 +32,11 @@ def main() -> int:
         path
         for path in resource_root.rglob("*")
         if path.is_file()
-        and path.suffix.casefold() in {".db", ".xlsx", ".ods", ".log", ".csv"}
+        and (
+            path.suffix.casefold()
+            in {".db", ".xlsx", ".ods", ".log", ".csv", ".rpb", ".rpbc", ".key"}
+            or path.name in {"cloud-backup-state.json", ".installation-id"}
+        )
         and path != allowed_catalog
     )
     if forbidden:

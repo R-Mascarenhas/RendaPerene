@@ -59,6 +59,24 @@ jobs:
           python-version: "3.10"
           cache: pip
           cache-dependency-path: pyproject.toml
+      - name: Prepare Google OAuth desktop client
+        shell: python
+        env:
+          GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.GOOGLE_OAUTH_CLIENT_JSON }}
+        run: |
+          import json
+          import os
+          from pathlib import Path
+
+          configuration = os.environ.get("GOOGLE_OAUTH_CLIENT_JSON", "").strip()
+          if configuration:
+              try:
+                  json.loads(configuration)
+              except ValueError:
+                  raise SystemExit("GOOGLE_OAUTH_CLIENT_JSON must contain valid JSON.") from None
+              Path("google-oauth-client.json").write_text(configuration, encoding="utf-8")
+          else:
+              print("::warning::GOOGLE_OAUTH_CLIENT_JSON is absent; Google Drive login will be disabled.")
       - name: Build and smoke-test Windows bundle
         shell: cmd
         run: build_windows_exe.bat
@@ -88,6 +106,24 @@ jobs:
           python-version: "3.10"
           cache: pip
           cache-dependency-path: pyproject.toml
+      - name: Prepare Google OAuth desktop client
+        shell: python
+        env:
+          GOOGLE_OAUTH_CLIENT_JSON: ${{ secrets.GOOGLE_OAUTH_CLIENT_JSON }}
+        run: |
+          import json
+          import os
+          from pathlib import Path
+
+          configuration = os.environ.get("GOOGLE_OAUTH_CLIENT_JSON", "").strip()
+          if configuration:
+              try:
+                  json.loads(configuration)
+              except ValueError:
+                  raise SystemExit("GOOGLE_OAUTH_CLIENT_JSON must contain valid JSON.") from None
+              Path("google-oauth-client.json").write_text(configuration, encoding="utf-8")
+          else:
+              print("::warning::GOOGLE_OAUTH_CLIENT_JSON is absent; Google Drive login will be disabled.")
       - name: Build and smoke-test Ubuntu bundle
         run: bash scripts/build_linux.sh
       - name: Create Ubuntu checksum

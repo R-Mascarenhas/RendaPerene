@@ -2,7 +2,9 @@
 
 ## Scope
 
-RendaPerene is a local-first Streamlit application for Brazilian (B3) portfolio tracking and retirement planning. Personal portfolios are stored in local SQLite databases; market quotes and Brazilian macroeconomic indicators use the existing Yahoo Finance and Banco Central integrations. Do not add cloud databases, telemetry, authentication services, or B3 portal scraping.
+RendaPerene is a local-first Streamlit application for Brazilian (B3) portfolio tracking and retirement planning. Personal portfolios are stored in local SQLite databases; market quotes and Brazilian macroeconomic indicators use the existing Yahoo Finance and Banco Central integrations. Do not add cloud databases, telemetry, application user accounts or authentication services, or B3 portal scraping. Desktop OAuth is permitted solely for optional, user-authorized Google Drive backup and recovery under ADR-0001.
+
+Before changing cloud backup, OAuth, or credential storage, read `docs/adr/0001-optional-google-drive-backup.md` for the accepted decisions. For OAuth setup, release packaging, or vault troubleshooting, read `docs/google-drive-setup.md`.
 
 ## Repository map
 

@@ -238,11 +238,11 @@ def test_restarted_application_waits_ten_minutes_before_sending(tmp_path):
 def test_temporary_initial_discovery_failure_recovers_before_upload(tmp_path, operation):
     service, backups, clock, paths = make_service(tmp_path)
     create_portfolio(paths, 'Família')
-    service.connect()
-    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
+    service.provider.connect()
     service.provider.fail = True
     with pytest.raises(CloudBackupError):
         getattr(service, operation)()
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
     service.provider.fail = False
     service.provider.files[('other', 'other-machine')] = RemoteBackup(
         'old', PORTFOLIO_ID, 'another-installation', 'Família', 'Computador antigo',
@@ -303,3 +303,71 @@ def test_failed_credential_removal_can_be_retried_without_connecting(tmp_path, m
     service.disconnect()
     assert not service.status().credential_removal_pending
     assert not service.provider.connected
+
+
+@pytest.mark.parametrize('completion', ['empty', 'dismiss', 'restore'])
+def test_completed_initial_discovery_survives_restart_and_keeps_automatic_backup(tmp_path, completion):
+    service, backups, clock, paths = make_service(tmp_path)
+    create_portfolio(paths, 'Família')
+    if completion != 'empty':
+        service.provider.files[('other', 'other-machine')] = RemoteBackup(
+            'old', PORTFOLIO_ID, 'another-installation', 'Família', 'Computador antigo',
+            '2026-10-11T12:00:00Z', '1',
+        )
+    service.connect()
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
+    if completion == 'dismiss':
+        service.dismiss_discovery()
+    elif completion == 'restore':
+        service.mark_restored()
+    clock.value = 600
+    service.check_due()
+    assert len(service.provider.uploads) == 1
+    backups.fingerprint = 'updated'
+    clock.value = 900
+    restarted = CloudBackupService(service.provider, CloudBackupStateStore(paths), backups, paths, clock=clock)
+    restarted.resume()
+    assert restarted.status().discovery_complete
+    clock.value = 1499
+    restarted.check_due()
+    assert len(service.provider.uploads) == 1
+    clock.value = 1500
+    restarted.check_due()
+    assert len(service.provider.uploads) == 2
+
+
+def test_initial_discovery_completion_is_not_shared_with_another_account_or_installation(tmp_path):
+    service, backups, clock, paths = make_service(tmp_path)
+    service.provider.files[('other', 'other-machine')] = RemoteBackup(
+        'old', PORTFOLIO_ID, 'another-installation', 'Família', 'Computador antigo',
+        '2026-10-11T12:00:00Z', '1',
+    )
+    service.connect()
+    service.dismiss_discovery()
+    other_installation, _, _, _ = make_service(tmp_path, service.provider, 'machine-two')
+    other_installation.resume()
+    assert not other_installation.status().discovery_complete
+    service.provider.account = 'account-two'
+    service.connect()
+    assert not service.status().discovery_complete
+
+
+def test_preference_write_failure_after_restore_does_not_hide_success(tmp_path, monkeypatch):
+    service, backups, clock, paths = make_service(tmp_path)
+    service.provider.files[('other', 'other-machine')] = RemoteBackup(
+        'old', PORTFOLIO_ID, 'another-installation', 'Família', 'Computador antigo',
+        '2026-10-11T12:00:00Z', '1',
+    )
+    service.connect()
+    def fail_save(state):
+        raise OSError('synthetic preference write failure')
+    monkeypatch.setattr(service._store, '_save', fail_save)
+
+    service.mark_restored()
+
+    assert service.status().discovery_complete
+    assert 'carteira foi recuperada' in service.status().error
+    assert 'synthetic' not in service.status().error
+    restarted = CloudBackupService(service.provider, CloudBackupStateStore(paths), backups, paths, clock=clock)
+    restarted.resume()
+    assert not restarted.status().discovery_complete

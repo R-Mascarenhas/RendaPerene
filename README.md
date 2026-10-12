@@ -63,6 +63,7 @@ contas de usuário ou telemetria, nem realiza scraping do portal da B3.
 O **backup opcional no Google Drive** permite conectar sua conta Google, escolher carteiras
 para backup automático e recuperar cópias em outro computador. Cada máquina atualiza seu próprio
 arquivo na pasta visível `RendaPerene`, a cada 10 minutos enquanto a aplicação estiver aberta.
+Concluída a descoberta inicial neste computador, os backups continuam após reiniciar a aplicação.
 O pacote inclui o banco completo da carteira, com pagamentos e decisões sobre proventos.
 
 A recuperação pede confirmação: para uma carteira ainda não instalada, escolha entre substituir

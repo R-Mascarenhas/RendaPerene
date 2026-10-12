@@ -33,6 +33,7 @@ class CloudBackupStateStore:
                 last_check = preferences.get("last_check", 0)
                 if (
                     not isinstance(preferences.get("enabled"), bool)
+                    or not isinstance(preferences.get("discovery_complete", False), bool)
                     or not isinstance(preferences.get("machine_name"), str)
                     or not isinstance(selected, list)
                     or any(not isinstance(name, str) for name in selected)

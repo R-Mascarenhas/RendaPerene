@@ -86,6 +86,9 @@ Na seção **Backup no Google Drive**, conecte a conta, revise as cópias encont
 carteira ou escolha **Continuar sem restaurar**. Depois selecione as carteiras, informe um nome
 para o computador, marque **Ativar backup automático** e salve. A primeira verificação ocorre
 após 10 minutos; as seguintes também respeitam esse intervalo enquanto a interface estiver aberta.
+A conclusão dessa descoberta inicial fica salva por conta neste computador. Ao reiniciar a
+aplicação, as carteiras já configuradas continuam com backup automático; outra conta ou instalação
+precisa concluir sua própria descoberta antes dos envios.
 Carteiras novas não entram na seleção automaticamente. Cada computador atualiza seu próprio arquivo
 `<carteira>_<maquina>.rpbc`. Nomes iguais não misturam arquivos de instalações diferentes.
 Recriar ou substituir uma carteira por outra identidade exige salvar novamente a seleção para

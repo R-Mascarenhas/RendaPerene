@@ -51,7 +51,13 @@ class CloudBackupService:
         accounts = state.setdefault("accounts", {})
         return accounts.setdefault(
             self._account,
-            {"enabled": False, "selected": [], "machine_name": "Computador", "sent": {}},
+            {
+                "enabled": False,
+                "selected": [],
+                "machine_name": "Computador",
+                "sent": {},
+                "discovery_complete": False,
+            },
         )
 
     def status(self) -> CloudBackupStatus:
@@ -114,8 +120,12 @@ class CloudBackupService:
             self._account = None
             self._discovery_retry_pending = False
             raise
+        preferences = self._store.load().get("accounts", {}).get(self._account, {})
+        if preferences.get("discovery_complete", False):
+            self._discovery_complete = True
+        elif not self._remote:
+            self._complete_initial_discovery()
         self._discovery_retry_pending = False
-        self._discovery_complete = not self._remote
         self._error = ""
 
     def discover(self) -> None:
@@ -126,7 +136,12 @@ class CloudBackupService:
     def dismiss_discovery(self) -> None:
         with self._lock:
             self._require_connection()
-            self._discovery_complete = True
+            self._complete_initial_discovery()
+
+    def _complete_initial_discovery(self) -> None:
+        with self._store.transaction() as state:
+            self._preferences(state)["discovery_complete"] = True
+        self._discovery_complete = True
 
     def disconnect(self) -> None:
         with self._lock:
@@ -313,6 +328,15 @@ class CloudBackupService:
         """Resume automatic backup only after the user completes recovery."""
         with self._lock:
             self._discovery_complete = True
+            if self._account:
+                try:
+                    self._complete_initial_discovery()
+                except CloudBackupError:
+                    # Local publication has succeeded; preferences must not hide its result.
+                    self._error = (
+                        "A carteira foi recuperada, mas não foi possível salvar a conclusão "
+                        "da descoberta. Confirme novamente as cópias antes dos envios ao reiniciar."
+                    )
 
     @staticmethod
     def _display_name(filename: str) -> str:

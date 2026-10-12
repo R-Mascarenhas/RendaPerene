@@ -21,7 +21,9 @@ operação por vez fora do Streamlit; um fragmento acompanha os resultados e age
 `CloudBackupStateStore` publica preferências não secretas por conta em `cloud-backup-state.json`,
 com gravação atômica e lock entre processos. `SystemCredentialVault` mantém tokens no cofre do SO.
 As seleções persistidas vinculam nomes locais aos UUIDs autorizados; substituir ou recriar uma
-identidade exige nova confirmação. A pendência de remoção de credenciais também é persistida,
+identidade exige nova confirmação. A conclusão da descoberta inicial é persistida por conta na
+instalação, inclusive quando não há cópias remotas, após dispensar a recuperação ou concluí-la.
+A retomada consulta o Drive sem exigir novamente essa decisão. A pendência de remoção de credenciais também é persistida,
 impedindo retomada automática enquanto o usuário não concluir a operação. Falhas temporárias na
 descoberta mantêm uma tentativa pendente, separada da confirmação de recuperação, para a próxima
 verificação agendada.

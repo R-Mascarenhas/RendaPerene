@@ -140,6 +140,13 @@ def _exclusive_file_lock(lock: Path, wait_for_readers: bool = True):
                     reader_descriptor = os.open(reader, os.O_RDWR)
                 except FileNotFoundError:
                     continue
+                except OSError as error:
+                    if error.errno not in (errno.EACCES, errno.EAGAIN) and getattr(
+                        error, "winerror", None
+                    ) not in (32, 33):
+                        raise
+                    active_readers.append(reader)
+                    continue
                 if _try_lock_descriptor(reader_descriptor):
                     _unlock_descriptor(reader_descriptor)
                     os.close(reader_descriptor)

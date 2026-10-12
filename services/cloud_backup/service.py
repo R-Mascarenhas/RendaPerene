@@ -178,6 +178,10 @@ class CloudBackupService:
             }
             if any(identity is None for identity in selected_ids.values()):
                 raise CloudBackupError("Uma carteira mudou. Revise a seleção do backup automático.")
+            if len(set(selected_ids.values())) != len(selected_ids):
+                raise CloudBackupError(
+                    "Há carteiras com a mesma identidade. Selecione apenas uma cópia para backup."
+                )
             with self._store.transaction() as state:
                 preferences = self._preferences(state)
                 preferences.update(
@@ -226,6 +230,14 @@ class CloudBackupService:
                     preferences["last_check"] = now
                     self._busy = True
                     self._error = ""
+                    identities = [
+                        preferences.get("selected_ids", {}).get(filename)
+                        for filename in preferences["selected"]
+                    ]
+                    if len(set(identities)) != len(identities):
+                        self._busy = False
+                        self._error = "Há carteiras com a mesma identidade. Revise e salve a seleção do backup automático."
+                        return
                     try:
                         self._remote = tuple(
                             sorted(

@@ -35,6 +35,10 @@ Os eventos `google_oauth.*` registram as etapas sem URLs, códigos, tokens ou da
 
 `GoogleDriveBackupProvider` usa listagem paginada e `appProperties` para identificar a pasta e
 cada par carteira/instalação; atualiza pelo ID do arquivo, sem exclusão prévia nem horário local.
+Se duas instalações criarem pastas simultaneamente, a listagem consulta todas as pastas marcadas
+e novos arquivos usam o menor ID, preservando os backups existentes. Erros operacionais do Drive,
+inclusive HTTP 403 por quota ou permissões de arquivo, permitem nova tentativa sem perder a conexão.
+A seleção rejeita cópias locais com a mesma identidade para evitar sobrescritas entre elas.
 `LocalBackupService.create_cloud_backup()` cria o snapshot completo e remove os arquivos temporários.
 `core/cloud_backup/package.py` gera ZIPs `.rpbc`, com `package_kind=rendaperene-cloud-backup`,
 `cloud_format_version=1`, manifesto, metadados e um SQLite. A restauração valida estrutura,

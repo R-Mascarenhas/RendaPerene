@@ -62,7 +62,9 @@ permite continuar no mesmo navegador enquanto a autorização estiver válida. O
 se abre uma janela ou aba. **Cancelar conexão com o Google** encerra a espera pela autorização.
 Não exige servidor de autenticação do RendaPerene. Uma pasta preexistente chamada `RendaPerene`
 não é automaticamente autorizada: o aplicativo encontra sua pasta pelos marcadores próprios e
-cria uma pasta quando necessário. O escopo permite apenas arquivos criados ou autorizados para
+cria uma pasta quando necessário. Se computadores criarem pastas simultaneamente, os backups
+em todas elas continuam disponíveis e novos arquivos convergem para uma pasta, sem exclusão
+das cópias anteriores. O escopo permite apenas arquivos criados ou autorizados para
 o aplicativo. Mudanças de projeto/cliente exigem um plano de acesso aos backups antigos.
 
 Os logs no terminal mostram as etapas da conexão: abertura ou bloqueio do popup

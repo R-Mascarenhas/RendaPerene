@@ -769,6 +769,31 @@ def test_writer_retries_windows_sharing_violation_during_stale_marker_cleanup(
         assert not marker.exists()
 
 
+@pytest.mark.parametrize("winerror", [None, 32, 33])
+def test_writer_retries_reader_marker_open_sharing_violation(tmp_path, monkeypatch, winerror):
+    database = tmp_path / "portfolio.db"
+    marker = tmp_path / ".portfolio.db.lock.reader.stale"
+    marker.write_bytes(b"stale")
+    real_open = os.open
+    attempts = 0
+
+    def transient_open(path, *args, **kwargs):
+        nonlocal attempts
+        if Path(path) == marker:
+            attempts += 1
+            if attempts == 1:
+                error = PermissionError(errno.EACCES, "Reader marker is being closed")
+                if winerror is not None:
+                    error.winerror = winerror
+                raise error
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", transient_open)
+    with portfolio_database_lock(database):
+        assert attempts == 2
+        assert not marker.exists()
+
+
 def test_reader_registration_does_not_wait_for_existing_readers(tmp_path):
     database = tmp_path / "portfolio.db"
     first_reader = portfolio_database_reader_lock(database)

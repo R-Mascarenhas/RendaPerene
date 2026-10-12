@@ -1,6 +1,7 @@
 import io
 import sqlite3
 import zipfile
+from contextlib import closing
 
 import pytest
 
@@ -109,7 +110,7 @@ def test_cloud_restore_can_explicitly_replace_principal_with_a_different_identit
     destination = make_paths(tmp_path, 'destination')
     principal = destination.portfolio_database('portfolio.db')
     DatabaseManager(principal).init_personal_db()
-    with sqlite3.connect(principal) as connection:
+    with closing(sqlite3.connect(principal)) as connection, connection:
         connection.execute("INSERT INTO tracked_market_assets VALUES ('LOCAL3')")
     restores = LocalRestoreService(destination)
     selected = restores.choose_existing_destination(
@@ -121,9 +122,9 @@ def test_cloud_restore_can_explicitly_replace_principal_with_a_different_identit
     assert result.database == principal
     assert destination.inspect_portfolios().valid == (principal,)
     assert result.recovery_directory is not None
-    with sqlite3.connect(result.recovery_directory / principal.name) as connection:
+    with closing(sqlite3.connect(result.recovery_directory / principal.name)) as connection:
         assert connection.execute('SELECT ticker FROM tracked_market_assets').fetchall() == [('LOCAL3',)]
-    with sqlite3.connect(principal) as connection:
+    with closing(sqlite3.connect(principal)) as connection:
         assert connection.execute('SELECT ticker FROM tracked_market_assets').fetchall() == [('TEST3',)]
         assert connection.execute('SELECT portfolio_id FROM portfolio_metadata').fetchone()[0] == artifact.portfolio_id
 
@@ -138,11 +139,11 @@ def test_explicit_cloud_replacement_rejects_changes_since_confirmation(tmp_path)
     selected = restores.choose_existing_destination(
         restores.inspect_cloud_package(artifact.content).portfolios[0], principal.name,
     )
-    with sqlite3.connect(principal) as connection:
+    with closing(sqlite3.connect(principal)) as connection, connection:
         connection.execute("INSERT INTO tracked_market_assets VALUES ('LOCAL3')")
     with pytest.raises(BackupRestoreConflictError):
         restores.restore_cloud_package(artifact.content, selected)
-    with sqlite3.connect(principal) as connection:
+    with closing(sqlite3.connect(principal)) as connection:
         assert connection.execute('SELECT ticker FROM tracked_market_assets').fetchall() == [('LOCAL3',)]
     assert destination.inspect_portfolios().valid == (principal,)
 
@@ -206,7 +207,7 @@ def test_cloud_restore_replacement_preserves_a_recovery_copy(tmp_path):
     paths = make_paths(tmp_path, 'source')
     artifact = create_cloud_backup(paths)
     database = paths.portfolio_database('portfolio_family.db')
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute("INSERT INTO tracked_market_assets VALUES ('NEW3')")
     restores = LocalRestoreService(paths)
     selected = restores.inspect_cloud_package(artifact.content).portfolios[0]
@@ -214,9 +215,9 @@ def test_cloud_restore_replacement_preserves_a_recovery_copy(tmp_path):
     result = restores.restore_cloud_package(artifact.content, selected)
     assert result.recovery_directory is not None
     recovery = result.recovery_directory / database.name
-    with sqlite3.connect(recovery) as connection:
+    with closing(sqlite3.connect(recovery)) as connection:
         assert ('NEW3',) in connection.execute('SELECT ticker FROM tracked_market_assets').fetchall()
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         assert connection.execute('SELECT ticker FROM tracked_market_assets').fetchall() == [('TEST3',)]
 
 

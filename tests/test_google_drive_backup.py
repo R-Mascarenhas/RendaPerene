@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from core.cloud_backup.models import CloudBackupArtifact, CloudBackupError, OAuthClientConfiguration
+from core.cloud_backup.models import CloudAuthorizationError, CloudBackupArtifact, CloudBackupError, OAuthClientConfiguration
 from core.cloud_backup.google_drive import GoogleDriveBackupProvider
 
 PORTFOLIO = 'a930c554-997c-462a-8268-761f45380b58'
@@ -130,7 +130,7 @@ def test_duplicate_backup_identity_is_not_overwritten_arbitrarily():
 def test_missing_folder_is_created_with_one_new_backup():
     http = FakeHTTP([
         Response({'files': []}), Response({'files': []}),
-        Response({'id': 'folder'}), Response(remote_file()),
+        Response({'id': 'folder'}), Response({'files': [{'id': 'folder'}]}), Response(remote_file()),
     ])
     provider, vault = make_provider(http)
     provider.upload(CloudBackupArtifact(b'zip', PORTFOLIO, INSTALLATION, 'Família', 'PC', 'hash'))
@@ -138,6 +138,58 @@ def test_missing_folder_is_created_with_one_new_backup():
     assert len(writes) == 2
     assert writes[0][2]['json']['name'] == 'RendaPerene'
     assert b'"parents": ["folder"]' in writes[1][2]['data']
+
+
+@pytest.mark.parametrize('reason', ['rateLimitExceeded', 'storageQuotaExceeded', 'insufficientFilePermissions'])
+def test_drive_operational_forbidden_error_keeps_authorization_for_retry(reason):
+    http = FakeHTTP([
+        Response({'error': {'errors': [{'reason': reason}]}}, status=403),
+        Response({'files': []}),
+    ])
+    provider, vault = make_provider(http)
+    original = vault.content
+    with pytest.raises(CloudBackupError) as failure:
+        provider.list_backups()
+    assert not isinstance(failure.value, CloudAuthorizationError)
+    assert vault.content == original
+    assert provider.list_backups() == ()
+
+
+def test_drive_unauthorized_error_requires_reconnection():
+    provider, vault = make_provider(FakeHTTP([Response({}, status=401)]))
+    with pytest.raises(CloudAuthorizationError):
+        provider.list_backups()
+
+
+def test_concurrently_created_folders_converge_new_uploads_without_deleting_backups():
+    http = FakeHTTP([
+        Response({'files': []}), Response({'files': []}),
+        Response({'id': 'folder-z'}),
+        Response({'files': [{'id': 'folder-z'}, {'id': 'folder-a'}]}),
+        Response(remote_file()),
+    ])
+    provider, vault = make_provider(http)
+    provider.upload(CloudBackupArtifact(b'zip', PORTFOLIO, INSTALLATION, 'Família', 'PC', 'hash'))
+    assert b'"parents": ["folder-a"]' in http.calls[-1][2]['data']
+    assert not any(call[0] == 'DELETE' for call in http.calls)
+
+
+def test_backups_in_all_marked_folders_are_discoverable_and_updated_in_place():
+    existing = remote_file()
+    other = remote_file('other')
+    other['appProperties']['installation_id'] = '3db228de-6d29-49b2-b214-f448824e093a'
+    http = FakeHTTP([
+        Response({'files': [{'id': 'folder-z'}, {'id': 'folder-a'}]}),
+        Response({'files': [other, existing]}),
+        Response(remote_file()),
+    ])
+    provider, vault = make_provider(http)
+    provider.upload(CloudBackupArtifact(b'zip', PORTFOLIO, INSTALLATION, 'Família', 'PC', 'hash'))
+    query = http.calls[1][2]['params']['q']
+    assert "'folder-a' in parents or 'folder-z' in parents" in query
+    assert http.calls[-1][0] == 'PATCH'
+    assert http.calls[-1][1].endswith('/backup')
+    assert b'"parents"' not in http.calls[-1][2]['data']
 
 
 def test_pagination_finds_existing_backup_before_creating_another():

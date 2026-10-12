@@ -1,5 +1,6 @@
 import pytest
 import sqlite3
+from contextlib import closing
 
 from core.application_paths import ApplicationPaths
 from core.cloud_backup.models import CloudBackupArtifact, CloudBackupError, RemoteBackup
@@ -13,7 +14,7 @@ PORTFOLIO_ID = 'a930c554-997c-462a-8268-761f45380b58'
 def create_portfolio(paths, name, portfolio_id=PORTFOLIO_ID):
     database = paths.portfolio_database(f'portfolio_{name.lower()}.db')
     DatabaseManager(database).init_personal_db()
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.execute('UPDATE portfolio_metadata SET portfolio_id=?', (portfolio_id,))
 
 
@@ -107,6 +108,67 @@ def test_selected_portfolio_is_sent_only_after_ten_minutes(tmp_path):
     assert len(service.provider.uploads) == 1
     service.check_due()
     assert len(service.provider.uploads) == 1
+
+
+def test_duplicate_portfolio_identities_cannot_replace_saved_selection(tmp_path):
+    service, backups, clock, paths = make_service(tmp_path)
+    create_portfolio(paths, 'Família')
+    create_portfolio(paths, 'Cópia')
+    service.connect()
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
+    with pytest.raises(CloudBackupError, match='mesma identidade'):
+        service.configure(('portfolio_família.db', 'portfolio_cópia.db'), 'Computador', enabled=True)
+    assert service.status().selected_filenames == ('portfolio_família.db',)
+
+
+def test_distinct_portfolio_identities_can_be_selected_together(tmp_path):
+    service, backups, clock, paths = make_service(tmp_path)
+    create_portfolio(paths, 'Família')
+    create_portfolio(paths, 'Outra', '3db228de-6d29-49b2-b214-f448824e093a')
+    service.connect()
+    service.configure(('portfolio_família.db', 'portfolio_outra.db'), 'Computador', enabled=True)
+    assert service.status().selected_filenames == ('portfolio_família.db', 'portfolio_outra.db')
+
+
+def test_drive_quota_error_keeps_service_connected_and_retries_next_interval(tmp_path):
+    from tests.test_google_drive_backup import FakeHTTP, Response, make_provider
+
+    service, backups, clock, paths = make_service(tmp_path)
+    create_portfolio(paths, 'Família')
+    service.connect()
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
+    drive, vault = make_provider(FakeHTTP([
+        Response({'error': {'errors': [{'reason': 'rateLimitExceeded'}]}}, status=403),
+        Response({'files': []}),
+    ]))
+    service.provider.list_backups = drive.list_backups
+    clock.value = 600
+    service.check_due()
+    assert service.status().connected
+    assert not service.provider.uploads
+    clock.value = 1199
+    service.check_due()
+    assert not service.provider.uploads
+    clock.value = 1200
+    service.check_due()
+    assert len(service.provider.uploads) == 1
+
+
+def test_legacy_duplicate_identity_selection_does_not_upload_either_copy(tmp_path):
+    service, backups, clock, paths = make_service(tmp_path)
+    create_portfolio(paths, 'Família')
+    create_portfolio(paths, 'Cópia')
+    service.connect()
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
+    with CloudBackupStateStore(paths).transaction() as state:
+        settings = state['accounts']['account-one']
+        settings['selected'].append('portfolio_cópia.db')
+        settings['selected_ids']['portfolio_cópia.db'] = PORTFOLIO_ID
+    clock.value = 600
+    service.check_due()
+    assert not service.provider.uploads
+    assert not backups.calls
+    assert 'mesma identidade' in service.status().error
 
 
 def test_backup_updates_one_file_and_leaves_other_installations_copy(tmp_path):

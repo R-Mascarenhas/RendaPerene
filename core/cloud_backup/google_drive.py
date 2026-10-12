@@ -181,6 +181,7 @@ class GoogleDriveBackupProvider:
         self._credential = None
         self._authorizing = False
         self._folder_id = None
+        self._folder_ids = ()
         self._lock = threading.RLock()
 
     def connect(self) -> str:
@@ -324,7 +325,7 @@ class GoogleDriveBackupProvider:
             response = self._http.request(
                 method, url, headers=headers, timeout=HTTP_TIMEOUT, **kwargs
             )
-            if response.status_code in (401, 403):
+            if response.status_code == 401:
                 response.close()
                 raise CloudAuthorizationError(
                     "O Google recusou a operação. Verifique a conexão e as permissões."
@@ -378,12 +379,11 @@ class GoogleDriveBackupProvider:
             "trashed = false and mimeType = 'application/vnd.google-apps.folder' "
             f"and appProperties has {{ key='kind' and value='{FOLDER_KIND}' }}"
         )
-        if len(found) > 1:
-            raise CloudBackupError(
-                "Há mais de uma pasta de backup identificada. Revise as pastas no Drive."
-            )
         if found:
-            self._folder_id = self._valid_file_id(found[0].get("id"))
+            self._folder_ids = tuple(
+                sorted({self._valid_file_id(item.get("id")) for item in found})
+            )
+            self._folder_id = self._folder_ids[0]
         elif create:
             response = self._request(
                 "POST",
@@ -399,19 +399,32 @@ class GoogleDriveBackupProvider:
                 self._folder_id = self._valid_file_id(response.json().get("id"))
             finally:
                 response.close()
+            # Another installation may have created a folder concurrently. Keep
+            # every folder discoverable and converge new writes without deleting backups.
+            created_id = self._folder_id
+            found = self._list(
+                "trashed = false and mimeType = 'application/vnd.google-apps.folder' "
+                f"and appProperties has {{ key='kind' and value='{FOLDER_KIND}' }}"
+            )
+            self._folder_ids = tuple(
+                sorted({created_id, *(self._valid_file_id(item.get("id")) for item in found)})
+            )
+            self._folder_id = self._folder_ids[0]
         return self._folder_id
 
     def list_backups(self) -> tuple[RemoteBackup, ...]:
         with self._lock:
             # Re-resolve the folder so a deleted or trashed folder is never reused.
             self._folder_id = None
+            self._folder_ids = ()
             folder = self._folder(create=False)
             if not folder:
                 return ()
+            parents = " or ".join(f"'{item}' in parents" for item in self._folder_ids)
             return tuple(
                 self._parse_remote(item)
                 for item in self._list(
-                    f"trashed = false and '{folder}' in parents "
+                    f"trashed = false and ({parents}) "
                     f"and appProperties has {{ key='kind' and value='{PACKAGE_KIND}' }}"
                 )
             )

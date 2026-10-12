@@ -21,12 +21,14 @@ operação por vez fora do Streamlit; um fragmento acompanha os resultados e age
 `CloudBackupStateStore` publica preferências não secretas por conta em `cloud-backup-state.json`,
 com gravação atômica e lock entre processos. `SystemCredentialVault` mantém tokens no cofre do SO.
 As seleções persistidas vinculam nomes locais aos UUIDs autorizados; substituir ou recriar uma
-identidade exige nova confirmação. A conclusão da descoberta inicial é persistida por conta na
-instalação, inclusive quando não há cópias remotas, após dispensar a recuperação ou concluí-la.
-A retomada consulta o Drive sem exigir novamente essa decisão. A pendência de remoção de credenciais também é persistida,
+identidade exige nova confirmação. Salvar a seleção com o backup ativado autoriza os envios,
+independentemente de recuperar ou ignorar as cópias remotas. A conclusão da consulta ao Drive
+é apenas estado em memória; o antigo campo persistido `discovery_complete` é aceito sem bloquear
+os envios, esteja ausente, falso ou verdadeiro. A pendência de remoção de credenciais também é persistida,
 impedindo retomada automática enquanto o usuário não concluir a operação. Falhas temporárias na
-descoberta mantêm uma tentativa pendente, separada da confirmação de recuperação, para a próxima
-verificação agendada.
+descoberta mantêm uma tentativa pendente para a próxima verificação agendada. Uma consulta
+bem-sucedida permite enviar as carteiras configuradas no mesmo ciclo, respeitando o intervalo
+de 10 minutos contado pelo relógio monotônico; listagens incompletas não autorizam upload.
 
 `BrowserAuthorization` entrega a URL de consentimento somente à sessão que iniciou a conexão.
 A interface abre o popup no clique e o direciona ao Google quando a URL está pronta, com link

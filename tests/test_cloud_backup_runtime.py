@@ -59,13 +59,12 @@ def test_inspection_rejects_package_that_does_not_match_remote_identity():
         runtime.close()
 
 
-def test_restore_download_failure_does_not_publish_or_mark_restored():
+def test_restore_download_failure_does_not_publish():
     service = Service()
     calls = []
     def download(remote):
         raise CloudBackupError('O backup remoto mudou.')
     service.download = download
-    service.mark_restored = lambda: calls.append('mark_restored')
     restores = SimpleNamespace(restore_cloud_package=lambda *args: calls.append('publish'))
     runtime = CloudBackupRuntime(service, restores)
     try:
@@ -73,6 +72,29 @@ def test_restore_download_failure_does_not_publish_or_mark_restored():
         wait_for_completion(runtime)
         assert 'mudou' in runtime.error
         assert not calls
+    finally:
+        runtime.close()
+
+
+def test_successful_restore_needs_no_followup_preference_write():
+    calls = []
+    service = Service()
+    service.download = lambda remote: b'package'
+    service.mark_restored = lambda: (_ for _ in ()).throw(AssertionError('Unexpected preference write'))
+    result = object()
+
+    def restore(content, selected):
+        calls.append((content, selected))
+        return result
+
+    runtime = CloudBackupRuntime(service, SimpleNamespace(restore_cloud_package=restore))
+    try:
+        selected = object()
+        assert runtime.submit('restore', object(), selected)
+        wait_for_completion(runtime)
+        assert runtime.result is result
+        assert not runtime.error
+        assert calls == [(b'package', selected)]
     finally:
         runtime.close()
 

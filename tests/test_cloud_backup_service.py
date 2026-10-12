@@ -178,7 +178,6 @@ def test_backup_updates_one_file_and_leaves_other_installations_copy(tmp_path):
     for service, paths, clock in [(one, paths_one, clock_one), (two, paths_two, clock_two)]:
         create_portfolio(paths, 'Família')
         service.connect()
-        service.dismiss_discovery()
         service.configure(('portfolio_família.db',), 'Computador', enabled=True)
         clock.value = 600
         service.check_due()
@@ -218,7 +217,7 @@ def test_no_changes_does_not_send_and_failed_upload_retries_on_next_interval(tmp
     assert len(service.provider.uploads) == 2
 
 
-def test_existing_remote_backups_block_upload_until_user_reviews_discovery(tmp_path):
+def test_existing_remote_backups_do_not_block_selected_portfolio_upload(tmp_path):
     service, backups, clock, paths = make_service(tmp_path)
     create_portfolio(paths, 'Família')
     service.provider.files[('other', 'other-machine')] = RemoteBackup(
@@ -229,11 +228,8 @@ def test_existing_remote_backups_block_upload_until_user_reviews_discovery(tmp_p
     service.configure(('portfolio_família.db',), 'Computador', enabled=True)
     clock.value = 600
     service.check_due()
-    assert not service.provider.uploads
-    assert not service.status().discovery_complete
-    service.dismiss_discovery()
-    service.check_due()
     assert len(service.provider.uploads) == 1
+    assert service.provider.files[('other', 'other-machine')].file_id == 'old'
 
 
 def test_selection_persists_but_new_portfolios_are_not_added_automatically(tmp_path):
@@ -313,9 +309,8 @@ def test_temporary_initial_discovery_failure_recovers_before_upload(tmp_path, op
     clock.value = 600
     service.check_due()
     assert service.status().remote_backups
-    assert not service.status().discovery_complete
-    assert not service.provider.uploads
-    service.dismiss_discovery()
+    assert service.status().discovery_complete
+    assert len(service.provider.uploads) == 1
     clock.value = 1200
     service.check_due()
     assert len(service.provider.uploads) == 1
@@ -367,21 +362,17 @@ def test_failed_credential_removal_can_be_retried_without_connecting(tmp_path, m
     assert not service.provider.connected
 
 
-@pytest.mark.parametrize('completion', ['empty', 'dismiss', 'restore'])
-def test_completed_initial_discovery_survives_restart_and_keeps_automatic_backup(tmp_path, completion):
+@pytest.mark.parametrize('has_remote_backups', [False, True])
+def test_automatic_backup_continues_after_restart_without_recovery_decision(tmp_path, has_remote_backups):
     service, backups, clock, paths = make_service(tmp_path)
     create_portfolio(paths, 'Família')
-    if completion != 'empty':
+    if has_remote_backups:
         service.provider.files[('other', 'other-machine')] = RemoteBackup(
             'old', PORTFOLIO_ID, 'another-installation', 'Família', 'Computador antigo',
             '2026-10-11T12:00:00Z', '1',
         )
     service.connect()
     service.configure(('portfolio_família.db',), 'Computador', enabled=True)
-    if completion == 'dismiss':
-        service.dismiss_discovery()
-    elif completion == 'restore':
-        service.mark_restored()
     clock.value = 600
     service.check_due()
     assert len(service.provider.uploads) == 1
@@ -398,38 +389,61 @@ def test_completed_initial_discovery_survives_restart_and_keeps_automatic_backup
     assert len(service.provider.uploads) == 2
 
 
-def test_initial_discovery_completion_is_not_shared_with_another_account_or_installation(tmp_path):
+def test_backup_selection_is_not_shared_with_another_account_or_installation(tmp_path):
     service, backups, clock, paths = make_service(tmp_path)
     service.provider.files[('other', 'other-machine')] = RemoteBackup(
         'old', PORTFOLIO_ID, 'another-installation', 'Família', 'Computador antigo',
         '2026-10-11T12:00:00Z', '1',
     )
+    create_portfolio(paths, 'Família')
     service.connect()
-    service.dismiss_discovery()
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
     other_installation, _, _, _ = make_service(tmp_path, service.provider, 'machine-two')
     other_installation.resume()
-    assert not other_installation.status().discovery_complete
+    assert other_installation.status().discovery_complete
+    assert not other_installation.status().enabled
+    assert not other_installation.status().selected_filenames
     service.provider.account = 'account-two'
     service.connect()
-    assert not service.status().discovery_complete
-
-
-def test_preference_write_failure_after_restore_does_not_hide_success(tmp_path, monkeypatch):
-    service, backups, clock, paths = make_service(tmp_path)
-    service.provider.files[('other', 'other-machine')] = RemoteBackup(
-        'old', PORTFOLIO_ID, 'another-installation', 'Família', 'Computador antigo',
-        '2026-10-11T12:00:00Z', '1',
-    )
-    service.connect()
-    def fail_save(state):
-        raise OSError('synthetic preference write failure')
-    monkeypatch.setattr(service._store, '_save', fail_save)
-
-    service.mark_restored()
-
     assert service.status().discovery_complete
-    assert 'carteira foi recuperada' in service.status().error
-    assert 'synthetic' not in service.status().error
+    assert not service.status().enabled
+    assert not service.status().selected_filenames
+
+
+@pytest.mark.parametrize('legacy_confirmation', [None, False, True])
+def test_newly_selected_portfolio_is_sent_with_legacy_preferences_and_existing_backup(tmp_path, legacy_confirmation):
+    from core.sqlite_backup import SQLitePortfolioBackupSourceFactory
+    from services.local_backup_service import LocalBackupService
+
+    service, backups, clock, paths = make_service(tmp_path)
+    backups = LocalBackupService(SQLitePortfolioBackupSourceFactory(paths), paths, 'test')
+    service = CloudBackupService(
+        service.provider, CloudBackupStateStore(paths), backups, paths, clock=clock,
+    )
+    create_portfolio(paths, 'Família')
+    service.connect()
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
+    clock.value = 600
+    service.check_due()
+    original = tuple(service.provider.files.values())
+    create_portfolio(paths, 'Teste', '3db228de-6d29-49b2-b214-f448824e093a')
+    service.configure(('portfolio_família.db', 'portfolio_teste.db'), 'Computador', enabled=True)
+    with CloudBackupStateStore(paths).transaction() as state:
+        preferences = state['accounts']['account-one']
+        if legacy_confirmation is None:
+            preferences.pop('discovery_complete', None)
+        else:
+            preferences['discovery_complete'] = legacy_confirmation
     restarted = CloudBackupService(service.provider, CloudBackupStateStore(paths), backups, paths, clock=clock)
     restarted.resume()
-    assert not restarted.status().discovery_complete
+    clock.value = 1199
+    restarted.check_due()
+    assert len(service.provider.uploads) == 1
+    clock.value = 1200
+    restarted.check_due()
+    assert len(service.provider.uploads) == 2
+    assert service.provider.uploads[-1].portfolio_id == '3db228de-6d29-49b2-b214-f448824e093a'
+    assert original[0] in service.provider.files.values()
+    clock.value = 3000
+    restarted.check_due()
+    assert len(service.provider.uploads) == 2

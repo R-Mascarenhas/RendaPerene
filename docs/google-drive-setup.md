@@ -84,13 +84,14 @@ Na instalação padrão, o arquivo fica em
 
 ## Uso
 
-Na seção **Backup no Google Drive**, conecte a conta, revise as cópias encontradas e recupere uma
-carteira ou escolha **Continuar sem restaurar**. Depois selecione as carteiras, informe um nome
-para o computador, marque **Ativar backup automático** e salve. A primeira verificação ocorre
+Na seção **Backup no Google Drive**, conecte a conta, selecione as carteiras, informe um nome
+para o computador, marque **Ativar backup automático** e salve. As cópias encontradas podem
+ser recuperadas mediante confirmação ou simplesmente ignoradas, sem bloquear os envios.
+A primeira verificação ocorre
 após 10 minutos; as seguintes também respeitam esse intervalo enquanto a interface estiver aberta.
-A conclusão dessa descoberta inicial fica salva por conta neste computador. Ao reiniciar a
-aplicação, as carteiras já configuradas continuam com backup automático; outra conta ou instalação
-precisa concluir sua própria descoberta antes dos envios.
+Ao reiniciar a aplicação, as carteiras já configuradas continuam com backup automático. Outra
+conta ou instalação precisa de sua própria seleção e ativação; restaurar é sempre opcional.
+Configurações antigas com `discovery_complete` ausente ou falso não exigem editar o JSON.
 Carteiras novas não entram na seleção automaticamente. Cada computador atualiza seu próprio arquivo
 `<carteira>_<maquina>.rpbc`. Nomes iguais não misturam arquivos de instalações diferentes.
 Recriar ou substituir uma carteira por outra identidade exige salvar novamente a seleção para
@@ -118,7 +119,7 @@ no cofre do sistema ou desbloqueie-o e use **Tentar remover credenciais locais**
 persiste após reiniciar a aplicação e impede retomar a conexão até concluir a remoção.
 Desmarcar carteiras não apaga arquivos. Não existe execução com a interface fechada.
 Se a consulta inicial ao Drive falhar temporariamente, as verificações seguintes tentam novamente,
-respeitando o intervalo de 10 minutos e a confirmação das cópias encontradas antes dos envios.
+respeitando o intervalo de 10 minutos e a seleção salva com o backup automático ativado.
 
 ## Validação para distribuição
 
@@ -130,7 +131,7 @@ Antes de distribuir, valide com dados sintéticos em Windows e Ubuntu nativos:
 - seleção persistida, primeira verificação após 10 minutos, ausência de reenvio sem mudanças,
   atualização do mesmo arquivo após renomear e recuperação após falha de rede;
 - pasta ausente, nomes duplicados e arquivo remoto removido;
-- descoberta antes do envio da carteira padrão vazia e recuperação em outra instalação,
+- oferta de recuperação opcional e envio apenas das carteiras selecionadas em outra instalação,
   usando a mesma conta e cliente OAuth, sem copiar tokens nem configuração da pasta;
 - duas instalações atualizando cópias separadas da mesma carteira;
 - recuperação preservando pagamentos e decisões sobre proventos, criação de nova carteira e

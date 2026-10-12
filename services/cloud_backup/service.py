@@ -56,7 +56,6 @@ class CloudBackupService:
                 "selected": [],
                 "machine_name": "Computador",
                 "sent": {},
-                "discovery_complete": False,
             },
         )
 
@@ -120,11 +119,7 @@ class CloudBackupService:
             self._account = None
             self._discovery_retry_pending = False
             raise
-        preferences = self._store.load().get("accounts", {}).get(self._account, {})
-        if preferences.get("discovery_complete", False):
-            self._discovery_complete = True
-        elif not self._remote:
-            self._complete_initial_discovery()
+        self._discovery_complete = True
         self._discovery_retry_pending = False
         self._error = ""
 
@@ -132,16 +127,6 @@ class CloudBackupService:
         with self._lock:
             self._require_connection()
             self._discover()
-
-    def dismiss_discovery(self) -> None:
-        with self._lock:
-            self._require_connection()
-            self._complete_initial_discovery()
-
-    def _complete_initial_discovery(self) -> None:
-        with self._store.transaction() as state:
-            self._preferences(state)["discovery_complete"] = True
-        self._discovery_complete = True
 
     def disconnect(self) -> None:
         with self._lock:
@@ -205,14 +190,15 @@ class CloudBackupService:
                         self._discover()
                     except CloudBackupError as error:
                         self._error = str(error)
-                return
+                if self._discovery_retry_pending or not self._account:
+                    return
             if not self._account and self._resume_pending:
                 try:
                     self.resume()
                 except CloudBackupError as error:
                     self._error = str(error)
                 return
-            if not self._account or not self._discovery_complete:
+            if not self._account:
                 return
             try:
                 with self._store.transaction() as state:
@@ -246,6 +232,7 @@ class CloudBackupService:
                                 reverse=True,
                             )
                         )
+                        self._discovery_complete = True
                     except CloudBackupError as error:
                         self._error = str(error)
                         if isinstance(error, CloudAuthorizationError):
@@ -335,20 +322,6 @@ class CloudBackupService:
         with self._lock:
             self._require_connection()
             return self.provider.download(remote)
-
-    def mark_restored(self) -> None:
-        """Resume automatic backup only after the user completes recovery."""
-        with self._lock:
-            self._discovery_complete = True
-            if self._account:
-                try:
-                    self._complete_initial_discovery()
-                except CloudBackupError:
-                    # Local publication has succeeded; preferences must not hide its result.
-                    self._error = (
-                        "A carteira foi recuperada, mas não foi possível salvar a conclusão "
-                        "da descoberta. Confirme novamente as cópias antes dos envios ao reiniciar."
-                    )
 
     @staticmethod
     def _display_name(filename: str) -> str:

@@ -126,6 +126,7 @@ def test_drive_restore_requires_preview_destination_and_explicit_confirmation():
     ))
     app = AppTest.from_function(render_test_screen, args=(runtime,), default_timeout=30).run()
     assert not any(call[0] == 'restore' for call in runtime.calls)
+    assert not any(item.label == 'Continuar sem restaurar' for item in app.button)
     next(item for item in app.button if item.label == 'Inspecionar backup').click().run()
     app.run()
     assert not app.exception

@@ -153,7 +153,9 @@ def _render_discovery(runtime, status):
         if status.discovery_complete:
             st.caption("Nenhum backup foi encontrado nesta conta.")
         else:
-            st.warning("A busca de backups precisa ser concluída antes do primeiro envio.")
+            st.warning(
+                "Não foi possível concluir a consulta dos backups. A aplicação tentará novamente."
+            )
         return
     st.markdown("#### Recuperar uma carteira")
     st.caption(
@@ -174,11 +176,6 @@ def _render_discovery(runtime, status):
     if st.button("Inspecionar backup", disabled=runtime.busy, width="stretch"):
         st.session_state.pop("cloud_restore_preview", None)
         runtime.submit("inspect", choices[chosen])
-    if not status.discovery_complete:
-        st.info("Revise as cópias antes de iniciar o envio automático deste computador.")
-        if st.button("Continuar sem restaurar", disabled=runtime.busy, width="stretch"):
-            st.session_state.pop("cloud_restore_preview", None)
-            runtime.submit("dismiss_discovery")
 
 
 def _render_restore(runtime, labels):

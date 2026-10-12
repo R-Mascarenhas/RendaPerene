@@ -40,9 +40,11 @@ uma senha adicional. O backup local `.rpb` continua criptografado por senha.
 - Distribuir a mesma identidade OAuth nas versões Windows e Ubuntu. O mantenedor controla
   projeto, consentimento e cliente; mudanças exigem um plano para acesso aos backups antigos.
   O ID e o segredo do cliente desktop são configuração distribuível, não credenciais pessoais.
-- Descobrir backups antes do primeiro envio em uma instalação nova. Ordenar pelo horário de
-  atualização do Drive apenas como sugestão; mostrar as cópias e máquinas de origem e exigir
-  confirmação. A aplicação não mescla carteiras nem substitui dados silenciosamente.
+- Consultar os backups ao conectar e antes dos envios. Ordenar pelo horário de atualização
+  do Drive apenas como sugestão; mostrar as cópias e máquinas de origem. Ignorar a oferta de
+  recuperação não bloqueia envios: salvar a seleção com o backup ativado é o consentimento.
+  Exigir confirmação para restaurar. A aplicação não mescla carteiras nem substitui dados
+  silenciosamente.
 - Para uma identidade nova, permitir escolher uma carteira local a substituir ou criar outra.
   Fixar destino, identidade e conteúdo locais, revalidar antes da publicação e preservar cópia
   anterior e rollback. Uma identidade já instalada corresponde ao destino existente e não pode

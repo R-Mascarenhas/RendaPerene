@@ -49,7 +49,6 @@ class CloudBackupRuntime:
             "disconnect": self.service.disconnect,
             "configure": self.service.configure,
             "check_due": self.service.check_due,
-            "dismiss_discovery": self.service.dismiss_discovery,
             "inspect": self._inspect,
             "restore": self._restore,
         }
@@ -113,7 +112,6 @@ class CloudBackupRuntime:
     def _restore(self, remote, selected):
         content = self.service.download(remote)
         result = self._restores.restore_cloud_package(content, selected)
-        self.service.mark_restored()
         return result
 
     def choose_new_destination(self, selected, name):

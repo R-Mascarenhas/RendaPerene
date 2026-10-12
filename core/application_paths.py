@@ -398,6 +398,10 @@ class ApplicationPaths:
             raise ValueError("Portfolio databases must use a safe '.db' filename.")
         return self.database_dir / filename
 
+    def portfolio_identity(self, filename: str) -> str | None:
+        """Read the stable identity of one existing local portfolio."""
+        return self._read_portfolio_id(self.portfolio_database(filename))
+
     def plan_portfolio_restore(
         self,
         portfolio_id: str,

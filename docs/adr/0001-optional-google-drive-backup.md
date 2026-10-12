@@ -15,7 +15,8 @@ uma senha adicional. O backup local `.rpb` continua criptografado por senha.
 
 - O usuário conecta sua conta e ativa explicitamente o backup das carteiras escolhidas.
   Verificar mudanças a cada 10 minutos enquanto a aplicação estiver aberta; carteiras novas
-  não entram automaticamente na seleção. Sem mudanças, não reenviar o pacote.
+  não entram automaticamente na seleção, inclusive quando reutilizam um nome de arquivo.
+  Vincular a seleção à identidade da carteira. Sem mudanças, não reenviar o pacote.
 - Usar pasta visível `RendaPerene` e escopo `drive.file`. Identificar pasta e arquivos por IDs
   e marcadores próprios: uma pasta preexistente não fica autorizada apenas pelo nome.
 - Manter um arquivo `.rpbc` por UUID da carteira e UUID da instalação. Cada máquina atualiza
@@ -47,7 +48,8 @@ uma senha adicional. O backup local `.rpb` continua criptografado por senha.
   anterior e rollback. Uma identidade já instalada corresponde ao destino existente e não pode
   ser duplicada em outro arquivo. Validar estrutura, hashes, SQLite e schema do pacote.
 - Desconectar remove credenciais locais e interrompe operações remotas. Falha de remoção é
-  informada. Revogar acesso no Google e excluir backups são ações separadas; não há exclusão
+  informada e mantém uma pendência recuperável, inclusive após reiniciar, com nova tentativa
+  sem reautorizar. Revogar acesso no Google e excluir backups são ações separadas; não há exclusão
   automática nem histórico de versões gerenciado pelo aplicativo.
 
 ## Alternativas consideradas

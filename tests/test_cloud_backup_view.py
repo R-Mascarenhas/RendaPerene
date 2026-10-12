@@ -171,6 +171,17 @@ def test_drive_user_can_choose_existing_destination_and_must_reconfirm_after_cha
     assert restored.target.replaces_existing
 
 
+def test_pending_credential_removal_offers_retry_without_google_login():
+    runtime = FakeRuntime()
+    runtime.service.current = replace(runtime.service.current, connected=False, credential_removal_pending=True)
+    app = AppTest.from_function(render_test_screen, args=(runtime,), default_timeout=30).run()
+    assert not app.exception
+    assert not any(item.label == 'Conectar ao Google' for item in app.button)
+    next(item for item in app.button if item.label == 'Tentar remover credenciais locais').click().run()
+    assert not app.exception
+    assert runtime.calls[-1][0] == 'disconnect'
+
+
 def test_failed_inspection_is_consumed_before_a_scheduled_check_clears_its_error():
     runtime = FakeRuntime()
     runtime.completed_operation = 'inspect'

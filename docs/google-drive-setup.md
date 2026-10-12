@@ -88,6 +88,9 @@ para o computador, marque **Ativar backup automático** e salve. A primeira veri
 após 10 minutos; as seguintes também respeitam esse intervalo enquanto a interface estiver aberta.
 Carteiras novas não entram na seleção automaticamente. Cada computador atualiza seu próprio arquivo
 `<carteira>_<maquina>.rpbc`. Nomes iguais não misturam arquivos de instalações diferentes.
+Recriar ou substituir uma carteira por outra identidade exige salvar novamente a seleção para
+autorizar seus envios, mesmo quando o nome foi mantido. Preferências antigas sem essa identificação
+também exigem confirmação da seleção antes de retomar o backup automático.
 
 As cópias aparecem pelo horário de atualização no Drive, com a mais recente primeiro. Confira
 origem e dados da prévia antes de confirmar. Uma cópia antiga enviada agora aparece como recente;
@@ -106,7 +109,11 @@ do RendaPerene; compartilhar o arquivo permite ler os dados. O backup local `.rp
 Desconectar remove tokens locais e mantém os arquivos. Revogue o acesso em
 [Conexões da conta Google](https://myaccount.google.com/connections) quando desejar.
 Falha na remoção é informada; nesse caso, remova a credencial `RendaPerene:GoogleDrive:…`
-no cofre do sistema. Desmarcar carteiras não apaga arquivos. Não existe execução com a interface fechada.
+no cofre do sistema ou desbloqueie-o e use **Tentar remover credenciais locais**. A pendência
+persiste após reiniciar a aplicação e impede retomar a conexão até concluir a remoção.
+Desmarcar carteiras não apaga arquivos. Não existe execução com a interface fechada.
+Se a consulta inicial ao Drive falhar temporariamente, as verificações seguintes tentam novamente,
+respeitando o intervalo de 10 minutos e a confirmação das cópias encontradas antes dos envios.
 
 ## Validação para distribuição
 

@@ -1,4 +1,5 @@
 import pytest
+import sqlite3
 
 from core.application_paths import ApplicationPaths
 from core.cloud_backup.models import CloudBackupArtifact, CloudBackupError, RemoteBackup
@@ -9,8 +10,11 @@ from services.cloud_backup.service import CloudBackupService
 PORTFOLIO_ID = 'a930c554-997c-462a-8268-761f45380b58'
 
 
-def create_portfolio(paths, name):
-    DatabaseManager(paths.portfolio_database(f'portfolio_{name.lower()}.db')).init_personal_db()
+def create_portfolio(paths, name, portfolio_id=PORTFOLIO_ID):
+    database = paths.portfolio_database(f'portfolio_{name.lower()}.db')
+    DatabaseManager(database).init_personal_db()
+    with sqlite3.connect(database) as connection:
+        connection.execute('UPDATE portfolio_metadata SET portfolio_id=?', (portfolio_id,))
 
 
 class FakeClock:
@@ -66,12 +70,13 @@ class FakeProvider:
 
 class FakeBackups:
     fingerprint = 'first'
+    portfolio_id = PORTFOLIO_ID
     calls = []
 
     def create_cloud_backup(self, selection, machine_name):
         self.calls.append(selection.filename)
         return CloudBackupArtifact(
-            b'package', PORTFOLIO_ID, self.installation_id, selection.display_name,
+            b'package', self.portfolio_id, self.installation_id, selection.display_name,
             machine_name, f'{self.fingerprint}:{machine_name}',
         )
 
@@ -227,3 +232,74 @@ def test_restarted_application_waits_ten_minutes_before_sending(tmp_path):
     clock.value = 1500
     restarted.check_due()
     assert len(service.provider.uploads) == 1
+
+
+@pytest.mark.parametrize('operation', ['connect', 'resume'])
+def test_temporary_initial_discovery_failure_recovers_before_upload(tmp_path, operation):
+    service, backups, clock, paths = make_service(tmp_path)
+    create_portfolio(paths, 'Família')
+    service.connect()
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
+    service.provider.fail = True
+    with pytest.raises(CloudBackupError):
+        getattr(service, operation)()
+    service.provider.fail = False
+    service.provider.files[('other', 'other-machine')] = RemoteBackup(
+        'old', PORTFOLIO_ID, 'another-installation', 'Família', 'Computador antigo',
+        '2026-10-11T12:00:00Z', '1',
+    )
+    clock.value = 600
+    service.check_due()
+    assert service.status().remote_backups
+    assert not service.status().discovery_complete
+    assert not service.provider.uploads
+    service.dismiss_discovery()
+    clock.value = 1200
+    service.check_due()
+    assert len(service.provider.uploads) == 1
+
+
+def test_recreated_filename_requires_new_backup_consent(tmp_path):
+    service, backups, clock, paths = make_service(tmp_path)
+    create_portfolio(paths, 'Família')
+    service.connect()
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
+    clock.value = 600
+    service.check_due()
+    assert len(service.provider.uploads) == 1
+    database = paths.portfolio_database('portfolio_família.db')
+    create_portfolio(paths, 'Outra', 'c930c554-997c-462a-8268-761f45380b58')
+    assert paths.delete_portfolio(database.name, database.name).deleted
+    paths.prepare_portfolio_creation(database.name)
+    create_portfolio(paths, 'Família', 'b930c554-997c-462a-8268-761f45380b58')
+    backups.fingerprint = 'new-wallet'
+    backups.portfolio_id = 'b930c554-997c-462a-8268-761f45380b58'
+    clock.value = 1200
+    service.check_due()
+    assert len(service.provider.uploads) == 1
+    assert 'seleção' in service.status().error
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
+    clock.value = 1800
+    service.check_due()
+    assert len(service.provider.uploads) == 2
+    assert service.provider.uploads[-1].portfolio_id == backups.portfolio_id
+
+
+def test_failed_credential_removal_can_be_retried_without_connecting(tmp_path, monkeypatch):
+    service, backups, clock, paths = make_service(tmp_path)
+    service.connect()
+    original = service.provider.disconnect
+    monkeypatch.setattr(service.provider, 'disconnect', lambda: (_ for _ in ()).throw(CloudBackupError('Cofre bloqueado.')))
+    with pytest.raises(CloudBackupError):
+        service.disconnect()
+    assert not service.status().connected
+    assert getattr(service.status(), 'credential_removal_pending', False)
+    restarted = CloudBackupService(service.provider, CloudBackupStateStore(paths), backups, paths, clock=clock)
+    monkeypatch.setattr(service.provider, 'resume', lambda: pytest.fail('pending removal must not resume OAuth'))
+    restarted.resume()
+    assert not restarted.status().connected
+    assert restarted.status().credential_removal_pending
+    monkeypatch.setattr(service.provider, 'disconnect', original)
+    service.disconnect()
+    assert not service.status().credential_removal_pending
+    assert not service.provider.connected

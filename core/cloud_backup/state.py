@@ -20,6 +20,8 @@ class CloudBackupStateStore:
             if not isinstance(content, dict) or content.get("format_version") != 1:
                 raise ValueError("Invalid cloud preference format.")
             accounts = content.get("accounts")
+            if not isinstance(content.get("credential_removal_pending", False), bool):
+                raise ValueError("Invalid credential removal state.")
             if not isinstance(accounts, dict):
                 raise ValueError("Invalid cloud accounts.")
             for account, preferences in accounts.items():
@@ -27,6 +29,7 @@ class CloudBackupStateStore:
                     raise ValueError("Invalid cloud account preferences.")
                 selected = preferences.get("selected")
                 sent = preferences.get("sent")
+                selected_ids = preferences.get("selected_ids", {})
                 last_check = preferences.get("last_check", 0)
                 if (
                     not isinstance(preferences.get("enabled"), bool)
@@ -35,6 +38,11 @@ class CloudBackupStateStore:
                     or any(not isinstance(name, str) for name in selected)
                     or not isinstance(sent, dict)
                     or any(not isinstance(value, str) for value in sent.values())
+                    or not isinstance(selected_ids, dict)
+                    or any(
+                        not isinstance(name, str) or not isinstance(identity, str)
+                        for name, identity in selected_ids.items()
+                    )
                     or not isinstance(last_check, (int, float))
                     or not math.isfinite(last_check)
                 ):

@@ -20,6 +20,11 @@ Os protocolos permanecem em `core/ports.py`; `app.py` conecta as implementaçõe
 operação por vez fora do Streamlit; um fragmento acompanha os resultados e agenda as verificações.
 `CloudBackupStateStore` publica preferências não secretas por conta em `cloud-backup-state.json`,
 com gravação atômica e lock entre processos. `SystemCredentialVault` mantém tokens no cofre do SO.
+As seleções persistidas vinculam nomes locais aos UUIDs autorizados; substituir ou recriar uma
+identidade exige nova confirmação. A pendência de remoção de credenciais também é persistida,
+impedindo retomada automática enquanto o usuário não concluir a operação. Falhas temporárias na
+descoberta mantêm uma tentativa pendente, separada da confirmação de recuperação, para a próxima
+verificação agendada.
 
 `BrowserAuthorization` entrega a URL de consentimento somente à sessão que iniciou a conexão.
 A interface abre o popup no clique e o direciona ao Google quando a URL está pronta, com link

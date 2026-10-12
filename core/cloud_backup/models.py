@@ -48,6 +48,7 @@ class CloudBackupStatus:
     busy: bool = False
     message: str = ""
     error: str = ""
+    credential_removal_pending: bool = False
 
 
 @dataclass(frozen=True)

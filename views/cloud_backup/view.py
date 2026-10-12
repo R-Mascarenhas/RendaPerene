@@ -71,6 +71,15 @@ def _render_controls(runtime, labels):
         "O Google e quem tiver acesso ao arquivo poderão ler os dados da carteira."
     )
     if not status.connected:
+        if status.credential_removal_pending:
+            st.warning(
+                "A remoção das credenciais locais está pendente. Desbloqueie o cofre e tente novamente."
+            )
+            if st.button(
+                "Tentar remover credenciais locais", disabled=runtime.busy, width="stretch"
+            ):
+                runtime.submit("disconnect")
+            return
         st.write("Conecte sua conta Google para configurar o backup automático.")
         if st.button("Conectar ao Google", disabled=runtime.busy, width="stretch"):
             runtime.submit("connect", authorization_owner=_authorization_owner())

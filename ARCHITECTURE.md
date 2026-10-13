@@ -18,6 +18,11 @@ Os protocolos permanecem em `core/ports.py`; `app.py` conecta as implementaçõe
 
 `CloudBackupService` coordena seleção, descoberta e envio. `CloudBackupRuntime` executa uma
 operação por vez fora do Streamlit; um fragmento acompanha os resultados e agenda as verificações.
+O runtime é compartilhado entre abas, mas resultados e erros de inspeção/restauração ficam
+vinculados à sessão que iniciou a operação e são consumidos uma única vez. Verificações
+automáticas posteriores não apagam esses resultados nem trocam a carteira ativa de outras abas.
+A prévia guarda apenas metadados; os bytes baixados são descartados após inspecionar e o pacote
+é baixado e validado novamente ao confirmar a recuperação.
 `CloudBackupStateStore` publica preferências não secretas por conta em `cloud-backup-state.json`,
 com gravação atômica e lock entre processos. `SystemCredentialVault` mantém tokens no cofre do SO.
 As seleções persistidas vinculam nomes locais aos UUIDs autorizados; substituir ou recriar uma

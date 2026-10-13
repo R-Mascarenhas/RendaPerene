@@ -1,5 +1,6 @@
 import threading
 import time
+import pytest
 from types import SimpleNamespace
 
 from core.cloud_backup.models import CloudBackupError
@@ -17,6 +18,56 @@ def wait_for_completion(runtime):
 class Service:
     def __getattr__(self, name):
         return lambda *args, **kwargs: None
+
+
+@pytest.mark.parametrize('operation', ['inspect', 'restore'])
+def test_interactive_completion_is_delivered_only_to_owner_even_after_background_check(operation):
+    service = Service()
+    service.download = lambda remote: b'package'
+    preview = SimpleNamespace(installation_id='machine', portfolios=[SimpleNamespace(portfolio_id='portfolio')])
+    result = object()
+    restores = SimpleNamespace(
+        inspect_cloud_package=lambda content: preview,
+        restore_cloud_package=lambda *args: result,
+    )
+    runtime = CloudBackupRuntime(service, restores)
+    remote = SimpleNamespace(installation_id='machine', portfolio_id='portfolio')
+    try:
+        args = (remote,) if operation == 'inspect' else (remote, object())
+        assert runtime.submit(operation, *args, result_owner='owner')
+        wait_for_completion(runtime)
+        assert not runtime.submit(operation, *args, result_owner='owner')
+        assert runtime.submit('check_due')
+        wait_for_completion(runtime)
+        assert runtime.consume_result('other') is None
+        completion = runtime.consume_result('owner')
+        assert completion.operation == operation
+        assert not completion.error
+        assert completion.result is result if operation == 'restore' else completion.result == (remote, preview)
+        assert runtime.consume_result('owner') is None
+    finally:
+        runtime.close()
+
+
+def test_interactive_error_is_preserved_only_for_owner_after_background_check():
+    service = Service()
+
+    def failed_download(remote):
+        raise CloudBackupError('O backup remoto mudou.')
+
+    service.download = failed_download
+    runtime = CloudBackupRuntime(service, None)
+    try:
+        assert runtime.submit('restore', object(), object(), result_owner='owner')
+        wait_for_completion(runtime)
+        assert runtime.submit('check_due')
+        wait_for_completion(runtime)
+        assert runtime.consume_result('other') is None
+        completion = runtime.consume_result('owner')
+        assert completion.result is None
+        assert completion.error == 'O backup remoto mudou.'
+    finally:
+        runtime.close()
 
 
 def test_background_upload_does_not_block_status_or_start_another_operation():
@@ -51,7 +102,7 @@ def test_inspection_rejects_package_that_does_not_match_remote_identity():
     ))
     runtime = CloudBackupRuntime(service, restores)
     try:
-        runtime.submit('inspect', SimpleNamespace(installation_id='machine', portfolio_id='portfolio'))
+        runtime.submit('inspect', SimpleNamespace(installation_id='machine', portfolio_id='portfolio'), result_owner='owner')
         wait_for_completion(runtime)
         assert 'identificação' in runtime.error
         assert runtime.result is None
@@ -68,7 +119,7 @@ def test_restore_download_failure_does_not_publish():
     restores = SimpleNamespace(restore_cloud_package=lambda *args: calls.append('publish'))
     runtime = CloudBackupRuntime(service, restores)
     try:
-        runtime.submit('restore', object(), object())
+        runtime.submit('restore', object(), object(), result_owner='owner')
         wait_for_completion(runtime)
         assert 'mudou' in runtime.error
         assert not calls
@@ -90,7 +141,7 @@ def test_successful_restore_needs_no_followup_preference_write():
     runtime = CloudBackupRuntime(service, SimpleNamespace(restore_cloud_package=restore))
     try:
         selected = object()
-        assert runtime.submit('restore', object(), selected)
+        assert runtime.submit('restore', object(), selected, result_owner='owner')
         wait_for_completion(runtime)
         assert runtime.result is result
         assert not runtime.error

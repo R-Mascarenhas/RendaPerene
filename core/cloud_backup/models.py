@@ -52,6 +52,13 @@ class CloudBackupStatus:
 
 
 @dataclass(frozen=True)
+class CloudBackupOperationResult:
+    operation: str
+    result: object = field(default=None, repr=False)
+    error: str = ""
+
+
+@dataclass(frozen=True)
 class OAuthClientConfiguration:
     client_id: str
     client_secret: str = field(default="", repr=False)

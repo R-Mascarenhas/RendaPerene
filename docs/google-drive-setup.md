@@ -87,6 +87,8 @@ Na instalação padrão, o arquivo fica em
 Na seção **Backup no Google Drive**, conecte a conta, selecione as carteiras, informe um nome
 para o computador, marque **Ativar backup automático** e salve. As cópias encontradas podem
 ser recuperadas mediante confirmação ou simplesmente ignoradas, sem bloquear os envios.
+Inspeções e resultados de recuperação aparecem apenas na aba que iniciou a operação; outras
+abas mantêm suas próprias carteiras ativas.
 A primeira verificação ocorre
 após 10 minutos; as seguintes também respeitam esse intervalo enquanto a interface estiver aberta.
 Ao reiniciar a aplicação, as carteiras já configuradas continuam com backup automático. Outra

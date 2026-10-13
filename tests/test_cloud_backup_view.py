@@ -1,9 +1,12 @@
 from dataclasses import replace
 from types import SimpleNamespace
+from pathlib import Path
+
+import pytest
 
 from streamlit.testing.v1 import AppTest
 
-from core.cloud_backup.models import CloudBackupStatus, RemoteBackup
+from core.cloud_backup.models import CloudBackupOperationResult, CloudBackupStatus, RemoteBackup
 
 
 class FakeService:
@@ -20,6 +23,8 @@ class FakeRuntime:
         self.error = ''
         self.result = None
         self.completed_operation = None
+        self.completed_owner = 'owner'
+        self.consumed_revision = -1
         self.revision = 0
         self.calls = []
 
@@ -40,8 +45,15 @@ class FakeRuntime:
         elif operation == 'inspect':
             self.result = self.inspection
             self.completed_operation = 'inspect'
+            self.completed_owner = kwargs['result_owner']
             self.revision += 1
         return True
+
+    def consume_result(self, owner):
+        if self.completed_operation not in {'inspect', 'restore'} or owner != self.completed_owner or self.consumed_revision == self.revision:
+            return None
+        self.consumed_revision = self.revision
+        return CloudBackupOperationResult(self.completed_operation, self.result, self.error)
 
     def choose_new_destination(self, selected, name):
         return selected
@@ -55,9 +67,48 @@ class FakeRuntime:
 
 
 def render_test_screen(runtime):
+    import streamlit as st
     from views.cloud_backup.view import render_cloud_backup
 
+    st.session_state.setdefault('cloud_authorization_owner', 'owner')
     render_cloud_backup(runtime, {'portfolio_family.db': 'Família', 'portfolio_other.db': 'Outra'})
+
+
+@pytest.mark.parametrize('operation', ['inspect', 'restore'])
+def test_interactive_result_does_not_change_another_browser_session(operation, monkeypatch):
+    from core.utils import SessionManager
+
+    monkeypatch.setattr(SessionManager, 'reset_portfolio_state', lambda: None)
+    runtime = FakeRuntime()
+    runtime.completed_operation = operation
+    runtime.completed_owner = 'owner'
+    remote = RemoteBackup('backup', 'portfolio', 'machine', 'Família', 'PC 1', '2026-10-11T12:00:00Z', '1')
+    preview = SimpleNamespace(
+        portfolios=(SimpleNamespace(
+            display_name='Família', target=SimpleNamespace(replaces_existing=False, filename='portfolio_restored.db'),
+            backup_is_older_than_local=False,
+        ),), app_version='1.2.3', created_at_utc='2026-10-11T12:00:00Z',
+        cleanup_warning_path=None, package_sha256='hash',
+    )
+    runtime.result = SimpleNamespace(
+        database=Path('portfolio_restored.db'), recovery_directory=None, cleanup_warning_path=None,
+    ) if operation == 'restore' else (remote, preview)
+    runtime.revision = 1
+    app = AppTest.from_function(render_test_screen, args=(runtime,), default_timeout=30)
+    app.session_state['cloud_authorization_owner'] = 'other'
+    app.session_state['active_db'] = 'portfolio_other.db'
+    app.run()
+    assert not app.exception
+    assert app.session_state['active_db'] == 'portfolio_other.db'
+    assert 'cloud_restore_preview' not in app.session_state
+    owner = AppTest.from_function(render_test_screen, args=(runtime,), default_timeout=30)
+    owner.session_state['active_db'] = 'portfolio_family.db'
+    owner.run()
+    assert not owner.exception
+    if operation == 'restore':
+        assert owner.session_state['active_db'] == 'portfolio_restored.db'
+    else:
+        assert 'cloud_restore_preview' in owner.session_state
 
 
 def test_user_can_choose_portfolios_and_activate_automatic_backup_without_password():
@@ -120,7 +171,7 @@ def test_drive_restore_requires_preview_destination_and_explicit_confirmation():
         display_name='Família', target=SimpleNamespace(replaces_existing=False, filename='portfolio_restored.db'),
         backup_is_older_than_local=False,
     )
-    runtime.inspection = (remote, b'package', SimpleNamespace(
+    runtime.inspection = (remote, SimpleNamespace(
         portfolios=(selected,), app_version='1.2.3', created_at_utc='2026-10-11T12:00:00Z',
         cleanup_warning_path=None, package_sha256='hash',
     ))
@@ -150,7 +201,7 @@ def test_drive_user_can_choose_existing_destination_and_must_reconfirm_after_cha
         display_name='Principal', target=SimpleNamespace(replaces_existing=False, filename='portfolio_restored.db'),
         backup_is_older_than_local=False,
     )
-    runtime.result = (remote, b'package', SimpleNamespace(
+    runtime.result = (remote, SimpleNamespace(
         portfolios=(selected,), app_version='1.2.3', created_at_utc='2026-10-11T12:00:00Z',
         cleanup_warning_path=None, package_sha256='hash',
     ))
@@ -189,7 +240,7 @@ def test_failed_inspection_is_consumed_before_a_scheduled_check_clears_its_error
     runtime.revision = 1
     runtime.error = 'O backup remoto mudou.'
     # A failed inspection must never reuse a previous successful inspection result.
-    runtime.result = (object(), b'previous package', object())
+    runtime.result = (object(), object())
     def scheduled_check():
         runtime.error = ''
     runtime.schedule_due = scheduled_check

@@ -5,7 +5,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from core.cloud_backup.models import CloudBackupError
+from core.cloud_backup.models import CloudBackupError, CloudBackupOperationResult
 from core.ports import BrowserAuthorizationPort
 from services.cloud_backup.service import CloudBackupService
 from services.local_restore_service import BackupRestoreError, LocalRestoreService
@@ -28,6 +28,8 @@ class CloudBackupRuntime:
         self._lock = threading.Lock()
         self._future = None
         self._operation = None
+        self._result_owner = None
+        self._pending_results = {}
         self.error = ""
         self.result = None
         self.completed_operation = None
@@ -40,7 +42,12 @@ class CloudBackupRuntime:
             return self._future is not None
 
     def submit(
-        self, operation: str, *args, authorization_owner: str | None = None, **kwargs
+        self,
+        operation: str,
+        *args,
+        authorization_owner: str | None = None,
+        result_owner: str | None = None,
+        **kwargs,
     ) -> bool:
         methods = {
             "connect": self.service.connect,
@@ -55,6 +62,11 @@ class CloudBackupRuntime:
         with self._lock:
             if self._future is not None:
                 return False
+            if operation in {"inspect", "restore"}:
+                if not isinstance(result_owner, str) or not result_owner:
+                    raise CloudBackupError("Inicie a recuperação pela sessão atual do RendaPerene.")
+                if result_owner in self._pending_results:
+                    return False
             if operation == "connect" and self.authorization_browser is not None:
                 if not authorization_owner:
                     raise CloudBackupError(
@@ -63,6 +75,7 @@ class CloudBackupRuntime:
                 self.authorization_browser.begin(authorization_owner)
             self.error = ""
             self._operation = operation
+            self._result_owner = result_owner
             logger.info("cloud_backup.operation.started operation=%s", operation)
             self._future = self._executor.submit(methods[operation], *args, **kwargs)
             return True
@@ -78,6 +91,7 @@ class CloudBackupRuntime:
         with self._lock:
             if self._future is None or not self._future.done():
                 return
+            self.result = None
             try:
                 self.result = self._future.result()
                 logger.info("cloud_backup.operation.completed operation=%s", self._operation)
@@ -92,12 +106,21 @@ class CloudBackupRuntime:
                 logger.warning("cloud_backup.operation.failed error_type=%s", type(error).__name__)
                 self.error = "Não foi possível concluir a operação do backup. Tente novamente."
             self.completed_operation = self._operation
+            if self._operation in {"inspect", "restore"}:
+                self._pending_results[self._result_owner] = CloudBackupOperationResult(
+                    self._operation, self.result, self.error
+                )
             if self._operation == "connect" and self.authorization_browser is not None:
                 self.authorization_browser.finish()
             if self._operation == "configure":
                 self._last_dispatch = time.monotonic()
             self._future = None
             self.revision += 1
+
+    def consume_result(self, owner: str) -> CloudBackupOperationResult | None:
+        """Deliver interactive results once, exclusively to their submitting session."""
+        with self._lock:
+            return self._pending_results.pop(owner, None)
 
     def _inspect(self, remote):
         content = self.service.download(remote)
@@ -107,7 +130,7 @@ class CloudBackupRuntime:
             or preview.portfolios[0].portfolio_id != remote.portfolio_id
         ):
             raise CloudBackupError("O conteúdo do backup não corresponde à identificação no Drive.")
-        return remote, content, preview
+        return remote, preview
 
     def _restore(self, remote, selected):
         content = self.service.download(remote)

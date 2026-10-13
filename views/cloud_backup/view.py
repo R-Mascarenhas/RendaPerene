@@ -49,9 +49,10 @@ def render_cloud_backup(
 def _render_controls(runtime, labels):
     runtime.poll()
     revision_key = f"cloud_processed_revision_{id(runtime)}"
-    if st.session_state.get(revision_key) != runtime.revision:
+    account_changed = st.session_state.get(revision_key) != runtime.revision
+    if account_changed:
         st.session_state[revision_key] = runtime.revision
-        _consume_result(runtime)
+    _consume_result(runtime, account_changed=account_changed)
     runtime.schedule_due()
     try:
         status = runtime.service.status()
@@ -60,8 +61,10 @@ def _render_controls(runtime, labels):
         return
     if runtime.busy:
         st.info("Operação em andamento. Você pode continuar usando as outras telas.")
-    if runtime.error:
+    if runtime.error and runtime.completed_operation not in {"inspect", "restore"}:
         st.error(runtime.error)
+    if st.session_state.get("cloud_interactive_error"):
+        st.error(st.session_state["cloud_interactive_error"])
     if status.error:
         st.error(status.error)
     if status.message:
@@ -175,14 +178,15 @@ def _render_discovery(runtime, status):
     )
     if st.button("Inspecionar backup", disabled=runtime.busy, width="stretch"):
         st.session_state.pop("cloud_restore_preview", None)
-        runtime.submit("inspect", choices[chosen])
+        st.session_state.pop("cloud_interactive_error", None)
+        runtime.submit("inspect", choices[chosen], result_owner=_authorization_owner())
 
 
 def _render_restore(runtime, labels):
     saved = st.session_state.get("cloud_restore_preview")
     if saved is None:
         return
-    remote, content, preview = saved
+    remote, preview = saved
     selected = preview.portfolios[0]
     st.write(f"**Carteira:** {selected.display_name}")
     st.write(f"**Computador de origem:** {remote.machine_name}")
@@ -242,13 +246,16 @@ def _render_restore(runtime, labels):
         disabled=runtime.busy or not confirmed or not destination_valid,
         width="stretch",
     ):
-        runtime.submit("restore", remote, selected)
+        st.session_state.pop("cloud_interactive_error", None)
+        runtime.submit("restore", remote, selected, result_owner=_authorization_owner())
 
 
-def _consume_result(runtime):
-    if runtime.error:
-        return
-    if runtime.completed_operation in {"connect", "resume", "disconnect"}:
+def _consume_result(runtime, *, account_changed):
+    if (
+        account_changed
+        and not runtime.error
+        and runtime.completed_operation in {"connect", "resume", "disconnect"}
+    ):
         for key in (
             "cloud_selected_portfolios",
             "cloud_machine_name",
@@ -256,13 +263,21 @@ def _consume_result(runtime):
             "cloud_restore_preview",
             "cloud_remote_backup",
             "cloud_restore_name",
+            "cloud_interactive_error",
         ):
             st.session_state.pop(key, None)
-    if runtime.completed_operation == "inspect" and runtime.result is not None:
-        st.session_state["cloud_restore_preview"] = runtime.result
+    completion = runtime.consume_result(_authorization_owner())
+    if completion is None:
+        return
+    if completion.error:
+        st.session_state["cloud_interactive_error"] = completion.error
+        return
+    st.session_state.pop("cloud_interactive_error", None)
+    if completion.operation == "inspect" and completion.result is not None:
+        st.session_state["cloud_restore_preview"] = completion.result
         st.session_state.pop("cloud_restore_name", None)
-    elif runtime.completed_operation == "restore" and runtime.result is not None:
-        result = runtime.result
+    elif completion.operation == "restore" and completion.result is not None:
+        result = completion.result
         st.session_state.pop("cloud_restore_preview", None)
         st.session_state["active_db"] = result.database.name
         SessionManager.reset_portfolio_state()

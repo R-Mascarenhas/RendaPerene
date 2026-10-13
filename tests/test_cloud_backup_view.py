@@ -128,15 +128,23 @@ def test_user_can_choose_portfolios_and_activate_automatic_backup_without_passwo
     assert any('10 minutos' in item.value for item in app.caption)
 
 
-def test_unconfigured_google_client_shows_login_and_explains_application_unavailability():
-    def render():
+@pytest.mark.parametrize('initialization_error', [
+    '', 'Configure o cliente OAuth desktop.',
+    'Não foi possível ler as preferências do backup automático.',
+])
+def test_unconfigured_google_client_shows_login_and_explains_application_unavailability(initialization_error):
+    def render(error):
         from views.cloud_backup.view import render_cloud_backup
 
-        render_cloud_backup(None, {}, configuration_error='Configure o cliente OAuth desktop.')
+        render_cloud_backup(None, {}, configuration_error=error)
 
-    app = AppTest.from_function(render, default_timeout=30).run()
+    app = AppTest.from_function(render, args=(initialization_error,), default_timeout=30).run()
     assert not app.exception
-    assert any('ainda não está disponível nesta versão' in item.value for item in app.info)
+    if initialization_error:
+        assert any(item.value == initialization_error for item in app.error)
+        assert not any('ainda não está disponível nesta versão' in item.value for item in app.info)
+    else:
+        assert any('ainda não está disponível nesta versão' in item.value for item in app.info)
     login = next(item for item in app.button if item.label == 'Conectar ao Google')
     assert login.disabled
     assert not app.multiselect

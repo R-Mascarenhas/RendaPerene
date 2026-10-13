@@ -28,11 +28,18 @@ def render_cloud_backup(
                 width="stretch",
                 help="A conexão será habilitada quando a integração Google desta aplicação estiver disponível.",
             )
-            st.info(
-                "A conexão com o Google ainda não está disponível nesta versão da aplicação. "
-                "O responsável pelo RendaPerene precisa habilitar a integração. "
-                "Você pode continuar usando as carteiras e os backups locais."
-            )
+            if configuration_error:
+                st.error(configuration_error)
+                st.info(
+                    "Não foi possível inicializar o backup no Google Drive. "
+                    "Você pode continuar usando as carteiras e os backups locais."
+                )
+            else:
+                st.info(
+                    "A conexão com o Google ainda não está disponível nesta versão da aplicação. "
+                    "O responsável pelo RendaPerene precisa habilitar a integração. "
+                    "Você pode continuar usando as carteiras e os backups locais."
+                )
             st.caption("Após conectar, você poderá escolher as carteiras com backup automático.")
             return
         if st.session_state.get("cloud_runtime_session") != id(runtime):

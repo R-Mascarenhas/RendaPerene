@@ -84,6 +84,10 @@ Na instalação padrão, o arquivo fica em
 
 ## Uso
 
+Se a integração não puder iniciar, a seção mostra a causa específica, como falha ao ler as
+preferências locais ou configuração OAuth inválida. O uso das carteiras e backups locais
+permanece disponível; essa falha não significa necessariamente que a release não oferece Drive.
+
 Na seção **Backup no Google Drive**, conecte a conta, selecione as carteiras, informe um nome
 para o computador, marque **Ativar backup automático** e salve. As cópias encontradas podem
 ser recuperadas mediante confirmação ou simplesmente ignoradas, sem bloquear os envios.

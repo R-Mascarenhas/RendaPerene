@@ -112,7 +112,7 @@ class CloudBackupRuntime:
                 )
             if self._operation == "connect" and self.authorization_browser is not None:
                 self.authorization_browser.finish()
-            if self._operation == "configure":
+            if self._operation in {"configure", "connect", "resume", "check_due"}:
                 self._last_dispatch = time.monotonic()
             self._future = None
             self.revision += 1

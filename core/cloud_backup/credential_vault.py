@@ -77,7 +77,10 @@ class SystemCredentialVault:
 
     def write(self, credential: str) -> None:
         try:
-            self._get_backend().set_password(self._service_name, self._account_key, credential)
+            backend = self._get_backend()
+            backend.set_password(self._service_name, self._account_key, credential)
+            if backend.get_password(self._service_name, self._account_key) != credential:
+                raise self._unavailable()
         except CloudBackupError:
             raise
         except Exception:

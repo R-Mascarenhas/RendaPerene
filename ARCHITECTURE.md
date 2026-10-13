@@ -34,6 +34,8 @@ impedindo retomada automática enquanto o usuário não concluir a operação. F
 descoberta mantêm uma tentativa pendente para a próxima verificação agendada. Uma consulta
 bem-sucedida permite enviar as carteiras configuradas no mesmo ciclo, respeitando o intervalo
 de 10 minutos contado pelo relógio monotônico; listagens incompletas não autorizam upload.
+O agendamento conta o intervalo após concluir conexão, configuração ou verificação. Um contador
+persistido de uma inicialização anterior é rebaseado na retomada, sem pular o primeiro ciclo.
 
 `BrowserAuthorization` entrega a URL de consentimento somente à sessão que iniciou a conexão.
 A interface abre o popup no clique e o direciona ao Google quando a URL está pronta, com link

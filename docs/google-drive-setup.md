@@ -94,7 +94,9 @@ ser recuperadas mediante confirmação ou simplesmente ignoradas, sem bloquear o
 Inspeções e resultados de recuperação aparecem apenas na aba que iniciou a operação; outras
 abas mantêm suas próprias carteiras ativas.
 A primeira verificação ocorre
-após 10 minutos; as seguintes também respeitam esse intervalo enquanto a interface estiver aberta.
+após 10 minutos; as seguintes respeitam esse intervalo após terminar a verificação anterior,
+enquanto a interface estiver aberta. Conexões lentas e reinícios do sistema não acrescentam
+um ciclo de espera ao primeiro envio.
 Ao reiniciar a aplicação, as carteiras já configuradas continuam com backup automático. Outra
 conta ou instalação precisa de sua própria seleção e ativação; restaurar é sempre opcional.
 Configurações antigas com `discovery_complete` ausente ou falso não exigem editar o JSON.

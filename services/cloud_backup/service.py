@@ -85,7 +85,7 @@ class CloudBackupService:
             self._require_completed_credential_removal()
             self._resume_pending = False
             self._account = self.provider.connect()
-            self._initial_check = self._clock()
+            self._start_check_interval()
             self._discover()
 
     def resume(self) -> None:
@@ -101,8 +101,14 @@ class CloudBackupService:
                 self._resume_pending = not isinstance(error, CloudAuthorizationError)
                 raise
             if self._account:
-                self._initial_check = self._clock()
+                self._start_check_interval()
                 self._discover()
+
+    def _start_check_interval(self) -> None:
+        self._initial_check = self._clock()
+        # Persisted monotonic counters may belong to a previous operating-system boot.
+        with self._store.transaction() as state:
+            self._preferences(state)["last_check"] = self._initial_check
 
     def _discover(self) -> None:
         self._discovery_complete = False
@@ -208,8 +214,8 @@ class CloudBackupService:
                     now = self._clock()
                     previous_check = preferences.get("last_check", self._initial_check)
                     if now < previous_check:
-                        preferences["last_check"] = now
-                        return
+                        previous_check = self._initial_check
+                        preferences["last_check"] = previous_check
                     previous_check = max(previous_check, self._initial_check)
                     if now - previous_check < BACKUP_INTERVAL_SECONDS:
                         return

@@ -20,6 +20,44 @@ class Service:
         return lambda *args, **kwargs: None
 
 
+@pytest.mark.parametrize('previous_check', [0, 300, 1200])
+def test_first_backup_runs_ten_minutes_after_resume_even_with_slow_connection_or_new_boot(tmp_path, monkeypatch, previous_check):
+    import services.cloud_backup.runtime as module
+    from tests.test_cloud_backup_service import make_service, create_portfolio
+    from core.cloud_backup.state import CloudBackupStateStore
+    from services.cloud_backup.service import CloudBackupService
+
+    service, backups, clock, paths = make_service(tmp_path)
+    create_portfolio(paths, 'Família')
+    service.connect()
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
+    with CloudBackupStateStore(paths).transaction() as state:
+        state['accounts']['account-one']['last_check'] = previous_check
+    original_resume = service.provider.resume
+
+    def slow_resume():
+        clock.value = 4
+        return original_resume()
+
+    monkeypatch.setattr(service.provider, 'resume', slow_resume)
+    monkeypatch.setattr(module.time, 'monotonic', clock)
+    restarted = CloudBackupService(service.provider, CloudBackupStateStore(paths), backups, paths, clock=clock)
+    runtime = CloudBackupRuntime(restarted, None)
+    try:
+        assert runtime.submit('resume')
+        wait_for_completion(runtime)
+        clock.value = 600
+        runtime.schedule_due()
+        wait_for_completion(runtime)
+        assert not service.provider.uploads
+        clock.value = 604
+        runtime.schedule_due()
+        wait_for_completion(runtime)
+        assert len(service.provider.uploads) == 1
+    finally:
+        runtime.close()
+
+
 @pytest.mark.parametrize('operation', ['inspect', 'restore'])
 def test_interactive_completion_is_delivered_only_to_owner_even_after_background_check(operation):
     service = Service()

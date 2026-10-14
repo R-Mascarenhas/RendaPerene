@@ -1,25 +1,15 @@
-## Novidades em 0.12.0
+## Novidades em 0.13.0
 
-- Em **Ativos → Operações**, proventos detectados no Yahoo Finance passam por confirmação
-  antes de entrar na carteira. A data do Yahoo é apresentada como data-ex; você confere o tipo,
-  a quantidade remunerada, o valor por ação e as datas de pagamento de cada parcela antes de salvar.
-  Também é possível associar um pagamento existente ou ignorar o evento, preservando as decisões
-  na carteira. Novas consultas ficam disponíveis pelo botão **Buscar proventos no Yahoo Finance**.
-- Pagamentos com datas futuras aparecem como **a receber** e só entram nos indicadores de
-  proventos recebidos na data informada. Se houver adiamento, a data pode ser ajustada em
-  **Ativos → Operações**, mantendo a quantidade e o valor cadastrados.
-- A importação da B3 permite associar proventos a parcelas já cadastradas, inclusive pagamentos
-  confirmados a partir do Yahoo com tipo diferente. A associação atualiza os dados da parcela
-  com as informações da B3, evitando um novo recebimento. Transferências de direitos a proventos
-  entre custodiantes deixam de ser tratadas como pagamentos.
-- O planejamento automático de carteiras sem movimentações começa na data atual, permitindo
-  simular a aposentadoria antes de registrar o primeiro investimento.
-- As leituras da carteira, os cenários de planejamento e a observação dos dados de mercado
-  passam a usar fluxos compartilhados. A edição de metas anuais mantém as mesmas regras em
-  Planejamento e no detalhe do ativo, e os formulários de movimentação manual foram simplificados.
-- A conciliação de operações B3 usa as mesmas regras na sugestão e na confirmação, revalidando
-  os lançamentos sob bloqueio do banco local para rejeitar vínculos que deixaram de corresponder
-  à operação ou já foram utilizados.
+- Backup opcional no **Google Drive**: conecte sua conta, escolha as carteiras e ative o
+  backup automático. A aplicação verifica mudanças a cada 10 minutos enquanto a interface
+  estiver aberta e mantém uma cópia por carteira e computador na pasta **RendaPerene** do Drive.
+  As carteiras continuam armazenadas localmente; a conexão com o Google é opcional.
+- Recuperação de carteiras em outro computador pela mesma conta Google, com prévia e
+  confirmação antes de restaurar. É possível criar uma carteira ou substituir uma existente,
+  preservando uma cópia local anterior. Os dados incluem pagamentos e decisões sobre proventos.
+- Credenciais Google protegidas pelo cofre do sistema: Windows Credential Manager ou
+  Secret Service no Ubuntu. Desconectar remove as credenciais locais e mantém os backups no Drive.
+- Colunas de nível e nome do logger alinhadas nos logs, facilitando a leitura dos registros.
 
 ## Sistemas suportados
 
@@ -42,11 +32,21 @@ As carteiras ficam fora da pasta do aplicativo:
 Antes de substituir uma versão instalada, preserve uma cópia da pasta de dados. A aplicação
 detecta bancos legados e oferece a migração para o layout atual na primeira execução.
 
-Os backups criados pela interface são criptografados e a restauração é feita nela própria. A senha
-ou chave de recuperação não é armazenada pela aplicação; perder ambas impede recuperar o pacote.
+Os backups locais `.rpb` criados pela interface são criptografados e a restauração é feita nela
+própria. A senha ou chave de recuperação não é armazenada pela aplicação; perder ambas impede
+recuperar o pacote.
+
+Os backups no Google Drive `.rpbc` usam a proteção padrão do Drive, sem senha ou criptografia
+adicional do RendaPerene. O Google e quem tiver acesso ao arquivo poderão ler os dados da carteira.
+Confira o computador de origem e a prévia antes de restaurar: a aplicação não mescla alterações
+entre máquinas.
 
 ## Limitações conhecidas
 
 - O aplicativo não atualiza instalações existentes automaticamente.
 - Dados de mercado dependem de acesso à rede e das integrações públicas configuradas.
+- O backup no Google Drive exige configuração OAuth na distribuição e um cofre de credenciais
+  disponível no sistema. O uso local e os backups locais continuam disponíveis sem essa integração.
+- O backup automático no Drive funciona somente enquanto a interface estiver aberta; o aplicativo
+  não gerencia histórico de versões dos arquivos remotos.
 - O aplicativo não é assinado digitalmente e não é distribuído por lojas de aplicativos.

@@ -753,6 +753,22 @@ O módulo compartilhado coordena somente apresentação e estado de sessão. As 
 validação, cálculo e persistência continuam explícitas nos widgets e pertencem a
 `ShareQuantityGoalService`. Não há novo serviço, protocolo, esquema ou migração.
 
+## Site público estático (#102)
+
+`site/` contém exclusivamente as páginas públicas de apresentação, privacidade e termos,
+CSS compartilhado e uma ilustração SVG com dados fictícios. Não depende do Streamlit,
+dos serviços ou dos bancos da aplicação, não executa JavaScript nem recebe tokens OAuth.
+Links relativos permitem a publicação no subdiretório do GitHub Pages ou em domínio próprio.
+O aplicativo continua local; somente o backup Drive opcional envia carteiras autorizadas.
+
+`.github/workflows/pages.yml` valida o site em pull requests e publica somente `site/`
+após pushes na `main` ou execução manual nessa branch. O job de deploy usa o ambiente
+`github-pages` e permissões de Pages/OIDC, sem credenciais pessoais. Os testes estáticos
+em `tests/test_public_site.py` também rodam isoladamente no workflow, sem conftest do app.
+Não há migração, novo protocolo ou alteração de cache/sessão. Domínio, HTTPS, contatos e
+comprovação de propriedade OAuth estão em [Configuração do site](docs/github-pages-setup.md).
+A política distingue a ausência de telemetria do aplicativo dos registros de hospedagem.
+
 ## Validação
 
 O Pytest usa o `pytest.ini` para disponibilizar a raiz do repositório durante as importações. A fixture compartilhada de testes redireciona a persistência para um banco isolado e configura os adaptadores de teste.

@@ -19,6 +19,10 @@ A interface e a documentação do projeto estão em português brasileiro (PT-BR
 
 ## Download
 
+O código do site público, com apresentação, política de privacidade e termos de uso,
+fica em [`site/`](site/index.html). A publicação no GitHub Pages e a configuração de
+domínio e URLs OAuth estão no [guia do site](docs/github-pages-setup.md).
+
 Baixe o pacote mais recente para Windows ou Ubuntu na página de
 [Releases do RendaPerene](https://github.com/R-Mascarenhas/RendaPerene/releases/latest). A aplicação
 é executada localmente e abre a interface Streamlit no navegador do próprio computador.

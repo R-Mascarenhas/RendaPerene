@@ -773,6 +773,38 @@ class ApplicationPaths:
         with _exclusive_file_lock(self.data_root / ".cloud-backup.lock", wait_for_readers=False):
             yield
 
+    def cleanup_cloud_backup_staging(self) -> None:
+        """Remove abandoned cloud snapshots without waiting for an active packager."""
+        staging = self.backups_dir / ".cloud-snapshot.tmp"
+        if not staging.exists():
+            return
+        descriptor = _open_lock_descriptor(self.backups_dir / ".cloud-snapshot.lock")
+        try:
+            if not _try_lock_descriptor(descriptor):
+                return
+            try:
+                if staging.exists():
+                    shutil.rmtree(staging)
+            finally:
+                _unlock_descriptor(descriptor)
+        finally:
+            os.close(descriptor)
+
+    @contextmanager
+    def cloud_backup_staging(self):
+        """Keep unpublished snapshots under a lock released even on process termination."""
+        staging = self.backups_dir / ".cloud-snapshot.tmp"
+        with _exclusive_file_lock(
+            self.backups_dir / ".cloud-snapshot.lock", wait_for_readers=False
+        ):
+            if staging.exists():
+                shutil.rmtree(staging)
+            staging.mkdir(mode=0o700)
+            try:
+                yield staging
+            finally:
+                shutil.rmtree(staging)
+
     @staticmethod
     def _portfolio_state_token(database: Path) -> str:
         state = []

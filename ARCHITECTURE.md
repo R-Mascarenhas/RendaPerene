@@ -23,6 +23,8 @@ vinculados à sessão que iniciou a operação e são consumidos uma única vez.
 automáticas posteriores não apagam esses resultados nem trocam a carteira ativa de outras abas.
 A prévia guarda apenas metadados; os bytes baixados são descartados após inspecionar e o pacote
 é baixado e validado novamente ao confirmar a recuperação.
+Cada aba compara suas preferências renderizadas com os valores persistidos; mudanças salvas em
+outra aba atualizam os campos, sem descartar edições locais por uma simples verificação automática.
 `CloudBackupStateStore` publica preferências não secretas por conta em `cloud-backup-state.json`,
 com gravação atômica e lock entre processos. `SystemCredentialVault` mantém tokens no cofre do SO.
 As seleções persistidas vinculam nomes locais aos UUIDs autorizados; substituir ou recriar uma
@@ -48,7 +50,10 @@ Se duas instalações criarem pastas simultaneamente, a listagem consulta todas 
 e novos arquivos usam o menor ID, preservando os backups existentes. Erros operacionais do Drive,
 inclusive HTTP 403 por quota ou permissões de arquivo, permitem nova tentativa sem perder a conexão.
 A seleção rejeita cópias locais com a mesma identidade para evitar sobrescritas entre elas.
-`LocalBackupService.create_cloud_backup()` cria o snapshot completo e remove os arquivos temporários.
+`LocalBackupService.create_cloud_backup()` cria o snapshot completo em `backups/.cloud-snapshot.tmp`,
+sem publicar um backup local sem criptografia. Um lock exclusivo protege a área durante o
+empacotamento; a inicialização remove resíduos de processos encerrados sem tocar em operações
+ativas ou backups locais. A conclusão e as falhas normais também removem os temporários.
 `core/cloud_backup/package.py` gera ZIPs `.rpbc`, com `package_kind=rendaperene-cloud-backup`,
 `cloud_format_version=1`, manifesto, metadados e um SQLite. A restauração valida estrutura,
 limites, hashes, identidade e schema; o formato criptografado `.rpb` permanece independente.

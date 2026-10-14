@@ -41,6 +41,7 @@ class FakeRuntime:
                 self.service.current, selected_filenames=args[0], machine_name=args[1],
                 enabled=kwargs['enabled'],
             )
+            self.completed_operation = 'configure'
             self.revision += 1
         elif operation == 'inspect':
             self.result = self.inspection
@@ -126,6 +127,42 @@ def test_user_can_choose_portfolios_and_activate_automatic_backup_without_passwo
     assert configured[1][0] == ('portfolio_family.db',)
     assert configured[2]['enabled'] is True
     assert any('10 minutos' in item.value for item in app.caption)
+
+
+def test_saved_preferences_refresh_other_tabs_even_after_a_background_revision():
+    runtime = FakeRuntime()
+    first = AppTest.from_function(render_test_screen, args=(runtime,), default_timeout=30).run()
+    second = AppTest.from_function(render_test_screen, args=(runtime,), default_timeout=30).run()
+    first.multiselect(key='cloud_selected_portfolios').select('portfolio_family.db')
+    first.text_input(key='cloud_machine_name').input('PC atualizado')
+    first.checkbox(key='cloud_backup_enabled').check()
+    next(item for item in first.button if item.label == 'Salvar preferências').click().run()
+    # A background result may replace completed_operation before the other tab polls.
+    runtime.completed_operation = 'check_due'
+    runtime.revision += 1
+    second.run()
+    assert not second.exception
+    assert second.multiselect(key='cloud_selected_portfolios').value == ['portfolio_family.db']
+    assert second.text_input(key='cloud_machine_name').value == 'PC atualizado'
+    assert second.checkbox(key='cloud_backup_enabled').value is True
+    next(item for item in second.button if item.label == 'Salvar preferências').click().run()
+    assert runtime.calls[-1][1] == (('portfolio_family.db',), 'PC atualizado')
+    assert runtime.calls[-1][2]['enabled'] is True
+
+
+def test_background_checks_preserve_unsaved_preferences_when_saved_values_are_unchanged():
+    runtime = FakeRuntime()
+    app = AppTest.from_function(render_test_screen, args=(runtime,), default_timeout=30).run()
+    app.multiselect(key='cloud_selected_portfolios').select('portfolio_other.db')
+    app.text_input(key='cloud_machine_name').input('Edição em andamento')
+    app.checkbox(key='cloud_backup_enabled').check()
+    app.run()
+    runtime.completed_operation = 'check_due'
+    runtime.revision += 1
+    app.run()
+    assert app.multiselect(key='cloud_selected_portfolios').value == ['portfolio_other.db']
+    assert app.text_input(key='cloud_machine_name').value == 'Edição em andamento'
+    assert app.checkbox(key='cloud_backup_enabled').value is True
 
 
 @pytest.mark.parametrize('initialization_error', [

@@ -59,6 +59,59 @@ def test_cloud_backup_can_be_restored_on_another_installation_without_password(t
     assert not list(destination.backups_dir.glob('.restore-*'))
 
 
+def test_cloud_backup_packages_snapshots_without_publishing_plaintext_backups(tmp_path, monkeypatch):
+    from core.cloud_backup.package import CloudBackupPackageService
+
+    paths = make_paths(tmp_path, 'source')
+    original = CloudBackupPackageService.create
+    observed = []
+
+    def inspect_staging(self, directory, machine_name):
+        observed.append(directory)
+        assert not list(paths.local_backups_dir.iterdir())
+        assert directory.is_relative_to(paths.backups_dir / '.cloud-snapshot.tmp')
+        # Another application startup must not remove snapshots held by a live packager.
+        LocalBackupService(SQLitePortfolioBackupSourceFactory(paths), paths, '1.2.3')
+        assert list(directory.rglob('backup.sqlite3'))
+        return original(self, directory, machine_name)
+
+    monkeypatch.setattr(CloudBackupPackageService, 'create', inspect_staging)
+    create_cloud_backup(paths)
+    assert observed
+    assert not (paths.backups_dir / '.cloud-snapshot.tmp').exists()
+
+
+def test_abrupt_cloud_backup_exit_is_cleaned_on_service_start_without_touching_local_backups(tmp_path):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    paths = make_paths(tmp_path, 'source')
+    kept = paths.local_backups_dir / 'existing.rpb'
+    kept.parent.mkdir()
+    kept.write_bytes(b'existing encrypted package')
+    published = kept.parent / 'previous-local-backup' / 'backup.sqlite3'
+    published.parent.mkdir()
+    published.write_bytes(b'previous explicitly created local snapshot')
+    script = '''
+import os
+import sys
+from pathlib import Path
+from tests.test_cloud_backup_package import make_paths, create_cloud_backup
+from core.cloud_backup.package import CloudBackupPackageService
+CloudBackupPackageService.create = lambda *args: os._exit(17)
+create_cloud_backup(make_paths(Path(sys.argv[1]), 'source'))
+'''
+    result = subprocess.run([sys.executable, '-c', script, str(tmp_path)], cwd=Path(__file__).resolve().parents[1], capture_output=True)
+    assert result.returncode == 17, result.stderr.decode()
+    staging = paths.backups_dir / '.cloud-snapshot.tmp'
+    assert list(staging.rglob('backup.sqlite3'))
+    LocalBackupService(SQLitePortfolioBackupSourceFactory(paths), paths, '1.2.3')
+    assert not staging.exists()
+    assert kept.read_bytes() == b'existing encrypted package'
+    assert published.read_bytes() == b'previous explicitly created local snapshot'
+
+
 def test_cloud_restore_preserves_dividend_reviews_receipts_and_detection(tmp_path):
     source = make_paths(tmp_path, 'source')
     database = source.portfolio_database('portfolio_family.db')
@@ -230,3 +283,4 @@ def test_cloud_backup_rejects_unrestorable_extracted_size(tmp_path, monkeypatch)
     with pytest.raises(BackupCreationError):
         create_cloud_backup(paths)
     assert not list(paths.local_backups_dir.iterdir())
+    assert not (paths.backups_dir / '.cloud-snapshot.tmp').exists()

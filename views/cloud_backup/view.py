@@ -132,6 +132,11 @@ def _render_authorization_browser(runtime, *, enabled):
 
 
 def _render_preferences(runtime, status, labels):
+    preferences = (status.selected_filenames, status.machine_name, status.enabled)
+    if st.session_state.get("cloud_saved_preferences") != preferences:
+        for key in ("cloud_selected_portfolios", "cloud_machine_name", "cloud_backup_enabled"):
+            st.session_state.pop(key, None)
+        st.session_state["cloud_saved_preferences"] = preferences
     with st.form("cloud_backup_preferences"):
         selected = st.multiselect(
             "Carteiras com backup automático",

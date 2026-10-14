@@ -1569,7 +1569,8 @@ class ApplicationPaths:
         path: Path,
     ) -> tuple[tuple[int, int, int, int, int] | None, ...]:
         signature = []
-        for suffix in ("-wal", "-shm"):
+        # SHM is a volatile index updated by readers; committed data lives in DB and WAL.
+        for suffix in ("-wal",):
             try:
                 signature.append(ApplicationPaths._sqlite_file_signature(Path(f"{path}{suffix}")))
             except OSError:

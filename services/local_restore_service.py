@@ -21,6 +21,7 @@ from core.application_paths import (
     PortfolioRestorePublicationResult,
     PortfolioRestoreTarget,
 )
+from core.cloud_backup.package import CloudBackupPackageService
 from core.database import CURRENT_SCHEMA_VERSION, DatabaseManager
 from core.encrypted_backup_package import (
     BackupPackageCorruptedError,
@@ -82,6 +83,7 @@ class RestorePortfolioPreview:
     schema_version: int
     target: PortfolioRestoreTarget
     backup_is_older_than_local: bool
+    created_at_utc: str | None = None
 
 
 @dataclass(frozen=True)
@@ -189,6 +191,16 @@ class LocalRestoreService:
                 ) from error
             raise
 
+    def inspect_cloud_package(self, package_content: bytes) -> RestorePreview:
+        """Inspect the explicit cloud format without changing encrypted RPB requirements."""
+        return self.inspect_package(package_content, RestoreCredential("cloud", ""))
+
+    def restore_cloud_package(
+        self, package_content: bytes, selected: RestorePortfolioPreview
+    ) -> PortfolioRestorePublicationResult:
+        """Restore a confirmed cloud package through the existing publication workflow."""
+        return self.restore_package(package_content, RestoreCredential("cloud", ""), selected)
+
     def choose_new_destination(
         self, selected: RestorePortfolioPreview, requested_name: str
     ) -> RestorePortfolioPreview:
@@ -212,6 +224,28 @@ class LocalRestoreService:
             ) from error
         return replace(selected, target=target)
 
+    def choose_existing_destination(
+        self, selected: RestorePortfolioPreview, filename: str
+    ) -> RestorePortfolioPreview:
+        """Pin an explicitly chosen local portfolio, retaining both identities for revalidation."""
+        try:
+            target = self._paths.plan_portfolio_restore(
+                selected.portfolio_id, replace_filename=filename
+            )
+        except (ValueError, PortfolioRestoreConflictError) as error:
+            raise BackupRestoreConflictError(
+                "A carteira escolhida não está disponível ou este backup já corresponde a outra carteira local."
+            ) from error
+        created_at = self._parse_utc(selected.created_at_utc)
+        modified_at = self._parse_utc(target.last_modified_at_utc)
+        return replace(
+            selected,
+            target=target,
+            backup_is_older_than_local=created_at is not None
+            and modified_at is not None
+            and created_at < modified_at,
+        )
+
     def restore_package(
         self,
         package_content: bytes,
@@ -234,7 +268,9 @@ class LocalRestoreService:
                     ),
                     None,
                 )
-                if current is not None and selected.target.requested_name is not None:
+                if current is not None and selected.target.replaced_portfolio_id is not None:
+                    current = self.choose_existing_destination(current, selected.target.filename)
+                elif current is not None and selected.target.requested_name is not None:
                     try:
                         current = self.choose_new_destination(
                             current, selected.target.requested_name
@@ -325,6 +361,7 @@ class LocalRestoreService:
             and current.target.replaces_existing == selected.target.replaces_existing
             and current.target.state_token == selected.target.state_token
             and current.target.requested_name == selected.target.requested_name
+            and current.target.replaced_portfolio_id == selected.target.replaced_portfolio_id
         )
 
     def _build_preview(self, package: _ValidatedPackage) -> RestorePreview:
@@ -345,6 +382,7 @@ class LocalRestoreService:
                     display_name=artifact.display_name,
                     schema_version=artifact.schema_version,
                     target=target,
+                    created_at_utc=package.created_at_utc,
                     backup_is_older_than_local=(
                         local_modified is not None and package.created_at < local_modified
                     ),
@@ -389,11 +427,17 @@ class LocalRestoreService:
             finally:
                 if descriptor is not None:
                     os.close(descriptor)
-            opened = self._extract(package_file, extracted, credential)
+            if credential.kind == "cloud":
+                backup_id = CloudBackupPackageService().extract(package_content, extracted)
+                expected_encryption = "unencrypted"
+            else:
+                backup_id = self._extract(package_file, extracted, credential).backup_id
+                expected_encryption = "encrypted"
             yield self._validate_extracted_package(
                 extracted,
                 hashlib.sha256(package_content).hexdigest(),
-                opened.backup_id,
+                backup_id,
+                expected_encryption,
             )
         except BackupRestoreError:
             raise
@@ -454,6 +498,7 @@ class LocalRestoreService:
         extracted: Path,
         package_sha256: str,
         authenticated_backup_id: str,
+        expected_encryption: str = "encrypted",
     ) -> _ValidatedPackage:
         manifest = self._read_json(extracted / "manifest.json")
         backup_id = self._canonical_uuid(manifest.get("backup_id"))
@@ -463,7 +508,7 @@ class LocalRestoreService:
             raise BackupRestoreIncompatibleError(
                 "A versão interna deste conjunto de backup não é compatível."
             )
-        if manifest.get("encryption_state") != "encrypted":
+        if manifest.get("encryption_state") != expected_encryption:
             raise BackupRestoreCorruptedError("O estado de criptografia do backup é inválido.")
         created_at_utc = manifest.get("created_at_utc")
         created_at = self._require_utc(created_at_utc)
@@ -514,7 +559,7 @@ class LocalRestoreService:
                 or metadata.get("app_version") != app_version
                 or metadata.get("schema_version") != schema_version
                 or metadata.get("installation_id") != installation_id
-                or metadata.get("encryption_state") != "encrypted"
+                or metadata.get("encryption_state") != expected_encryption
             ):
                 raise BackupRestoreCorruptedError(
                     "Os metadados ou o hash de uma carteira não conferem."

@@ -97,6 +97,28 @@ def test_asset_receipts_and_planning_share_historical_ledger_rules():
     assert history.evolution.iloc[-1]["cumulative_invested"] == 210
 
 
+@pytest.mark.parametrize("empty_table", ["transactions", "dividends"])
+@pytest.mark.parametrize("start_date", [None, "2024-01-01"])
+def test_history_preserves_totals_when_one_ledger_table_has_an_empty_numeric_date_column(empty_table, start_date):
+    if empty_table == "transactions":
+        AssetService.add_dividend("BBAS3", "2024-03-01", "DIVIDEND", 40)
+    else:
+        AssetService.add_transaction("BBAS3", "2024-03-01", "BUY", 10, 20, 10)
+    ledger = PortfolioDAO().load_ledger()
+    getattr(ledger, empty_table)["date"] = pd.Series(dtype="float64")
+
+    class Repository:
+        def load_ledger(self):
+            return ledger
+
+    reads = PortfolioReadService(Repository(), FakeQuotes(), FakeAnalysis(), MarketData)
+    history = reads.read_history(start_date)
+    march = history.evolution.loc[history.evolution["month_str"] == "2024-03"].iloc[0]
+    assert march["cumulative_invested"] == (0 if empty_table == "transactions" else 210)
+    assert march["cumulative_dividends"] == (40 if empty_table == "transactions" else 0)
+    assert march["monthly_dividend"] == (40 if empty_table == "transactions" else 0)
+
+
 def test_cached_ledger_reopens_and_invalidates_after_writes(monkeypatch, tmp_path):
     import views.cached_market_data as cache
 
@@ -119,6 +141,30 @@ def test_cached_ledger_reopens_and_invalidates_after_writes(monkeypatch, tmp_pat
     assert updated.positions.iloc[0]["quantity"] == 15
     assert updated.summary["total_equity"] == 450
     assert first.positions.iloc[0]["quantity"] == 10
+
+
+def test_history_from_reopened_disk_cache_preserves_dates_and_financial_totals(monkeypatch, tmp_path):
+    import views.cached_market_data as cache
+
+    monkeypatch.setitem(cache._cache_configuration, "path", tmp_path / "screens.db")
+    repository = cache.StreamlitCachedPortfolioRepository()
+    cache.StreamlitCachedPortfolioRepository._load_ledger.clear()
+    reads = PortfolioReadService(repository, FakeQuotes(), FakeAnalysis(), MarketData)
+    AssetService.add_transaction("BBAS3", "2024-01-01", "BUY", 10, 20, 10)
+    AssetService.add_dividend("BBAS3", "2024-03-01", "DIVIDEND", 40)
+    first = reads.read_history("2024-01-01")
+    cache.StreamlitCachedPortfolioRepository._load_ledger.clear()
+    monkeypatch.setattr(repository._repository, "load_ledger", lambda: pytest.fail("disk snapshot should be reused"))
+
+    reopened = reads.read_history("2024-01-01")
+
+    pd.testing.assert_frame_equal(reopened.evolution, first.evolution)
+    pd.testing.assert_frame_equal(reopened.monthly_contributions, first.monthly_contributions)
+    assert reopened.evolution.iloc[-1]["cumulative_invested"] == 210
+    assert reopened.evolution.iloc[-1]["cumulative_dividends"] == 40
+    ledger = repository.load_ledger()
+    assert ledger.transactions.iloc[0]["date"] == "2024-01-01"
+    assert ledger.dividends.iloc[0]["date"] == "2024-03-01"
 
 
 def test_quote_updates_do_not_require_local_cache_invalidation():

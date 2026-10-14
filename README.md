@@ -60,6 +60,26 @@ e `logs/` é reservado para registros locais. O catálogo `assets.csv` é um rec
 incluído na aplicação, não um dado da carteira. A aplicação não utiliza banco de dados em nuvem,
 contas de usuário ou telemetria, nem realiza scraping do portal da B3.
 
+O **backup opcional no Google Drive** permite conectar sua conta Google, escolher carteiras
+para backup automático e recuperar cópias em outro computador. Cada máquina atualiza seu próprio
+arquivo na pasta visível `RendaPerene`, a cada 10 minutos enquanto a aplicação estiver aberta.
+Salvar a seleção com o backup ativado autoriza os envios, inclusive após reiniciar a aplicação.
+As cópias disponíveis para recuperação podem ser ignoradas sem bloquear o backup automático.
+Alterar ou substituir um arquivo remoto provoca novo envio para reparar a cópia desta máquina.
+O pacote inclui o banco completo da carteira, com pagamentos e decisões sobre proventos.
+
+A recuperação pede confirmação: para uma carteira ainda não instalada, escolha entre substituir
+uma carteira local (inclusive a Principal) ou criar uma nova. A substituição preserva uma cópia
+anterior em `backups/pre-restore`. A aplicação não mescla alterações entre computadores.
+
+O pacote `.rpbc` usa a proteção padrão do Drive, sem senha ou criptografia própria do RendaPerene:
+o Google e quem tiver acesso ao arquivo podem ler os dados. Os tokens ficam no cofre do sistema;
+sem cofre ou configuração OAuth, o uso e os backups locais continuam disponíveis.
+
+Consulte o [guia do Google Drive](docs/google-drive-setup.md) para conexão, configuração das
+releases e diagnóstico. As escolhas de segurança e funcionamento estão na
+[ADR-0001](docs/adr/0001-optional-google-drive-backup.md).
+
 A seção **Backup local** da barra lateral permite selecionar uma ou mais carteiras; todas aparecem
 marcadas por padrão. O backup é publicado como um único pacote `.rpb` somente depois de todos os
 snapshots consistentes, hashes e metadados internos serem criados e cifrados. Cada carteira representa

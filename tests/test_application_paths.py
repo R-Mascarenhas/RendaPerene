@@ -769,6 +769,31 @@ def test_writer_retries_windows_sharing_violation_during_stale_marker_cleanup(
         assert not marker.exists()
 
 
+@pytest.mark.parametrize("winerror", [None, 32, 33])
+def test_writer_retries_reader_marker_open_sharing_violation(tmp_path, monkeypatch, winerror):
+    database = tmp_path / "portfolio.db"
+    marker = tmp_path / ".portfolio.db.lock.reader.stale"
+    marker.write_bytes(b"stale")
+    real_open = os.open
+    attempts = 0
+
+    def transient_open(path, *args, **kwargs):
+        nonlocal attempts
+        if Path(path) == marker:
+            attempts += 1
+            if attempts == 1:
+                error = PermissionError(errno.EACCES, "Reader marker is being closed")
+                if winerror is not None:
+                    error.winerror = winerror
+                raise error
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", transient_open)
+    with portfolio_database_lock(database):
+        assert attempts == 2
+        assert not marker.exists()
+
+
 def test_reader_registration_does_not_wait_for_existing_readers(tmp_path):
     database = tmp_path / "portfolio.db"
     first_reader = portfolio_database_reader_lock(database)
@@ -1341,6 +1366,46 @@ def test_sqlite_validation_cache_changes_when_wal_changes(monkeypatch, tmp_path)
 
         assert ApplicationPaths.is_valid_sqlite(database) is True
         assert connection_count == 2
+    finally:
+        writer.close()
+
+
+@pytest.mark.parametrize('operation', ['is_valid_sqlite', '_sqlite_content_digest'])
+def test_sqlite_read_cache_ignores_reader_updates_to_shm_but_tracks_wal(monkeypatch, tmp_path, operation):
+    database = tmp_path / 'portfolio.db'
+    create_database(database)
+    writer = sqlite3.connect(database)
+    assert writer.execute('PRAGMA journal_mode = WAL').fetchone() == ('wal',)
+    writer.execute("INSERT INTO marker VALUES ('first-wal-row')")
+    writer.commit()
+    real_connect = sqlite3.connect
+    connection_count = 0
+
+    def counting_connect(*args, **kwargs):
+        nonlocal connection_count
+        connection_count += 1
+        connection = real_connect(*args, **kwargs)
+        # Some systems update the shared-memory index metadata when a reader opens it.
+        shared_memory = Path(f'{database}-shm')
+        metadata = shared_memory.stat()
+        os.utime(shared_memory, ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1_000_000_000))
+        return connection
+
+    monkeypatch.setattr('core.application_paths.sqlite3.connect', counting_connect)
+    read = getattr(ApplicationPaths, operation)
+    try:
+        first = read(database)
+        assert read(database) == first
+        assert connection_count == 1
+
+        writer.execute("INSERT INTO marker VALUES ('second-wal-row')")
+        writer.commit()
+        second = read(database)
+        assert connection_count == 2
+        if operation == '_sqlite_content_digest':
+            assert second != first
+        else:
+            assert first is second is True
     finally:
         writer.close()
 

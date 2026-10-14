@@ -13,6 +13,10 @@ __pycache__/
 *.db.*
 *.key
 *.rpb
+*.rpbc
+google-oauth-client.json
+cloud-backup-state.json
+.installation-id
 
 # Spreadsheets (Sensitive)
 *.ods

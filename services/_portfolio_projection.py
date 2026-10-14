@@ -288,6 +288,9 @@ class PortfolioProjection:
         """
         df_transactions = self._ledger.transactions.copy()
         df_dividends = self._ledger.dividends.copy()
+        for records in (df_transactions, df_dividends):
+            if records.empty:
+                records["date"] = pd.Series(index=records.index, dtype="string")
         df_dividends = df_dividends[df_dividends["date"] <= datetime.date.today().isoformat()]
 
         from core.constants import (
@@ -392,7 +395,7 @@ class PortfolioProjection:
         trades = transactions["transaction_type"].isin(["BUY", "SELL"])
         custody = transactions["event_kind"].eq("CUSTODY")
         transactions = transactions.loc[trades & ~custody].copy()
-        if start_date is not None:
+        if start_date is not None and not transactions.empty:
             transactions = transactions.loc[transactions["date"] >= start_date].copy()
         if transactions["cost_status"].eq("PENDING").any():
             return None

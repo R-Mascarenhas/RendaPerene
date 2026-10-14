@@ -1,8 +1,19 @@
 import hashlib
+import os
+from functools import partial
 
 import streamlit as st
 
 from core.application_paths import ApplicationPaths
+from core.cloud_backup.browser_authorization import BrowserAuthorization
+from core.cloud_backup.credential_vault import SystemCredentialVault
+from core.cloud_backup.google_drive import (
+    GoogleDriveBackupProvider,
+    authorize_desktop,
+    load_oauth_client,
+)
+from core.cloud_backup.models import CloudBackupError
+from core.cloud_backup.state import CloudBackupStateStore
 from core.constants import (
     SESSION_LEGACY_PREFERENCE_MESSAGES,
     SESSION_PORTFOLIO_DELETION_SUCCESS,
@@ -19,6 +30,8 @@ from core.sqlite_backup import SQLitePortfolioBackupSourceFactory
 from core.update_checker import UpdateChecker
 from core.utils import SessionManager, get_app_version
 from core.utils.market_data import MarketData
+from services.cloud_backup.runtime import CloudBackupRuntime
+from services.cloud_backup.service import CloudBackupService
 from services.local_backup_service import (
     BackupCreationError,
     LocalBackupService,
@@ -26,6 +39,7 @@ from services.local_backup_service import (
 )
 from services.local_restore_service import LocalRestoreService
 from views.backup_restore_view import render_local_restore
+from views.cloud_backup.view import render_cloud_backup
 from views.update_notification import render_update_notification
 
 app_paths = ApplicationPaths.discover()
@@ -311,6 +325,60 @@ backup_service = LocalBackupService(
     app_version,
 )
 restore_service = LocalRestoreService(app_paths)
+
+
+@st.cache_resource
+def get_cloud_backup_runtime(paths, version, client):
+    credential_namespace = hashlib.sha256(client.client_id.encode()).hexdigest()[:16]
+    vault = SystemCredentialVault(
+        f"RendaPerene:GoogleDrive:{credential_namespace}", paths.get_or_create_installation_id()
+    )
+    authorization_browser = BrowserAuthorization()
+    provider = GoogleDriveBackupProvider(
+        client,
+        vault,
+        authorize=partial(
+            authorize_desktop,
+            open_browser=authorization_browser.open,
+            cancelled=authorization_browser.cancelled,
+        ),
+    )
+    service = CloudBackupService(
+        provider,
+        CloudBackupStateStore(paths),
+        LocalBackupService(SQLitePortfolioBackupSourceFactory(paths), paths, version),
+        paths,
+    )
+    runtime = CloudBackupRuntime(
+        service,
+        LocalRestoreService(paths),
+        authorization_browser=authorization_browser,
+    )
+    runtime.submit("resume")
+    return runtime
+
+
+cloud_configuration_error = ""
+cloud_runtime = None
+try:
+    from pathlib import Path
+
+    cloud_client_file = Path(
+        os.environ.get(
+            "RENDAPERENE_GOOGLE_OAUTH_CLIENT_FILE",
+            app_paths.resource_root / "google-oauth-client.json",
+        )
+    )
+    cloud_client = load_oauth_client(cloud_client_file)
+    cloud_runtime = get_cloud_backup_runtime(app_paths, app_version, cloud_client)
+except CloudBackupError as error:
+    cloud_configuration_error = str(error)
+except (OSError, ValueError):
+    cloud_configuration_error = (
+        "Não foi possível inicializar o backup no Drive. O uso local continua disponível."
+    )
+render_cloud_backup(cloud_runtime, labels, configuration_error=cloud_configuration_error)
+
 restore_result = None
 with st.sidebar.expander("💾 Backup local"):
     st.warning(

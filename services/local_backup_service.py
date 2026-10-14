@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from core.application_paths import ApplicationPaths
+from core.cloud_backup.models import CloudBackupArtifact
+from core.cloud_backup.package import CloudBackupPackageService
 from core.encrypted_backup_package import BackupPackageError, EncryptedBackupPackageService
 from core.ports import (
     PortfolioBackupIdentityError,
@@ -82,12 +84,72 @@ class LocalBackupService:
         self._source_factory = source_factory
         self._paths = application_paths
         self._app_version = app_version
+        try:
+            self._paths.cleanup_cloud_backup_staging()
+        except OSError:
+            logger.warning("cloud_backup.staging.cleanup.failed")
+
+    def create_cloud_backup(
+        self, selection: PortfolioBackupSelection, machine_name: str
+    ) -> CloudBackupArtifact:
+        """Package one consistent snapshot and remove its unencrypted staging files."""
+        if not isinstance(machine_name, str) or not machine_name.strip() or len(machine_name) > 60:
+            raise BackupCreationError("Informe um nome de computador de até 60 caracteres.")
+        try:
+            with self._paths.cloud_backup_staging() as staging:
+                return self._create_cloud_backup(selection, machine_name, staging)
+        except (OSError, TimeoutError) as error:
+            raise BackupCreationError(
+                "Não foi possível preparar ou limpar o backup temporário na nuvem."
+            ) from error
+
+    def _create_cloud_backup(
+        self, selection: PortfolioBackupSelection, machine_name: str, staging: Path
+    ) -> CloudBackupArtifact:
+        result = self._create_backup((selection,), staging_directory=staging)
+        try:
+            entry = result.manifest["portfolios"][0]
+            database = result.directory / entry["relative_path"] / "backup.sqlite3"
+            digest = self._paths.snapshot_content_digest(database)
+            fingerprint = hashlib.sha256(
+                json.dumps(
+                    [digest, selection.display_name, machine_name, self._app_version],
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ).hexdigest()
+            return CloudBackupArtifact(
+                CloudBackupPackageService().create(result.directory, machine_name),
+                entry["portfolio_id"],
+                result.manifest["installation_id"],
+                selection.display_name,
+                machine_name,
+                fingerprint,
+            )
+        except (OSError, ValueError) as error:
+            raise BackupCreationError(
+                "Não foi possível preparar o pacote de backup na nuvem."
+            ) from error
+        finally:
+            try:
+                shutil.rmtree(result.directory)
+            except OSError as error:
+                raise BackupCreationError(
+                    "A limpeza do backup temporário falhou. Verifique a pasta de backups locais."
+                ) from error
 
     def create_backup(
         self,
         selections: Sequence[PortfolioBackupSelection],
     ) -> BackupResult:
         """Create and atomically publish a backup of every selected portfolio."""
+        return self._create_backup(selections)
+
+    def _create_backup(
+        self,
+        selections: Sequence[PortfolioBackupSelection],
+        *,
+        staging_directory: Path | None = None,
+    ) -> BackupResult:
         pinned_selections = tuple(selections)
         try:
             self._validate_selections(pinned_selections)
@@ -102,8 +164,8 @@ class LocalBackupService:
         backup_id = str(uuid.uuid4())
         created_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         backups_dir = self._paths.local_backups_dir
-        temporary_dir = backups_dir / f".{backup_id}.tmp"
-        published_dir = backups_dir / backup_id
+        temporary_dir = (staging_directory or backups_dir) / f".{backup_id}.tmp"
+        published_dir = temporary_dir if staging_directory is not None else backups_dir / backup_id
         portfolios_dir = temporary_dir / "carteiras"
         manifest_file = temporary_dir / "manifest.json"
 
@@ -155,7 +217,8 @@ class LocalBackupService:
                     "portfolios": portfolio_entries,
                 }
                 self._write_json(manifest_file, manifest)
-                os.replace(temporary_dir, published_dir)
+                if staging_directory is None:
+                    os.replace(temporary_dir, published_dir)
                 result = BackupResult(
                     directory=published_dir,
                     manifest_file=published_dir / manifest_file.name,
@@ -229,7 +292,7 @@ class LocalBackupService:
                 "Não foi possível salvar o backup no armazenamento local."
             ) from None
         finally:
-            if temporary_dir.exists():
+            if staging_directory is None and temporary_dir.exists():
                 shutil.rmtree(temporary_dir)
 
     def create_encrypted_backup(

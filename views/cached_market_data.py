@@ -174,8 +174,12 @@ class StreamlitCachedPortfolioRepository:
                 try:
                     data = saved.value
                     return PortfolioLedger(
-                        pd.read_json(io.StringIO(data["transactions"]), orient="table"),
-                        pd.read_json(io.StringIO(data["dividends"]), orient="table"),
+                        pd.read_json(
+                            io.StringIO(data["transactions"]), orient="table", convert_dates=False
+                        ),
+                        pd.read_json(
+                            io.StringIO(data["dividends"]), orient="table", convert_dates=False
+                        ),
                         int(data["revision"]),
                     )
                 except (ValueError, KeyError, TypeError):

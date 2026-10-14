@@ -84,7 +84,12 @@ class CloudBackupService:
         with self._lock:
             self._require_completed_credential_removal()
             self._resume_pending = False
-            self._account = self.provider.connect()
+            self._account = None
+            try:
+                self._account = self.provider.connect()
+            except CloudBackupError as error:
+                self._resume_pending = not isinstance(error, CloudAuthorizationError)
+                raise
             self._start_check_interval()
             self._discover()
 
@@ -272,13 +277,19 @@ class CloudBackupService:
                                 raise CloudBackupError(
                                     "A carteira mudou durante o backup. Revise a seleção."
                                 )
-                            remote_exists = any(
-                                item.portfolio_id == artifact.portfolio_id
-                                and item.installation_id == artifact.installation_id
+                            matching = [
+                                item
                                 for item in self._remote
+                                if item.portfolio_id == artifact.portfolio_id
+                                and item.installation_id == artifact.installation_id
+                            ]
+                            sent_remote = preferences.get("sent_remote", {}).get(
+                                artifact.portfolio_id
                             )
                             if (
-                                remote_exists
+                                len(matching) == 1
+                                and sent_remote
+                                == {"file_id": matching[0].file_id, "version": matching[0].version}
                                 and preferences["sent"].get(artifact.portfolio_id)
                                 == artifact.fingerprint
                             ):
@@ -304,6 +315,10 @@ class CloudBackupService:
                                 )
                             )
                             preferences["sent"][artifact.portfolio_id] = artifact.fingerprint
+                            preferences.setdefault("sent_remote", {})[artifact.portfolio_id] = {
+                                "file_id": remote.file_id,
+                                "version": remote.version,
+                            }
                             sent_count += 1
                         except (CloudBackupError, BackupCreationError) as error:
                             self._error = str(error)

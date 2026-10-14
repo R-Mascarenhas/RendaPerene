@@ -277,6 +277,24 @@ def test_failed_token_persistence_reports_revocation_and_does_not_connect():
         provider.connect()
 
 
+@pytest.mark.parametrize('status', [500, 503])
+def test_temporary_account_lookup_failure_preserves_consent_in_vault_for_resume(status):
+    http = FakeHTTP([Response({}, status=status), Response({'user': {'permissionId': 'account'}})])
+    provider, source = make_provider(http)
+    authorized = json.loads(source.content)
+    source.content = None
+    calls = []
+    provider._authorize = lambda client: calls.append(client) or authorized
+    with pytest.raises(CloudBackupError) as failure:
+        provider.connect()
+    assert not isinstance(failure.value, CloudAuthorizationError)
+    assert 'Revogue' not in str(failure.value)
+    assert json.loads(source.content)['refresh_token'] == authorized['refresh_token']
+    resumed = GoogleDriveBackupProvider(OAuthClientConfiguration('test-client'), source, http=http)
+    assert resumed.resume() == 'account'
+    assert len(calls) == 1
+
+
 def test_desktop_authorization_uses_pkce_loopback_and_rejects_wrong_state(monkeypatch, caplog):
     import logging
     import io

@@ -198,17 +198,20 @@ class GoogleDriveBackupProvider:
             self._folder_id = None
             self._authorizing = True
             try:
+                try:
+                    self._vault.write(json.dumps(credential))
+                    logger.info("google_oauth.credentials.saved")
+                except CloudBackupError:
+                    raise CloudBackupError(
+                        "A conexão não pôde ser salva. Revogue o acesso nas permissões da conta Google "
+                        "e tente novamente com o cofre desbloqueado."
+                    ) from None
                 account = self._account_id()
                 logger.info("google_oauth.account.verified")
-                self._vault.write(json.dumps(credential))
-                logger.info("google_oauth.credentials.saved")
                 return account
             except CloudBackupError:
                 self._credential = None
-                raise CloudBackupError(
-                    "A conexão não pôde ser salva. Revogue o acesso nas permissões da conta Google "
-                    "e tente novamente com o cofre desbloqueado."
-                ) from None
+                raise
             finally:
                 self._authorizing = False
 

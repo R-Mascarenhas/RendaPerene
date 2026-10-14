@@ -316,6 +316,61 @@ def test_deleted_remote_backup_is_recreated_even_when_local_data_is_unchanged(tm
     assert len(service.provider.files) == 1
 
 
+@pytest.mark.parametrize('change', ['version', 'file_id', 'legacy_state'])
+def test_changed_remote_copy_is_repaired_with_unchanged_local_data_and_survives_restart(tmp_path, change):
+    from dataclasses import replace
+
+    service, backups, clock, paths = make_service(tmp_path)
+    create_portfolio(paths, 'Família')
+    service.connect()
+    service.configure(('portfolio_família.db',), 'Computador', enabled=True)
+    clock.value = 600
+    service.check_due()
+    key = (PORTFOLIO_ID, backups.installation_id)
+    remote = service.provider.files[key]
+    if change == 'legacy_state':
+        with CloudBackupStateStore(paths).transaction() as state:
+            state['accounts']['account-one'].pop('sent_remote', None)
+    else:
+        service.provider.files[key] = replace(remote, **{change: 'changed-remotely'})
+    restarted = CloudBackupService(service.provider, CloudBackupStateStore(paths), backups, paths, clock=clock)
+    restarted.resume()
+    clock.value = 1200
+    restarted.check_due()
+    assert len(service.provider.uploads) == 2
+    clock.value = 1800
+    restarted.check_due()
+    assert len(service.provider.uploads) == 2
+
+
+def test_account_lookup_outage_after_consent_retries_automatically_without_new_login(tmp_path):
+    import json
+    from core.cloud_backup.google_drive import GoogleDriveBackupProvider
+    from core.cloud_backup.models import OAuthClientConfiguration
+    from tests.test_google_drive_backup import FakeHTTP, Response, make_provider
+
+    http = FakeHTTP([
+        Response({}, status=503), Response({'user': {'permissionId': 'account'}}),
+        Response({'files': []}),
+    ])
+    _, vault = make_provider(http)
+    issued = json.loads(vault.content)
+    vault.content = None
+    authorizations = []
+    provider = GoogleDriveBackupProvider(
+        OAuthClientConfiguration('test-client'), vault, http=http,
+        authorize=lambda client: authorizations.append(client) or issued,
+    )
+    service, _, clock, _ = make_service(tmp_path, provider)
+    with pytest.raises(CloudBackupError):
+        service.connect()
+    assert not service.status().connected
+    clock.value = 600
+    service.check_due()
+    assert service.status().connected
+    assert len(authorizations) == 1
+
+
 def test_restarted_application_waits_ten_minutes_before_sending(tmp_path):
     service, backups, clock, paths = make_service(tmp_path)
     create_portfolio(paths, 'Família')

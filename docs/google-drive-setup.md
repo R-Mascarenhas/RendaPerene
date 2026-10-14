@@ -89,8 +89,11 @@ preferências locais ou configuração OAuth inválida. O uso das carteiras e ba
 permanece disponível; essa falha não significa necessariamente que a release não oferece Drive.
 
 Na seção **Backup no Google Drive**, conecte a conta, selecione as carteiras, informe um nome
-para o computador, marque **Ativar backup automático** e salve. As cópias encontradas podem
-ser recuperadas mediante confirmação ou simplesmente ignoradas, sem bloquear os envios.
+para o computador, marque **Ativar backup automático** e salve.
+O botão **Salvar preferências** confirma as edições; as atualizações automáticas da tela preservam
+os campos ainda não salvos. Mudanças salvas em outra aba atualizam os valores apresentados.
+As cópias encontradas podem ser recuperadas mediante confirmação ou simplesmente ignoradas,
+sem bloquear os envios.
 Inspeções e resultados de recuperação aparecem apenas na aba que iniciou a operação; outras
 abas mantêm suas próprias carteiras ativas.
 A primeira verificação ocorre
@@ -128,6 +131,12 @@ persiste após reiniciar a aplicação e impede retomar a conexão até concluir
 Desmarcar carteiras não apaga arquivos. Não existe execução com a interface fechada.
 Se a consulta inicial ao Drive falhar temporariamente, as verificações seguintes tentam novamente,
 respeitando o intervalo de 10 minutos e a seleção salva com o backup automático ativado.
+Se a identificação da conta falhar após consentimento, a credencial já salva no cofre permite
+nova tentativa automática, sem refazer o login. A orientação para revogar acesso se aplica a
+falhas reais na gravação das credenciais.
+Alterar ou substituir o arquivo remoto provoca novo envio da cópia local no próximo ciclo.
+Configurações antigas sem ID e versão do último envio recebem uma atualização para registrar
+esse estado, sem exigir editar o JSON.
 
 ## Validação para distribuição
 

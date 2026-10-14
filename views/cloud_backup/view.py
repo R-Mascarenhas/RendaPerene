@@ -137,7 +137,7 @@ def _render_preferences(runtime, status, labels):
         for key in ("cloud_selected_portfolios", "cloud_machine_name", "cloud_backup_enabled"):
             st.session_state.pop(key, None)
         st.session_state["cloud_saved_preferences"] = preferences
-    with st.form("cloud_backup_preferences"):
+    with st.container():
         selected = st.multiselect(
             "Carteiras com backup automático",
             options=list(labels),
@@ -159,7 +159,7 @@ def _render_preferences(runtime, status, labels):
             key="cloud_backup_enabled",
             disabled=runtime.busy,
         )
-        if st.form_submit_button("Salvar preferências", disabled=runtime.busy, width="stretch"):
+        if st.button("Salvar preferências", disabled=runtime.busy, width="stretch"):
             runtime.submit("configure", tuple(selected), machine, enabled=enabled)
 
 

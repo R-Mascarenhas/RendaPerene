@@ -165,6 +165,20 @@ def test_background_checks_preserve_unsaved_preferences_when_saved_values_are_un
     assert app.checkbox(key='cloud_backup_enabled').value is True
 
 
+def test_preference_edits_are_sent_to_the_session_without_waiting_for_form_submission():
+    runtime = FakeRuntime()
+    app = AppTest.from_function(render_test_screen, args=(runtime,), default_timeout=30).run()
+    for key, widgets in (
+        ('cloud_selected_portfolios', app.multiselect),
+        ('cloud_machine_name', app.text_input),
+        ('cloud_backup_enabled', app.checkbox),
+    ):
+        assert widgets(key=key).proto.form_id == ''
+    app.multiselect(key='cloud_selected_portfolios').select('portfolio_other.db').run()
+    assert app.session_state['cloud_selected_portfolios'] == ['portfolio_other.db']
+    assert not any(call[0] == 'configure' for call in runtime.calls)
+
+
 @pytest.mark.parametrize('initialization_error', [
     '', 'Configure o cliente OAuth desktop.',
     'Não foi possível ler as preferências do backup automático.',

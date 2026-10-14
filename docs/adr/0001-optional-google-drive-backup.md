@@ -16,7 +16,8 @@ uma senha adicional. O backup local `.rpb` continua criptografado por senha.
 - O usuário conecta sua conta e ativa explicitamente o backup das carteiras escolhidas.
   Verificar mudanças a cada 10 minutos enquanto a aplicação estiver aberta; carteiras novas
   não entram automaticamente na seleção, inclusive quando reutilizam um nome de arquivo.
-  Vincular a seleção à identidade da carteira. Sem mudanças, não reenviar o pacote.
+  Vincular a seleção à identidade da carteira. Sem mudanças locais ou na cópia remota,
+  não reenviar o pacote; substituir ou alterar a cópia remota exige reparo.
 - Usar pasta visível `RendaPerene` e escopo `drive.file`. Identificar pasta e arquivos por IDs
   e marcadores próprios: uma pasta preexistente não fica autorizada apenas pelo nome.
 - Manter um arquivo `.rpbc` por UUID da carteira e UUID da instalação. Cada máquina atualiza
@@ -37,6 +38,8 @@ uma senha adicional. O backup local `.rpb` continua criptografado por senha.
   pede nova tentativa, sem sobrescrever credenciais já salvas. A retomada de conexão usa
   credenciais válidas do cofre para o mesmo cliente. Falha ao salvar tokens após consentimento
   descarta a nova credencial em memória e orienta revogar o acesso concedido.
+  Guardar o consentimento no cofre antes da consulta à conta no Drive: falhas temporárias
+  dessa consulta permitem retomada, sem repetir OAuth nem orientar revogação.
 - Distribuir a mesma identidade OAuth nas versões Windows e Ubuntu. O mantenedor controla
   projeto, consentimento e cliente; mudanças exigem um plano para acesso aos backups antigos.
   O ID e o segredo do cliente desktop são configuração distribuível, não credenciais pessoais.

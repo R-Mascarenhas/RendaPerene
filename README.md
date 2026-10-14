@@ -65,6 +65,7 @@ para backup automático e recuperar cópias em outro computador. Cada máquina a
 arquivo na pasta visível `RendaPerene`, a cada 10 minutos enquanto a aplicação estiver aberta.
 Salvar a seleção com o backup ativado autoriza os envios, inclusive após reiniciar a aplicação.
 As cópias disponíveis para recuperação podem ser ignoradas sem bloquear o backup automático.
+Alterar ou substituir um arquivo remoto provoca novo envio para reparar a cópia desta máquina.
 O pacote inclui o banco completo da carteira, com pagamentos e decisões sobre proventos.
 
 A recuperação pede confirmação: para uma carteira ainda não instalada, escolha entre substituir

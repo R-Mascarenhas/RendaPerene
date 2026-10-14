@@ -30,6 +30,7 @@ class CloudBackupStateStore:
                 selected = preferences.get("selected")
                 sent = preferences.get("sent")
                 selected_ids = preferences.get("selected_ids", {})
+                sent_remote = preferences.get("sent_remote", {})
                 last_check = preferences.get("last_check", 0)
                 if (
                     not isinstance(preferences.get("enabled"), bool)
@@ -40,6 +41,14 @@ class CloudBackupStateStore:
                     or not isinstance(sent, dict)
                     or any(not isinstance(value, str) for value in sent.values())
                     or not isinstance(selected_ids, dict)
+                    or not isinstance(sent_remote, dict)
+                    or any(
+                        not isinstance(identity, str)
+                        or not isinstance(remote, dict)
+                        or set(remote) != {"file_id", "version"}
+                        or any(not isinstance(value, str) or not value for value in remote.values())
+                        for identity, remote in sent_remote.items()
+                    )
                     or any(
                         not isinstance(name, str) or not isinstance(identity, str)
                         for name, identity in selected_ids.items()

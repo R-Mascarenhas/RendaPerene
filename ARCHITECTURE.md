@@ -25,8 +25,12 @@ A prévia guarda apenas metadados; os bytes baixados são descartados após insp
 é baixado e validado novamente ao confirmar a recuperação.
 Cada aba compara suas preferências renderizadas com os valores persistidos; mudanças salvas em
 outra aba atualizam os campos, sem descartar edições locais por uma simples verificação automática.
+Os campos enviam edições imediatamente ao estado da sessão, fora de um formulário em lote;
+a persistência e a ativação continuam exigindo clicar em **Salvar preferências**.
 `CloudBackupStateStore` publica preferências não secretas por conta em `cloud-backup-state.json`,
 com gravação atômica e lock entre processos. `SystemCredentialVault` mantém tokens no cofre do SO.
+Após OAuth, a credencial é gravada no cofre antes de consultar a identificação da conta;
+falhas operacionais nessa consulta mantêm a retomada pendente, sem repetir consentimento.
 As seleções persistidas vinculam nomes locais aos UUIDs autorizados; substituir ou recriar uma
 identidade exige nova confirmação. Salvar a seleção com o backup ativado autoriza os envios,
 independentemente de recuperar ou ignorar as cópias remotas. A conclusão da consulta ao Drive
@@ -50,6 +54,9 @@ Se duas instalações criarem pastas simultaneamente, a listagem consulta todas 
 e novos arquivos usam o menor ID, preservando os backups existentes. Erros operacionais do Drive,
 inclusive HTTP 403 por quota ou permissões de arquivo, permitem nova tentativa sem perder a conexão.
 A seleção rejeita cópias locais com a mesma identidade para evitar sobrescritas entre elas.
+O estado `sent_remote` guarda ID e versão retornados no último envio, separados do fingerprint
+local em `sent`. A aplicação só pula o envio se ambos continuarem iguais. Alterar ou substituir
+a cópia remota provoca reparo; estados antigos sem `sent_remote` reenviam uma vez para fixar a versão.
 `LocalBackupService.create_cloud_backup()` cria o snapshot completo em `backups/.cloud-snapshot.tmp`,
 sem publicar um backup local sem criptografia. Um lock exclusivo protege a área durante o
 empacotamento; a inicialização remove resíduos de processos encerrados sem tocar em operações

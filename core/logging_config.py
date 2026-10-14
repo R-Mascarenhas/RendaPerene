@@ -6,7 +6,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 _HANDLER_MARKER = "_rendaperene_logging_handler"
-_LOG_FORMAT = "%(asctime)s | %(levelname)s\t| %(name)s\t| %(message)s"
+_LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)-30s | %(message)s"
 _APPLICATION_LOGGER_NAMES = ("__main__", "app", "run_app", "core", "services", "views")
 LOG_MAX_BYTES = 5 * 1024 * 1024
 LOG_BACKUP_COUNT = 3

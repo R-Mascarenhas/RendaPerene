@@ -92,6 +92,10 @@ O RendaPerene possui apenas execução local. O banco ativo é `portfolio.db` ou
 selecionado na barra lateral, sempre dentro do diretório gravável do usuário. Os pacotes nativos
 iniciam o servidor Streamlit somente em `127.0.0.1`.
 
+A execução pelo código a partir da raiz usa `.streamlit/config.toml`, com
+`browser.gatherUsageStats=false` para desativar as estatísticas de uso do Streamlit.
+O launcher dos pacotes nativos mantém a mesma opção explícita na linha de comando.
+
 Execute a aplicação com:
 
 ```bash

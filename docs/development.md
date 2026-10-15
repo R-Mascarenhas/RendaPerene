@@ -28,6 +28,10 @@ Os comandos abaixo usam os executáveis de `venv/bin/`; no Windows, use os equiv
 em `venv\Scripts\`. Os dados persistentes e seus diretórios estão descritos no
 [guia de uso](user-guide.md#dados-e-privacidade).
 
+Execute a partir da raiz do repositório para carregar `.streamlit/config.toml`, que
+desativa as estatísticas de uso do Streamlit com `browser.gatherUsageStats=false`.
+O launcher das distribuições nativas também desativa essa opção explicitamente.
+
 ## Logging
 
 A aplicação sempre envia logs para a saída padrão. O comportamento pode ser ajustado por variáveis

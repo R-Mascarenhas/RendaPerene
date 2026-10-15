@@ -95,6 +95,8 @@ O Ruff usa Python 3.10 como versão-alvo, limita as linhas a 100 caracteres e ex
 `tests/` do escopo configurado. O GitHub Actions executa lint e formatação no Ubuntu e a suíte de
 testes com Python 3.10 e 3.14 no Ubuntu e no Windows, tanto em pull requests destinados à `main`
 quanto em pushes para a `main`.
+Os jobs Windows têm limite de 30 minutos, para acomodar a variação de tempo dos runners;
+os demais mantêm o limite de 15 minutos.
 
 ## Distribuição nativa
 

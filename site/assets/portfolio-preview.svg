@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="500" viewBox="0 0 680 500" role="img" aria-labelledby="title description">
+  <title id="title">Exemplo ilustrativo de acompanhamento de carteira</title>
+  <desc id="description">Dados fictícios: patrimônio de 120 mil reais, aportes de 18 mil de uma meta de 24 mil e evolução ilustrativa de janeiro a dezembro.</desc>
+  <rect width="680" height="500" rx="16" fill="#ffffff"/>
+  <path d="M0 16Q0 0 16 0H664Q680 0 680 16V64H0Z" fill="#edf3ea"/>
+  <g font-family="system-ui, sans-serif" fill="#173a30">
+    <text x="28" y="40" font-size="20" font-weight="700">RendaPerene</text>
+    <text x="470" y="40" font-size="14">Carteira de exemplo</text>
+    <text x="32" y="108" font-size="15">PATRIMÔNIO ILUSTRATIVO</text>
+    <text x="32" y="152" font-size="36" font-weight="650">R$ 120.000,00</text>
+    <rect x="32" y="181" width="616" height="83" rx="8" fill="#f4f7f1"/>
+    <text x="50" y="209" font-size="16" font-weight="600">Aportes no ano</text>
+    <text x="50" y="236" font-size="14">R$ 18.000,00 de R$ 24.000,00</text>
+    <rect x="365" y="222" width="257" height="10" rx="5" fill="#d9e3da"/>
+    <rect x="365" y="222" width="193" height="10" rx="5" fill="#176a47"/>
+    <text x="32" y="303" font-size="17" font-weight="600">Evolução da carteira</text>
+    <path d="M40 334H640M40 374H640M40 414H640" stroke="#e3e9e2" fill="none"/>
+    <path d="M40 407L140 392L240 397L340 361L440 365L540 346L640 327V434H40Z" fill="#edf3ea"/>
+    <path d="M40 407L140 392L240 397L340 361L440 365L540 346L640 327" stroke="#176a47" stroke-width="4" fill="none" stroke-linejoin="round"/>
+    <text x="40" y="457" font-size="13">Jan</text><text x="230" y="457" font-size="13">Abr</text><text x="430" y="457" font-size="13">Ago</text><text x="610" y="457" font-size="13">Dez</text>
+    <text x="32" y="484" font-size="12" fill="#4c6259">Dados fictícios · Ilustração, não uma captura do aplicativo</text>
+  </g>
+</svg>

@@ -11,6 +11,13 @@ conforme a [documentação Google](https://developers.google.com/identity/protoc
 
 ## Configuração do mantenedor
 
+Antes de configurar os links públicos da tela de consentimento, publique as páginas de
+apresentação, privacidade e termos seguindo o [guia do site](github-pages-setup.md).
+Ele identifica os campos no Google Auth Platform e as etapas de domínio, DNS, HTTPS e
+comprovação de propriedade no Search Console. O site não recebe callbacks ou tokens;
+o cliente permanece desktop com retorno loopback. O contato pelo GitHub Issues não
+substitui o e-mail de suporte obrigatório na configuração OAuth.
+
 1. No [Google Cloud Console](https://console.cloud.google.com/), escolha o projeto do aplicativo
    e habilite a Google Drive API.
 2. Configure a tela de consentimento para usuários externos, com nome, suporte e política de

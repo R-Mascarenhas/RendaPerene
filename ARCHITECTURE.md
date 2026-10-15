@@ -92,6 +92,10 @@ O RendaPerene possui apenas execução local. O banco ativo é `portfolio.db` ou
 selecionado na barra lateral, sempre dentro do diretório gravável do usuário. Os pacotes nativos
 iniciam o servidor Streamlit somente em `127.0.0.1`.
 
+A execução pelo código a partir da raiz usa `.streamlit/config.toml`, com
+`browser.gatherUsageStats=false` para desativar as estatísticas de uso do Streamlit.
+O launcher dos pacotes nativos mantém a mesma opção explícita na linha de comando.
+
 Execute a aplicação com:
 
 ```bash
@@ -752,6 +756,22 @@ simulação por célula.
 O módulo compartilhado coordena somente apresentação e estado de sessão. As chamadas de
 validação, cálculo e persistência continuam explícitas nos widgets e pertencem a
 `ShareQuantityGoalService`. Não há novo serviço, protocolo, esquema ou migração.
+
+## Site público estático (#102)
+
+`site/` contém exclusivamente as páginas públicas de apresentação, privacidade e termos,
+CSS compartilhado e uma ilustração SVG com dados fictícios. Não depende do Streamlit,
+dos serviços ou dos bancos da aplicação, não executa JavaScript nem recebe tokens OAuth.
+Links relativos permitem a publicação no subdiretório do GitHub Pages ou em domínio próprio.
+O aplicativo continua local; somente o backup Drive opcional envia carteiras autorizadas.
+
+`.github/workflows/pages.yml` valida o site em pull requests e publica somente `site/`
+após pushes na `main` ou execução manual nessa branch. O job de deploy usa o ambiente
+`github-pages` e permissões de Pages/OIDC, sem credenciais pessoais. Os testes estáticos
+em `tests/test_public_site.py` também rodam isoladamente no workflow, sem conftest do app.
+Não há migração, novo protocolo ou alteração de cache/sessão. Domínio, HTTPS, contatos e
+comprovação de propriedade OAuth estão em [Configuração do site](docs/github-pages-setup.md).
+A política distingue a ausência de telemetria do aplicativo dos registros de hospedagem.
 
 ## Validação
 

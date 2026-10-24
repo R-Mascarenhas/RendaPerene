@@ -9,8 +9,10 @@ ficam em bancos SQLite locais, sem conta obrigatória ou telemetria. O backup no
 Google Drive é opcional.
 
 Os parâmetros de avaliação de Bazin podem ser editados preservando as configurações do
-planejamento. A busca de proventos ocorre em segundo plano e permite tentar novamente em
-caso de falha; cadastrar pagamentos exige revisão e confirmação explícita.
+planejamento. A busca de proventos começa automaticamente ao abrir o aplicativo e ocorre em
+segundo plano, sem botão de busca manual; cadastrar pagamentos exige revisão e confirmação explícita.
+Ao confirmar ou ignorar um evento, a revisão segue pelos proventos já encontrados, sem repetir
+a consulta ao Yahoo Finance.
 
 ## Instalar o aplicativo
 

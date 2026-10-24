@@ -29,8 +29,23 @@ class DividendSync:
         provider = self.provider
         return lambda: self._search_snapshot(ticker, ledger, reviewed, provider)
 
+    def refresh_review(self, result):
+        """Reconcile the detected queue with local writes without contacting Yahoo."""
+        events = {}
+        for item in result["suggestions"]:
+            event = item["event"]
+            events.setdefault(event.ticker, []).append(event)
+        refreshed = self._search_snapshot(
+            None,
+            self.repository.load_ledger(),
+            self.repository.get_dividend_reviews(),
+            None,
+            events,
+        )
+        return {**refreshed, "unavailable": result["unavailable"], "changed": result["changed"]}
+
     @staticmethod
-    def _search_snapshot(ticker, ledger, reviewed, provider):
+    def _search_snapshot(ticker, ledger, reviewed, provider, detected_events=None):
         projection = PortfolioProjection(ledger, None, None, None)
         transactions = ledger.transactions
         tickers = [ticker] if ticker else sorted(transactions["ticker"].unique())
@@ -49,9 +64,12 @@ class DividendSync:
                 continue
             start = records["date"].min()
             try:
-                if provider is None:
+                if detected_events is not None:
+                    events = detected_events.get(symbol, [])
+                elif provider is None:
                     raise RuntimeError("Dividend provider unavailable")
-                events = provider.get_events(symbol, start)
+                else:
+                    events = provider.get_events(symbol, start)
                 seen = set()
                 for event in events:
                     event.validate()

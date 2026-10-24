@@ -401,6 +401,28 @@ def test_receipt_linked_to_another_event_does_not_hide_a_new_dividend():
     assert [item["event"] for item in result["suggestions"]] == [second]
 
 
+def test_refresh_review_removes_reviewed_events_and_linked_receipts_without_remote_lookup():
+    AssetService.add_transaction("CMIG4", "2026-09-01", "BUY", 100, 10)
+    AssetService.add_dividend("CMIG4", "2027-06-30", "JCP", 20, 100, 0.20)
+    first = DividendEvent("CMIG4", "2026-09-23", 0.07)
+    second = DividendEvent("CMIG4", "2026-09-24", 0.09)
+    service = AssetService(dividend_provider=FakeDividends([first, second]))
+    result = service.get_dividend_suggestions()
+    receipt = result["suggestions"][0]["existing"][0]
+    service.confirm_dividend(first, "JCP", [
+        DividendPayment("2027-06-30", 100, 0.20, receipt["id"]),
+    ], result["revision"])
+
+    class UnavailableProvider:
+        def get_events(self, *args):
+            pytest.fail("Advancing review must not contact Yahoo")
+
+    refreshed = AssetService(dividend_provider=UnavailableProvider()).refresh_dividend_review(result)
+    assert [item["event"] for item in refreshed["suggestions"]] == [second]
+    assert refreshed["suggestions"][0]["existing"] == []
+    assert refreshed["revision"] == service.get_local_projection_revision()
+
+
 @pytest.mark.parametrize("announced,registered", [
     (0.069913, 0.035),
     (0.0349567, 0.035),

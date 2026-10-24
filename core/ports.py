@@ -332,6 +332,8 @@ class DividendSearchSourcePort(Protocol):
 
     def prepare_dividend_search(self, ticker: str | None = None) -> Callable[[], dict]: ...
 
+    def refresh_dividend_review(self, result: dict) -> dict: ...
+
 
 class PlanningConfigPort(Protocol):
     """Outbound Port interface defining planning configuration and persistence operations (DIP compliant)."""

@@ -742,10 +742,17 @@ identidade da carteira, geração, dia, ticker, revisão, memória de tentativas
 coleta, falhas e validade dos resultados e rascunhos. `poll()` inicia ou reutiliza uma tentativa
 e coleta sua conclusão; a tela recebe resultado, indicação de execução e falha, sem conhecer
 Futures ou a ordem entre busca e coleta. Tentativas são reutilizadas no contexto atual,
-inclusive após falha; o botão solicita explicitamente uma nova tentativa. Nova tentativa ou
+inclusive após falha; a interface não oferece busca manual. Nova tentativa ou
 mudança de contexto descarta resultado e rascunho e tenta cancelar o trabalho anterior.
 Se ele já estiver em execução, sua conclusão não volta à revisão. `SessionManager` invalida o
 módulo e remove seus controles ao trocar ou restaurar uma carteira.
+
+Ao confirmar ou ignorar um evento, `advance_review()` mantém o lote detectado e usa
+`AssetService.refresh_dividend_review()` para reconciliá-lo com o ledger e as decisões locais,
+sem consultar o provedor remoto. Eventos revisados saem da fila, pagamentos já associados
+deixam de ser oferecidos nos demais eventos e a revisão passa a usar a revisão atual do banco.
+O rascunho e os controles do evento anterior são descartados. Mudanças de carteira ou geração
+continuam invalidando o lote inteiro; falhas de gravação preservam o evento para nova tentativa.
 
 `app.py` conecta o executor compartilhado, a identificação da carteira e `AssetService` por
 `DividendSearchSourcePort`; o relógio também é injetável. A preparação do snapshot continua na

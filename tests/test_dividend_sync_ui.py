@@ -5,6 +5,7 @@ import pytest
 import streamlit.env_util
 from streamlit.testing.v1 import AppTest
 
+from core.daos.portfolio_dao import PortfolioDAO
 from core.dividends import DividendEvent
 from services.assets_service import AssetService
 from services.dividend_search_session import DividendSearchSession
@@ -54,7 +55,6 @@ def button(app, label):
 def test_detect_and_review_do_not_save_until_user_confirms(dividend_app):
     app, calls = dividend_app
     app.run()
-    button(app, "Buscar proventos no Yahoo Finance").click().run()
     assert not app.exception
     assert calls == []
     next(item for item in app.selectbox if item.label == "Tipo do provento").select("JCP")
@@ -72,7 +72,6 @@ def test_detect_and_review_do_not_save_until_user_confirms(dividend_app):
 def test_missing_payment_date_blocks_confirmation(dividend_app):
     app, calls = dividend_app
     app.run()
-    button(app, "Buscar proventos no Yahoo Finance").click().run()
     next(item for item in app.selectbox if item.label == "Tipo do provento").select("JCP")
     button(app, "Revisar parcelas").click().run()
     assert not app.exception
@@ -101,6 +100,7 @@ def test_new_dividend_is_announced_without_clicking_search(dividend_app):
     app.run()
     assert not app.exception
     assert any("Foi identificado" in item.value and "CMIG4" in item.value for item in app.info)
+    assert all(item.label != "Buscar proventos no Yahoo Finance" for item in app.button)
     assert calls == []
 
 
@@ -159,9 +159,8 @@ def test_detection_form_is_hidden_without_pending_events(dividend_app, monkeypat
 
 
 @pytest.mark.parametrize("failure", ["exception", "unavailable"])
-def test_failed_search_can_be_retried_without_opening_detection_form(dividend_app, monkeypatch, failure):
+def test_failed_search_has_no_manual_retry(dividend_app, monkeypatch, failure):
     app, calls = dividend_app
-    original = AssetService.get_dividend_suggestions
     searches = []
 
     def fail(ticker=None):
@@ -175,11 +174,10 @@ def test_failed_search_can_be_retried_without_opening_detection_form(dividend_ap
     assert not app.exception
     assert searches == ["CMIG4"]
     assert not any(item.label == "Detectar proventos e informar pagamentos" for item in app.expander)
-    monkeypatch.setattr(AssetService, "get_dividend_suggestions", original)
-    button(app, "Buscar proventos no Yahoo Finance").click().run()
+    app.run()
     assert not app.exception
-    assert any("Foram encontrados proventos para CMIG4" in item.value for item in app.warning)
-    assert any(item.label == "Detectar proventos e informar pagamentos" for item in app.expander)
+    assert searches == ["CMIG4"]
+    assert all(item.label != "Buscar proventos no Yahoo Finance" for item in app.button)
     assert calls == []
 
 
@@ -197,7 +195,7 @@ def test_source_change_notice_is_visible_without_pending_suggestions(dividend_ap
     assert calls == []
 
 
-def test_empty_search_can_be_manually_refreshed_when_source_publishes_new_event(dividend_app, monkeypatch):
+def test_empty_search_is_reused_on_rerun_without_manual_search(dividend_app, monkeypatch):
     app, calls = dividend_app
     available = AssetService.get_dividend_suggestions("CMIG4")
     published = [False]
@@ -214,8 +212,59 @@ def test_empty_search_can_be_manually_refreshed_when_source_publishes_new_event(
     assert searches == ["CMIG4"]
     assert not any(item.label == "Detectar proventos e informar pagamentos" for item in app.expander)
     published[0] = True
-    button(app, "Buscar proventos no Yahoo Finance").click().run()
+    app.run()
     assert not app.exception
-    assert searches == ["CMIG4", "CMIG4"]
-    assert any("Foram encontrados proventos para CMIG4" in item.value for item in app.warning)
+    assert searches == ["CMIG4"]
+    assert all(item.label != "Buscar proventos no Yahoo Finance" for item in app.button)
     assert calls == []
+
+
+@pytest.mark.parametrize("action", ["ignore", "confirm"])
+def test_review_advances_to_next_event_without_repeating_search(monkeypatch, action):
+    monkeypatch.setattr(streamlit.env_util, "is_repl", lambda: False)
+    AssetService.add_transaction("CMIG4", "2026-09-01", "BUY", 100, 10)
+    first = DividendEvent("CMIG4", "2026-09-23", 0.07)
+    second = DividendEvent("CMIG4", "2026-10-01", 0.09)
+    searches = []
+
+    class Provider:
+        def get_events(self, ticker, start):
+            searches.append(ticker)
+            return [first, second]
+
+    class ImmediateExecutor:
+        def submit(self, callback):
+            future = Future()
+            future.set_result(callback())
+            return future
+
+    AssetService.set_adapters(dividend_provider=Provider())
+    app = AppTest.from_string('''
+import streamlit as st
+from views.components.dividend_sync import DividendSyncWidget
+st.title("Proventos")
+DividendSyncWidget().render("CMIG4")
+''', default_timeout=30)
+    app.session_state["dividend_search_session"] = DividendSearchSession(
+        AssetService.get_default(), ImmediateExecutor(), market_data_portfolio_context,
+    )
+    app.run()
+    if action == "confirm":
+        next(item for item in app.selectbox if item.label == "Tipo do provento").select("JCP")
+        app.date_input[0].set_value(datetime.date(2027, 6, 30))
+        button(app, "Revisar parcelas").click().run()
+        button(app, "Confirmar e salvar pagamentos").click().run()
+    else:
+        button(app, "Ignorar este evento").click().run()
+    assert not app.exception
+    assert searches == ["CMIG4"]
+    pending = next(item for item in app.selectbox if item.label == "Provento para revisar")
+    assert len(pending.options) == 1
+    assert "2026-10-01" in pending.options[0]
+    button(app, "Ignorar este evento").click().run()
+    assert not app.exception
+    assert searches == ["CMIG4"]
+    reviews = PortfolioDAO().get_dividend_reviews()
+    assert set(reviews) == {first.source_key, second.source_key}
+    assert len(AssetService.get_dividend_payments()) == (1 if action == "confirm" else 0)
+    assert not app.selectbox

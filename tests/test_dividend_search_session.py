@@ -198,3 +198,35 @@ def test_context_changed_during_snapshot_preparation_discards_the_attempt():
     assert session.poll().result is None
     executor.complete(1)
     assert session.poll().result is not None
+
+
+def test_advance_review_updates_revision_without_submitting_another_search():
+    source, executor = SearchSource(), ControlledExecutor()
+    session = DividendSearchSession(source, executor, lambda: ("a", "g"))
+    session.poll()
+    executor.complete()
+    previous = session.poll()
+    session.draft = {"payments": [1]}
+    source.revision += 1
+    source.refresh_dividend_review = lambda result: {**result, "suggestions": [], "revision": 1}
+    session.advance_review()
+    current = session.poll()
+    assert current.result["suggestions"] == []
+    assert current.result["revision"] == 1
+    assert current.key != previous.key
+    assert session.draft is None
+    assert len(executor.jobs) == 1
+
+
+def test_advance_review_does_not_carry_events_to_another_portfolio():
+    source, executor = SearchSource(), ControlledExecutor()
+    context = ["a", "g"]
+    session = DividendSearchSession(source, executor, lambda: tuple(context))
+    session.poll()
+    executor.complete()
+    session.poll()
+    context[0] = "b"
+    session.advance_review()
+    assert session.poll().result is None
+    assert session.draft is None
+    assert len(executor.jobs) == 2

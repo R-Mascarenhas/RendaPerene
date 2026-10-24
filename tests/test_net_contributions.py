@@ -52,6 +52,17 @@ def test_empty_portfolio_has_zero_ytd_and_no_monthly_contributions():
     assert PortfolioReadService.read_history().monthly_contributions.empty
 
 
+def test_period_without_trades_preserves_positions_and_has_no_contributions():
+    assert AssetService.add_transaction("BBAS3", "2024-01-01", "BUY", 10, 20, 2)
+
+    planning = PortfolioReadService.read_planning(year=2025)
+
+    assert planning.positions.iloc[0]["quantity"] == 10
+    assert planning.total_invested == 202
+    assert planning.ytd_contributions == 0
+    assert PortfolioReadService.read_history("2025-01-01").monthly_contributions.empty
+
+
 def test_grouping_does_not_create_contributions():
     assert AssetService.add_transaction("BBAS3", "2024-01-01", "GROUP", 10, 999, 10)
 

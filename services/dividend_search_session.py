@@ -72,6 +72,28 @@ class DividendSearchSession:
         revision = self._source.get_local_projection_revision()
         return (self._context(), self._today(), ticker, revision)
 
+    def advance_review(self):
+        """Refresh local decisions and advance the existing queue after saving."""
+        if self._identity is None or self._result is None:
+            self.invalidate()
+            return
+        identity = self._read_identity(self._identity[2])
+        if identity[:-1] != self._identity[:-1]:
+            self.invalidate()
+            return
+        previous = self._result
+        self._result = None
+        self._draft = None
+        self._identity = identity
+        self._serial += 1
+        try:
+            result = self._source.refresh_dividend_review(previous)
+            if result["revision"] == identity[-1]:
+                self._result = result
+        except Exception:
+            self._record_failure()
+        self._discard_if_obsolete()
+
     def _record_failure(self):
         logger.warning("dividends.review_read_failed")
         self._failed = True

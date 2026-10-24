@@ -106,6 +106,10 @@ class AssetService:
         return DividendSync(self._portfolio_repo, self._dividend_provider).prepare_search(ticker)
 
     @hybridmethod
+    def refresh_dividend_review(self, result):
+        return DividendSync(self._portfolio_repo, self._dividend_provider).refresh_review(result)
+
+    @hybridmethod
     def prepare_dividend_payments(self, event, kind, payments):
         return DividendSync.prepare(event, kind, payments)
 

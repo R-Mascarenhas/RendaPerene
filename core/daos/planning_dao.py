@@ -67,6 +67,36 @@ class PlanningDAO:
         finally:
             conn.close()
 
+    def save_bazin_configuration(
+        self,
+        *,
+        ceiling_model_selection: str | None = None,
+        bazin_target_yield: float | None = None,
+        bazin_target_spread: float | None = None,
+    ) -> None:
+        """Update only supplied valuation fields, retaining all other persisted values."""
+        changes = {
+            key: value
+            for key, value in (
+                (CEILING_MODEL_SELECTION, ceiling_model_selection),
+                (BAZIN_TARGET_YIELD, bazin_target_yield),
+                (BAZIN_TARGET_SPREAD, bazin_target_spread),
+            )
+            if value is not None
+        }
+        if not changes:
+            return
+        conn = self.get_personal_connection()
+        try:
+            with conn:
+                assignments = ", ".join(f"{key} = ?" for key in changes)
+                conn.execute(
+                    f"UPDATE planning_configuration SET {assignments} WHERE id = 1",
+                    tuple(changes.values()),
+                )
+        finally:
+            conn.close()
+
     def save_configuration(
         self,
         birth_date: str,

@@ -400,7 +400,7 @@ class PortfolioProjection:
         if transactions["cost_status"].eq("PENDING").any():
             return None
 
-        direction = transactions["transaction_type"].map({"BUY": 1.0, "SELL": -1.0})
+        direction = transactions["transaction_type"].map({"BUY": 1.0, "SELL": -1.0}).astype(float)
         transactions["amount"] = (
             direction * transactions["quantity"] * transactions["unit_price"] + transactions["fees"]
         )

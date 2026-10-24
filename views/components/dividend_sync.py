@@ -3,7 +3,6 @@
 import datetime
 import hashlib
 import logging
-from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 import streamlit as st
@@ -18,33 +17,23 @@ logger = logging.getLogger(__name__)
 _KINDS = {"DIVIDEND": "Dividendo", "JCP": "JCP", "YIELD": "Rendimento"}
 
 
-@st.cache_resource
-def get_dividend_search_executor():
-    return ThreadPoolExecutor(max_workers=2, thread_name_prefix="dividend-search")
-
-
 class DividendSyncWidget:
     def render(self, ticker=None):
-        context = (*market_data_portfolio_context(), datetime.date.today().isoformat())
-        identity = hashlib.sha256(repr((context, ticker)).encode()).hexdigest()[:16]
-        prefix = f"dividend_sync_v4_{identity}_"
-        revision = AssetService.get_local_projection_revision()
-        result = st.session_state.get(prefix + "result")
-        if st.session_state.get(prefix + "attempt_revision") != revision:
-            self._search(prefix, ticker, revision)
-        self._collect_search(prefix, revision)
-        result = st.session_state.get(prefix + "result")
-        future = st.session_state.get(prefix + "future")
-        if future is not None:
+        search_session = st.session_state["dividend_search_session"]
+        state = search_session.poll(ticker)
+        prefix = state.key
+        result = state.result
+        if state.searching:
             st.caption("Verificando novos proventos em segundo plano...")
 
             @st.fragment(run_every=1)
             def await_dividend_search():
-                if st.session_state.get(prefix + "future") is future and future.done():
+                current = search_session.poll(ticker)
+                if current.key != state.key or not current.searching:
                     st.rerun()
 
             await_dividend_search()
-        pending = result and result["revision"] == revision and result["suggestions"]
+        pending = result and result["suggestions"]
         if pending:
             tickers = sorted({item["event"].ticker for item in pending})
             st.warning(
@@ -52,13 +41,13 @@ class DividendSyncWidget:
                 + ", ".join(tickers)
                 + ". Confira os valores e informe as datas de pagamento abaixo."
             )
-        if result and result["revision"] == revision and result["changed"]:
+        if result and result["changed"]:
             st.info(
                 "O Yahoo alterou valores de eventos já revisados de "
                 + ", ".join(result["changed"])
                 + ". Seus pagamentos confirmados foram preservados."
             )
-        if st.session_state.get(prefix + "search_failed"):
+        if state.failed:
             st.warning(
                 "Não foi possível verificar novos proventos. A carteira continua disponível. "
                 "Tente novamente em Buscar proventos no Yahoo Finance."
@@ -70,7 +59,7 @@ class DividendSyncWidget:
                 + ". Você pode continuar usando a carteira offline."
             )
         if not pending and st.button("Buscar proventos no Yahoo Finance", key=prefix + "retry"):
-            self._search(prefix, ticker, revision)
+            search_session.poll(ticker, retry=True)
             st.rerun()
         if pending:
             with st.expander("Detectar proventos e informar pagamentos", expanded=bool(pending)):
@@ -79,15 +68,8 @@ class DividendSyncWidget:
                     "salvar. A data-ex identifica o evento; ela não é a data do pagamento."
                 )
                 if st.button("Buscar proventos no Yahoo Finance", key=prefix + "search"):
-                    self._search(prefix, ticker, revision)
+                    search_session.poll(ticker, retry=True)
                     st.rerun()
-                result = st.session_state.get(prefix + "result")
-                if result is None:
-                    return
-                if result["revision"] != AssetService.get_local_projection_revision():
-                    st.warning("A carteira mudou. Busque novamente para revisar os proventos.")
-                    st.session_state.pop(prefix + "draft", None)
-                    return
                 suggestions = result["suggestions"]
                 if not suggestions:
                     st.info("Nenhum novo provento disponível para revisão.")
@@ -186,7 +168,7 @@ class DividendSyncWidget:
                             for date, quantity, unit_value, chosen in payments
                         ]
                         rows = AssetService.prepare_dividend_payments(event, kind, values)
-                        st.session_state[prefix + "draft"] = {
+                        search_session.draft = {
                             "event": event,
                             "kind": kind,
                             "payments": values,
@@ -195,11 +177,11 @@ class DividendSyncWidget:
                             "count": count,
                         }
                     except ValueError as error:
-                        st.session_state.pop(prefix + "draft", None)
+                        search_session.draft = None
                         st.error(str(error))
-                draft = st.session_state.get(prefix + "draft")
+                draft = search_session.draft
                 if draft and (draft["selected"] != selected or draft["count"] != count):
-                    st.session_state.pop(prefix + "draft", None)
+                    search_session.draft = None
                     draft = None
                 if draft:
                     st.write("Confira os pagamentos antes de confirmar:")
@@ -234,7 +216,6 @@ class DividendSyncWidget:
                     )
                     if st.button("Confirmar e salvar pagamentos", key=form_key + "confirm"):
                         self._save(
-                            prefix,
                             lambda: AssetService.confirm_dividend(
                                 draft["event"],
                                 draft["kind"],
@@ -243,42 +224,7 @@ class DividendSyncWidget:
                             ),
                         )
                 if st.button("Ignorar este evento", key=form_key + "ignore"):
-                    self._save(
-                        prefix, lambda: AssetService.ignore_dividend(event, result["revision"])
-                    )
-
-    @staticmethod
-    def _search(prefix, ticker, revision):
-        # Remember failed attempts as well, so ordinary reruns do not repeat remote requests.
-        st.session_state[prefix + "attempt_revision"] = revision
-        st.session_state.pop(prefix + "draft", None)
-        previous = st.session_state.pop(prefix + "future", None)
-        if previous is not None:
-            previous.cancel()
-        try:
-            search = AssetService.prepare_dividend_search(ticker)
-            st.session_state[prefix + "future"] = get_dividend_search_executor().submit(search)
-        except Exception:
-            logger.warning("dividends.review_read_failed")
-            st.session_state[prefix + "search_failed"] = True
-        else:
-            st.session_state.pop(prefix + "search_failed", None)
-
-    @staticmethod
-    def _collect_search(prefix, revision):
-        future = st.session_state.get(prefix + "future")
-        if future is None or not future.done():
-            return
-        st.session_state.pop(prefix + "future", None)
-        try:
-            result = future.result()
-        except Exception:
-            logger.warning("dividends.review_read_failed")
-            st.session_state[prefix + "search_failed"] = True
-        else:
-            if result["revision"] == revision:
-                st.session_state[prefix + "result"] = result
-                st.session_state.pop(prefix + "search_failed", None)
+                    self._save(lambda: AssetService.ignore_dividend(event, result["revision"]))
 
     @staticmethod
     def _payment_label(row):
@@ -328,7 +274,6 @@ class DividendSyncWidget:
                 submitted = st.form_submit_button("Confirmar nova data")
             if submitted:
                 DividendSyncWidget._save(
-                    prefix,
                     lambda: AssetService.reschedule_dividend(
                         selected,
                         date.isoformat(),
@@ -342,7 +287,7 @@ class DividendSyncWidget:
         self._render_reschedule(None, f"dividend_reschedule_{identity}_")
 
     @staticmethod
-    def _save(prefix, action):
+    def _save(action):
         try:
             changed = action()
         except ValueError as error:
@@ -351,8 +296,9 @@ class DividendSyncWidget:
             logger.warning("dividends.confirm_failed")
             st.error("Não foi possível salvar os pagamentos. Tente novamente.")
         else:
-            st.session_state.pop(prefix + "result", None)
-            st.session_state.pop(prefix + "draft", None)
+            search_session = st.session_state.get("dividend_search_session")
+            if search_session is not None:
+                search_session.invalidate()
             invalidate_goal_editor_state()
             st.toast("Revisão salva." if changed else "Este evento já foi revisado.")
             st.rerun()

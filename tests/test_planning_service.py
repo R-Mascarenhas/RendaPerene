@@ -9,6 +9,32 @@ from services.assets_service import AssetService
 from services.planning_service import SimulationService
 
 
+@pytest.mark.parametrize("auto,manual", [(False, True), (True, False), (False, False)])
+def test_bazin_edits_preserve_persisted_planning(auto, manual):
+    service = SimulationService(PlanningDAO())
+    service.save_configuration(
+        "1990-01-01", 65, 8.0, 7.0, 1518.0, 0.0,
+        desired_income_type="FIXED", desired_income_fixed=8500.0,
+        planning_start_date="2024-03-15", initial_equity_auto=auto,
+        initial_equity_manual_override=manual,
+    )
+    expected = service.get_configuration()
+    for field, value in (
+        ("ceiling_model_selection", "Bazin Selic"),
+        ("bazin_target_yield", 8.5),
+        ("bazin_target_spread", 0.0),
+    ):
+        service.save_bazin_configuration(**{field: value})
+        expected[field] = value
+        assert service.get_configuration() == expected
+
+
+def test_bazin_edit_without_planning_does_not_create_configuration():
+    service = SimulationService(PlanningDAO())
+    service.save_bazin_configuration(bazin_target_yield=7.0)
+    assert service.get_configuration() is None
+
+
 def test_empty_portfolio_planning_tracks_today_until_first_transaction(monkeypatch):
     class FrozenDate(datetime.date):
         @classmethod

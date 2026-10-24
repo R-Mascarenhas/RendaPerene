@@ -4,18 +4,8 @@ import pandas as pd
 import streamlit as st
 
 from core.constants import (
-    ANNUAL_INTEREST_RATE,
-    BIRTH_DATE,
-    DESIRED_INCOME_FIXED,
-    DESIRED_INCOME_MW,
-    DESIRED_INCOME_TYPE,
-    INITIAL_EQUITY_AUTO,
-    INITIAL_EQUITY_INPUT,
-    INITIAL_EQUITY_MANUAL_OVERRIDE,
     MARKET_HIGH_52W,
     MARKET_LOW_52W,
-    MW_VALUE,
-    RETIREMENT_AGE,
     SESSION_BAZIN_TARGET_SPREAD,
     SESSION_BAZIN_TARGET_YIELD,
     SESSION_CEILING_MODEL_SELECTION,
@@ -293,43 +283,24 @@ class MarketMonitoringView:
         st.session_state[SESSION_CEILING_MODEL_SELECTION] = st.session_state[
             WIDGET_CEILING_MODEL_SELECTOR
         ]
-        self._save_market_params()
+        SimulationService.save_bazin_configuration(
+            ceiling_model_selection=st.session_state[SESSION_CEILING_MODEL_SELECTION]
+        )
 
     def _on_bazin_yield_change(self):
         """Syncs target yield input back to persistent state and database."""
         st.session_state[SESSION_BAZIN_TARGET_YIELD] = float(
             st.session_state[WIDGET_BAZIN_YIELD_INPUT]
         )
-        self._save_market_params()
+        SimulationService.save_bazin_configuration(
+            bazin_target_yield=st.session_state[SESSION_BAZIN_TARGET_YIELD]
+        )
 
     def _on_bazin_spread_change(self):
         """Syncs target spread input back to persistent state and database."""
         st.session_state[SESSION_BAZIN_TARGET_SPREAD] = float(
             st.session_state[WIDGET_BAZIN_SPREAD_INPUT]
         )
-        self._save_market_params()
-
-    def _save_market_params(self):
-        """Persists the selected valuation model and its input parameters to SQLite."""
-        model = st.session_state[SESSION_CEILING_MODEL_SELECTION]
-        yield_val = float(st.session_state[SESSION_BAZIN_TARGET_YIELD])
-        spread_val = float(st.session_state[SESSION_BAZIN_TARGET_SPREAD])
-
-        # Retrieve and load general simulation settings to preserve them cleanly
-        config = SimulationService.get_configuration()
-        if config:
-            SimulationService.save_configuration(
-                config[BIRTH_DATE],
-                config[RETIREMENT_AGE],
-                config[DESIRED_INCOME_MW],
-                config[ANNUAL_INTEREST_RATE],
-                config[MW_VALUE],
-                config[INITIAL_EQUITY_INPUT],
-                desired_income_type=config[DESIRED_INCOME_TYPE],
-                desired_income_fixed=config[DESIRED_INCOME_FIXED],
-                ceiling_model_selection=model,
-                bazin_target_yield=yield_val,
-                bazin_target_spread=spread_val,
-                initial_equity_auto=config[INITIAL_EQUITY_AUTO],
-                initial_equity_manual_override=config[INITIAL_EQUITY_MANUAL_OVERRIDE],
-            )
+        SimulationService.save_bazin_configuration(
+            bazin_target_spread=st.session_state[SESSION_BAZIN_TARGET_SPREAD]
+        )

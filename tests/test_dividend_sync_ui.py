@@ -7,6 +7,8 @@ from streamlit.testing.v1 import AppTest
 
 from core.dividends import DividendEvent
 from services.assets_service import AssetService
+from services.dividend_search_session import DividendSearchSession
+from views.cached_market_data import market_data_portfolio_context
 
 
 @pytest.fixture
@@ -30,10 +32,6 @@ def dividend_app(monkeypatch):
             except Exception as error:
                 future.set_exception(error)
             return future
-    monkeypatch.setattr(
-        "views.components.dividend_sync.get_dividend_search_executor",
-        lambda: ImmediateExecutor(),
-    )
     calls = []
     def confirm(*args):
         calls.append(args)
@@ -43,6 +41,9 @@ def dividend_app(monkeypatch):
 from views.components.dividend_sync import DividendSyncWidget
 DividendSyncWidget().render("CMIG4")
 ''', default_timeout=30)
+    app.session_state["dividend_search_session"] = DividendSearchSession(
+        AssetService, ImmediateExecutor(), market_data_portfolio_context,
+    )
     return app, calls
 
 
@@ -80,28 +81,27 @@ def test_missing_payment_date_blocks_confirmation(dividend_app):
     assert all(item.label != "Confirmar e salvar pagamentos" for item in app.button)
 
 
+def test_pending_search_shows_background_status_without_a_confirmation(dividend_app):
+    app, calls = dividend_app
+    class PendingExecutor:
+        def submit(self, callback):
+            return Future()
+    app.session_state["dividend_search_session"] = DividendSearchSession(
+        AssetService, PendingExecutor(), market_data_portfolio_context,
+    )
+    app.run()
+    assert not app.exception
+    assert any("segundo plano" in item.value for item in app.caption)
+    assert all(item.label != "Confirmar e salvar pagamentos" for item in app.button)
+    assert not calls
+
+
 def test_new_dividend_is_announced_without_clicking_search(dividend_app):
     app, calls = dividend_app
     app.run()
     assert not app.exception
     assert any("Foi identificado" in item.value and "CMIG4" in item.value for item in app.info)
     assert calls == []
-
-
-def test_automatic_search_is_reused_and_manual_search_refreshes(dividend_app, monkeypatch):
-    app, _ = dividend_app
-    original = AssetService.get_dividend_suggestions
-    searches = []
-    def search(ticker=None):
-        searches.append(ticker)
-        return original(ticker)
-    monkeypatch.setattr(AssetService, "get_dividend_suggestions", search)
-    app.run()
-    app.run()
-    assert searches == ["CMIG4"]
-    button(app, "Buscar proventos no Yahoo Finance").click().run()
-    assert not app.exception
-    assert searches == ["CMIG4", "CMIG4"]
 
 
 def test_failed_automatic_search_is_visible_and_not_repeated(dividend_app, monkeypatch):
@@ -126,97 +126,6 @@ def test_provider_unavailability_is_announced_without_opening_form(dividend_app,
     app.run()
     assert not app.exception
     assert any("indisponível para: CMIG4" in item.value for item in app.warning)
-
-
-def test_automatic_search_refreshes_after_portfolio_change(dividend_app, monkeypatch):
-    app, _ = dividend_app
-    revision = [0]
-    original = AssetService.get_dividend_suggestions
-    searches = []
-    def search(ticker=None):
-        searches.append(ticker)
-        return {**original(ticker), "revision": revision[0]}
-    monkeypatch.setattr(AssetService, "get_dividend_suggestions", search)
-    monkeypatch.setattr(AssetService, "get_local_projection_revision", lambda: revision[0])
-    app.run()
-    revision[0] = 1
-    app.run()
-    app.run()
-    assert searches == ["CMIG4", "CMIG4"]
-    assert not app.exception
-    assert any("CMIG4" in item.value for item in app.info)
-
-
-def test_automatic_search_is_isolated_between_portfolios(dividend_app, monkeypatch):
-    app, _ = dividend_app
-    original = AssetService.get_dividend_suggestions
-    searches = []
-    def search(ticker=None):
-        searches.append(ticker)
-        return original(ticker)
-    monkeypatch.setattr(AssetService, "get_dividend_suggestions", search)
-    app.session_state["active_db"] = "test_portfolio_a.db"
-    app.run()
-    app.session_state["active_db"] = "test_portfolio_b.db"
-    app.run()
-    app.run()
-    assert searches == ["CMIG4", "CMIG4"]
-    assert not app.exception
-
-
-def test_pending_search_does_not_block_and_result_appears_when_ready(dividend_app, monkeypatch):
-    app, calls = dividend_app
-    future = Future()
-    queued = []
-    class PendingExecutor:
-        def submit(self, callback):
-            queued.append(callback)
-            return future
-    monkeypatch.setattr(
-        "views.components.dividend_sync.get_dividend_search_executor",
-        lambda: PendingExecutor(),
-    )
-    app.run()
-    app.run()
-    assert not app.exception
-    assert len(queued) == 1
-    assert not future.done()
-    assert any("segundo plano" in item.value for item in app.caption)
-    assert calls == []
-    future.set_result(queued[0]())
-    app.run()
-    assert not app.exception
-    assert any("Foram encontrados proventos para CMIG4" in item.value for item in app.warning)
-    assert calls == []
-
-
-def test_outdated_background_result_does_not_replace_current_portfolio_review(dividend_app, monkeypatch):
-    app, _ = dividend_app
-    revision = [0]
-    futures = []
-    class PendingExecutor:
-        def submit(self, callback):
-            future = Future()
-            future.set_running_or_notify_cancel()
-            futures.append(future)
-            return future
-    monkeypatch.setattr(AssetService, "get_local_projection_revision", lambda: revision[0])
-    monkeypatch.setattr(
-        "views.components.dividend_sync.get_dividend_search_executor",
-        lambda: PendingExecutor(),
-    )
-    app.run()
-    revision[0] = 1
-    app.run()
-    old_result = AssetService.get_dividend_suggestions("CMIG4")
-    futures[0].set_result(old_result)
-    app.run()
-    assert len(futures) == 2
-    assert not any("Foram encontrados" in item.value for item in app.warning)
-    futures[1].set_result({**old_result, "revision": 1})
-    app.run()
-    assert not app.exception
-    assert any("Foram encontrados proventos para CMIG4" in item.value for item in app.warning)
 
 
 def test_unreviewed_event_is_shown_without_duplicate_label(dividend_app, monkeypatch):

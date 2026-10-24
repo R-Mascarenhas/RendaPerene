@@ -313,6 +313,30 @@ def test_session_manager_resets_portfolio_state(monkeypatch):
     assert cache_clear_calls == []
 
 
+def test_portfolio_reset_cancels_search_and_discards_its_widgets(monkeypatch):
+    from concurrent.futures import Future
+    from types import SimpleNamespace
+    from services.dividend_search_session import DividendSearchSession
+
+    future = Future()
+    source = SimpleNamespace(
+        get_local_projection_revision=lambda: 0,
+        prepare_dividend_search=lambda ticker=None: lambda: {"revision": 0},
+    )
+    executor = SimpleNamespace(submit=lambda callback: future)
+    runtime = DividendSearchSession(source, executor, lambda: ("portfolio.db", "g"))
+    runtime.poll()
+    state = {
+        "active_db": "portfolio.db", "dividend_search_session": runtime,
+        "dividend_search_1_event": 0,
+    }
+    monkeypatch.setattr(st, "session_state", state)
+    SessionManager.reset_portfolio_state()
+    assert future.cancelled()
+    assert runtime.draft is None
+    assert state == {"active_db": "portfolio.db"}
+
+
 def test_session_manager_switches_to_valid_fallback_and_resets_loaded_state(monkeypatch, caplog):
     from core.constants import SESSION_ACTIVE_DATABASE_GENERATION, SESSION_BIRTH_DATE
 

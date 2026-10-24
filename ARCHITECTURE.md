@@ -139,6 +139,15 @@ A direção das dependências é `views` → `services` → contratos e adaptado
 
 ### Serviços de domínio
 
+As edições de Bazin passam por `SimulationService.save_bazin_configuration()`: o chamador
+informa somente modelo, yield ou spread que deseja alterar. `PlanningConfigPort` expõe essa
+operação e `PlanningDAO` atualiza apenas as colunas informadas, em uma única escrita SQLite.
+Os demais parâmetros, a data inicial, o patrimônio manual zero e os indicadores de seleção
+automática/manual permanecem intactos, mesmo quando a sessão tem valores antigos de outros
+campos. Sem configuração existente, a operação não cria um planejamento. A edição inversa
+continua em `save_planning_configuration()`, preservando os parâmetros de Bazin. Não há
+alteração do schema ou das fórmulas de avaliação e aposentadoria.
+
 - `AssetService` controla os lançamentos de transações e dividendos, importação B3, regularização de custos, histórico de operações paginado, lista de ativos monitorados, registros normalizados do catálogo e definição do dividend yield alvo do modelo de Bazin.
 - `PortfolioReadService` concentra as leituras da carteira atrás de `PortfolioReadPort`: `read_portfolio()` fornece posições, resumo, holdings e composição por setor; `read_asset()` fornece posição, indicadores, extratos e proventos anuais; `read_history()` fornece evolução mensal e aportes; `read_planning()` fornece capital, base anterior ao plano e posições históricas para aposentadoria e metas. Os resultados nomeados estão em `core/portfolio_read.py`; as tabelas numéricas usam as colunas de `core/constants.py`. `services/_portfolio_projection.py` contém os cálculos internos sobre o mesmo ledger. Views não enriquecem posições nem calculam preço ajustado, YoC ou pesos. A composição liga cotações e `MarketAnalysisPort` ao módulo, sem depender da simulação; o card de capital combina o resumo com o resultado de `SimulationService` na apresentação.
 - `SimulationService` controla as configurações de aposentadoria e os cálculos de anuidade antecipada. Os consumidores devem usar `get_current_simulation()` em vez de reimplementar o cálculo dos aportes. `prepare_historical_evolution()` combina o patrimônio inicial configurado com os aportes líquidos do período e prepara as curvas planejadas para os gráficos do Dashboard e do Planejamento, sem alterar os dados de origem nem o histórico de proventos recebidos. A série de aportes planejados acumula somente os aportes mensais, começando com um aporte no mês 0; os proventos planejados começam em zero e usam o patrimônio inicial mais os aportes anteriores como base a partir do mês 1.
@@ -728,11 +737,23 @@ em cada leitura, inclusive após a mudança de dia sem qualquer escrita no SQLit
 A busca inicial é automática, executada em segundo plano por um executor compartilhado com
 dois workers, e apresenta os tickers com eventos pendentes fora do expander. Um fragmento
 acompanha o término sem bloquear a navegação; resultados obsoletos são descartados.
-O resultado e a tentativa são reutilizados durante a sessão por carteira, geração, dia e revisão,
-inclusive em caso de falha, para não repetir consultas a cada rerun. O botão permite consultar
-novamente; falhas são visíveis e preservam o uso offline. O formulário exige revisar antes de salvar
-e oferece associação a pagamentos existentes. O estado é separado por carteira, geração,
-dia e revisão; mudanças invalidam a confirmação. Logs registram apenas eventos sanitizados.
+`DividendSearchSession`, em `services/dividend_search_session.py`, pertence à sessão e concentra
+identidade da carteira, geração, dia, ticker, revisão, memória de tentativas, cancelamento,
+coleta, falhas e validade dos resultados e rascunhos. `poll()` inicia ou reutiliza uma tentativa
+e coleta sua conclusão; a tela recebe resultado, indicação de execução e falha, sem conhecer
+Futures ou a ordem entre busca e coleta. Tentativas são reutilizadas no contexto atual,
+inclusive após falha; o botão solicita explicitamente uma nova tentativa. Nova tentativa ou
+mudança de contexto descarta resultado e rascunho e tenta cancelar o trabalho anterior.
+Se ele já estiver em execução, sua conclusão não volta à revisão. `SessionManager` invalida o
+módulo e remove seus controles ao trocar ou restaurar uma carteira.
+
+`app.py` conecta o executor compartilhado, a identificação da carteira e `AssetService` por
+`DividendSearchSourcePort`; o relógio também é injetável. A preparação do snapshot continua na
+thread de apresentação. Somente o callback com o snapshot é enviado ao executor, sem acesso
+a SQLite ou Streamlit no worker. Os testes do ciclo usam Futures controlados, sem montar telas
+ou aguardar tempo real; os testes de tela cobrem avisos, revisão e confirmação explícita.
+Falhas são visíveis e preservam o uso offline. O formulário exige revisar antes de salvar e
+oferece associação a pagamentos existentes. Logs registram apenas eventos sanitizados.
 O formulário de ajuste de data é renderizado exclusivamente em **Ativos → Operações** por
 `render_reschedule()`, com estado separado da detecção global de proventos.
 

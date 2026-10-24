@@ -1,5 +1,6 @@
 import hashlib
 import os
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
 import streamlit as st
@@ -32,6 +33,7 @@ from core.utils import SessionManager, get_app_version
 from core.utils.market_data import MarketData
 from services.cloud_backup.runtime import CloudBackupRuntime
 from services.cloud_backup.service import CloudBackupService
+from services.dividend_search_session import DividendSearchSession
 from services.local_backup_service import (
     BackupCreationError,
     LocalBackupService,
@@ -491,6 +493,7 @@ from views.cached_market_data import (
     StreamlitCachedPortfolioRepository,
     configure_screen_cache,
     get_market_data_observer,
+    market_data_portfolio_context,
 )
 from views.market_data_status import render_market_data_status
 
@@ -526,6 +529,17 @@ ShareQuantityGoalService.set_adapters(
 
 # Session state must be initialized before rendering any view
 SessionManager.initialize()
+
+
+@st.cache_resource
+def get_dividend_search_executor():
+    return ThreadPoolExecutor(max_workers=2, thread_name_prefix="dividend-search")
+
+
+if "dividend_search_session" not in st.session_state:
+    st.session_state["dividend_search_session"] = DividendSearchSession(
+        AssetService.get_default(), get_dividend_search_executor(), market_data_portfolio_context
+    )
 
 st.title(f"💼 Renda Perene v{app_version}")
 render_update_notification(app_version, update_checker)

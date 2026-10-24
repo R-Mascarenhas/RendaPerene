@@ -106,6 +106,9 @@ class SessionManager:
     def reset_portfolio_state():
         """Discard session values derived from the active portfolio database."""
         reset_market_data_observer()
+        dividend_search = st.session_state.pop("dividend_search_session", None)
+        if dividend_search is not None:
+            dividend_search.invalidate()
         portfolio_keys = (
             "db_loaded",
             "processed_files",
@@ -153,6 +156,8 @@ class SessionManager:
             SESSION_ACTIVE_DATABASE_GENERATION,
         )
         portfolio_prefixes = (
+            "dividend_search_",
+            "dividend_sync_v4_",
             "b3_match_",
             "b3_reconciliation_",
             WIDGET_MANUAL_ENTRY_PREFIX,

@@ -790,7 +790,7 @@ def test_operations_view_labels_uncatalogued_owned_ticker_neutrally(mock_db, mon
     assert "MOCK4 - Ativo não catalogado" in ticker_options
 
 
-def test_market_monitoring_preserves_initial_equity_flags(mock_db, monkeypatch):
+def test_market_monitoring_preserves_initial_equity_flags(mock_db):
     from core.constants import (
         ANNUAL_INTEREST_RATE,
         BIRTH_DATE,
@@ -816,26 +816,31 @@ def test_market_monitoring_preserves_initial_equity_flags(mock_db, monkeypatch):
         MW_VALUE: 1518.0,
         DESIRED_INCOME_TYPE: "MULTIPLIER",
         DESIRED_INCOME_FIXED: 10000.0,
-        INITIAL_EQUITY_INPUT: 10000.0,
-        INITIAL_EQUITY_AUTO: True,
-        INITIAL_EQUITY_MANUAL_OVERRIDE: False,
+        INITIAL_EQUITY_INPUT: 0.0,
+        INITIAL_EQUITY_AUTO: False,
+        INITIAL_EQUITY_MANUAL_OVERRIDE: True,
+        "planning_start_date": "2024-03-15",
     }
-    saved = {}
-    monkeypatch.setattr(SimulationService, "get_configuration", lambda: config)
-    monkeypatch.setattr(
-        SimulationService,
-        "save_configuration",
-        lambda *args, **kwargs: saved.update(args=args, kwargs=kwargs),
+    from core.constants import (
+        WIDGET_CEILING_MODEL_SELECTOR, WIDGET_BAZIN_YIELD_INPUT, WIDGET_BAZIN_SPREAD_INPUT,
     )
-    st.session_state[SESSION_CEILING_MODEL_SELECTION] = "Bazin Clássico"
-    st.session_state[SESSION_BAZIN_TARGET_YIELD] = 6.0
-    st.session_state[SESSION_BAZIN_TARGET_SPREAD] = 3.0
-
-    MarketMonitoringView()._save_market_params()
-
-    assert saved["kwargs"]["initial_equity_auto"] is True
-    assert saved["kwargs"]["initial_equity_manual_override"] is False
-    assert saved["args"][5] == 10000.0
+    SimulationService.save_configuration(**config)
+    expected = SimulationService.get_configuration()
+    # Session values for unrelated fields are deliberately stale.
+    st.session_state[SESSION_CEILING_MODEL_SELECTION] = "stale"
+    st.session_state[SESSION_BAZIN_TARGET_YIELD] = 99.0
+    st.session_state[SESSION_BAZIN_TARGET_SPREAD] = 99.0
+    view = MarketMonitoringView()
+    for widget, callback, field, value in (
+        (WIDGET_CEILING_MODEL_SELECTOR, view._on_bazin_model_change,
+         "ceiling_model_selection", "Bazin Ajustado"),
+        (WIDGET_BAZIN_YIELD_INPUT, view._on_bazin_yield_change, "bazin_target_yield", 8.0),
+        (WIDGET_BAZIN_SPREAD_INPUT, view._on_bazin_spread_change, "bazin_target_spread", 4.0),
+    ):
+        st.session_state[widget] = value
+        callback()
+        expected[field] = value
+        assert SimulationService.get_configuration() == expected
 
 
 def test_planning_view_start_date_change_callback(mock_db, monkeypatch):

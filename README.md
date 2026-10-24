@@ -8,6 +8,10 @@ A interface é em português e abre no navegador do próprio computador. As cart
 ficam em bancos SQLite locais, sem conta obrigatória ou telemetria. O backup no
 Google Drive é opcional.
 
+Os parâmetros de avaliação de Bazin podem ser editados preservando as configurações do
+planejamento. A busca de proventos ocorre em segundo plano e permite tentar novamente em
+caso de falha; cadastrar pagamentos exige revisão e confirmação explícita.
+
 ## Instalar o aplicativo
 
 Baixe a versão mais recente nas

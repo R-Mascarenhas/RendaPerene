@@ -92,6 +92,21 @@ class SimulationService:
         self.save_configuration(**values)
 
     @hybridmethod
+    def save_bazin_configuration(
+        self,
+        *,
+        ceiling_model_selection: str | None = None,
+        bazin_target_yield: float | None = None,
+        bazin_target_spread: float | None = None,
+    ) -> None:
+        """Edit valuation settings without reading or replacing retirement inputs."""
+        self._planning_repo.save_bazin_configuration(
+            ceiling_model_selection=ceiling_model_selection,
+            bazin_target_yield=bazin_target_yield,
+            bazin_target_spread=bazin_target_spread,
+        )
+
+    @hybridmethod
     def get_prior_invested_capital(self, start_date) -> float | None:
         """Read the suggested initial capital through the configured portfolio provider."""
         if self._portfolio_provider is None:

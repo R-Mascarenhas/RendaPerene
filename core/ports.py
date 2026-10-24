@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
@@ -324,10 +325,26 @@ class MarketAnalysisPort(Protocol):
     def prefetch_tickers(self, tickers: list[str]) -> None: ...
 
 
+class DividendSearchSourcePort(Protocol):
+    """Session-thread inputs for a snapshot-only dividend search worker."""
+
+    def get_local_projection_revision(self) -> int: ...
+
+    def prepare_dividend_search(self, ticker: str | None = None) -> Callable[[], dict]: ...
+
+
 class PlanningConfigPort(Protocol):
     """Outbound Port interface defining planning configuration and persistence operations (DIP compliant)."""
 
     def get_configuration(self) -> dict | None: ...
+
+    def save_bazin_configuration(
+        self,
+        *,
+        ceiling_model_selection: str | None = None,
+        bazin_target_yield: float | None = None,
+        bazin_target_spread: float | None = None,
+    ) -> None: ...
 
     def save_configuration(
         self,

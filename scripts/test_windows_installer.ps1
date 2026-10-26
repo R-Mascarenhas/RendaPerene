@@ -80,7 +80,7 @@ try {
             throw "Failed upgrade removed the previous runtime"
         }
         & "venv_dist/Scripts/python.exe" scripts/smoke_bundle.py $executable
-        if ($LASTEXITCODE -ne 0) { throw "Previous installation broke after a failed upgrade" }
+        if ($LASTEXITCODE -ne 0) { throw "Application failed to start after interrupted extraction" }
 
         # No /DIR or /TASKS: upgrades must remember both previous choices.
         Invoke-Setup $installer

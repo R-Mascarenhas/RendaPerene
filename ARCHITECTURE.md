@@ -589,8 +589,8 @@ EXE Windows e o TAR.GZ Linux versionados. No Windows, o Inno Setup 6 envolve o b
 administrador. O destino padrão é `%LOCALAPPDATA%\Programs\RendaPerene`; o usuário pode escolher
 outra pasta, reutilizada nas atualizações. Os atalhos permanecem apontando ao mesmo executável.
 Um manifesto identifica os arquivos privados `_internal` instalados: somente arquivos obsoletos
-desse manifesto são removidos após a extração bem-sucedida, preservando o runtime anterior em
-caso de rollback. Carteiras, configurações e backups permanecem fora da instalação.
+desse manifesto são removidos após a extração bem-sucedida, sem excluir recursos antigos
+antes da conclusão da instalação. Carteiras, configurações e backups permanecem fora da instalação.
 Um runtime hook mantém um mutex global com hash do diretório de perfil do usuário
 enquanto qualquer processo empacotado desse usuário está aberto: instalação e
 desinstalação pedem seu fechamento, sem encerrar o processo à força.
@@ -607,7 +607,7 @@ logs e overlays de catálogo não entram nos artefatos.
 
 `scripts/test_windows_installer.ps1` roda somente em CI descartável: instala uma versão anterior
 sintética, atualiza sem informar novamente pasta ou tarefas, verifica atalhos, remoção de runtime
-obsoleto, rollback de upgrade com falha, preservação de arquivos sintéticos e bloqueio com o aplicativo aberto, e inicia o
+obsoleto, ausência de limpeza prematura em upgrade com falha, preservação de arquivos sintéticos e bloqueio com o aplicativo aberto, e inicia o
 executável instalado. O aviso de atualização seleciona o EXE Windows; executáveis antigos que
 procuram somente ZIP precisam da primeira migração manual pelo GitHub Releases.
 

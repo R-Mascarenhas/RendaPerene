@@ -1,15 +1,10 @@
-## Novidades em 0.13.0
+## Novidades em 0.13.1
 
-- Backup opcional no **Google Drive**: conecte sua conta, escolha as carteiras e ative o
-  backup automático. A aplicação verifica mudanças a cada 10 minutos enquanto a interface
-  estiver aberta e mantém uma cópia por carteira e computador na pasta **RendaPerene** do Drive.
-  As carteiras continuam armazenadas localmente; a conexão com o Google é opcional.
-- Recuperação de carteiras em outro computador pela mesma conta Google, com prévia e
-  confirmação antes de restaurar. É possível criar uma carteira ou substituir uma existente,
-  preservando uma cópia local anterior. Os dados incluem pagamentos e decisões sobre proventos.
-- Credenciais Google protegidas pelo cofre do sistema: Windows Credential Manager ou
-  Secret Service no Ubuntu. Desconectar remove as credenciais locais e mantém os backups no Drive.
-- Colunas de nível e nome do logger alinhadas nos logs, facilitando a leitura dos registros.
+- Preenchimento do preço em compras e vendas manuais pelo fechamento diário do Yahoo Finance,
+  consultado em segundo plano. O preço continua editável e a consulta preserva o valor digitado.
+- Correção na preservação da fila de revisão de proventos e ajustes visuais nas ações.
+- Reorganização interna da edição dos parâmetros de Bazin e do ciclo de busca de proventos.
+- Correção de compatibilidade com pandas 3 no cálculo de aportes em períodos sem negociações.
 
 ## Sistemas suportados
 

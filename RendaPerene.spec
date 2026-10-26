@@ -2,6 +2,7 @@
 """Common PyInstaller definition for native Windows and Linux builds."""
 
 from pathlib import Path
+import sys
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
@@ -10,6 +11,7 @@ ROOT = Path(SPECPATH)
 version = (ROOT / "version.txt").read_text(encoding="utf-8").strip()
 if not version:
     raise ValueError("version.txt must contain a non-empty release version")
+bundle_name = "RendaPerene" if sys.platform == "win32" else f"RendaPerene-v{version}"
 
 datas = [
     (str(ROOT / "app.py"), "."),
@@ -62,7 +64,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(ROOT / "scripts/windows_mutex_hook.py")] if sys.platform == "win32" else [],
     excludes=[],
     noarchive=False,
     optimize=0,
@@ -74,7 +76,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name=f"RendaPerene-v{version}",
+    name=bundle_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -94,5 +96,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name=f"RendaPerene-v{version}",
+    name=bundle_name,
 )

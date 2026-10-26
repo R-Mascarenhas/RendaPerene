@@ -110,7 +110,7 @@ def _asset_name(version: str, platform_name: str, machine_name: str) -> str | No
     if machine_name.lower() not in {"amd64", "x86_64"}:
         return None
     if platform_name.startswith("win"):
-        return f"RendaPerene-v{version}-windows-x64.zip"
+        return f"RendaPerene-v{version}-windows-x64-setup.exe"
     if platform_name.startswith("linux"):
         return f"RendaPerene-v{version}-ubuntu-x64.tar.gz"
     return None

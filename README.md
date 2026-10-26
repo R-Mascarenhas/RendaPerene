@@ -25,11 +25,21 @@ desdobramentos feitos pelo Yahoo: confirme sempre o preço da sua negociação.
 Baixe a versão mais recente nas
 [releases](https://github.com/R-Mascarenhas/RendaPerene/releases/latest):
 
-- **Windows 10 ou posterior, 64 bits:** pacote `.zip`.
+- **Windows 10 ou posterior, 64 bits:** instalador `.exe`.
 - **Ubuntu 22.04 ou posterior, 64 bits:** pacote `.tar.gz`.
 
-Extraia o pacote em uma pasta própria e execute o aplicativo dentro dela. Os pacotes
-incluem o ambiente necessário, sem exigir instalação separada de Python.
+No Windows, execute o instalador. O destino sugerido é
+`%LOCALAPPDATA%\Programs\RendaPerene`, sem exigir administrador; você pode escolher outra pasta.
+Use o atalho criado no menu Iniciar ou, opcionalmente, na área de trabalho. Para atualizar,
+feche o aplicativo e execute o novo instalador: ele reutiliza a pasta escolhida e mantém os
+mesmos atalhos, preservando carteiras, configurações e backups.
+
+No Ubuntu, extraia o pacote em uma pasta própria e execute o aplicativo dentro dela.
+As distribuições incluem o ambiente necessário, sem exigir instalação separada de Python.
+
+Se você usa um ZIP antigo, baixe o primeiro instalador manualmente nas releases: o aviso
+das versões antigas procura apenas ZIP. Depois, passe a usar o atalho do instalador;
+uma cópia antiga do executável na área de trabalho continuará abrindo a versão antiga.
 
 É necessário um navegador. Consultas de mercado, verificação de atualizações e backup
 no Drive precisam de internet; seus registros continuam locais.

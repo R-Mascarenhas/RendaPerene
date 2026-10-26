@@ -24,8 +24,17 @@ Invoke-Python @("-m", "pip", "install", "--upgrade", "pip")
 Invoke-Python @("-m", "pip", "install", ".[packaging]")
 Invoke-Python @("-m", "PyInstaller", "--clean", "--noconfirm", "--distpath", "dist", "--workpath", "build", "RendaPerene.spec")
 
-$archive = "dist/RendaPerene-v$appVersion-windows-x64.zip"
-if (Test-Path $archive) { Remove-Item $archive -Force }
-Invoke-Python @("scripts/validate_bundle.py", "dist/RendaPerene-v$appVersion", $appVersion)
-Invoke-Python @("scripts/smoke_bundle.py", "dist/RendaPerene-v$appVersion/RendaPerene-v$appVersion.exe")
-Compress-Archive -Path "dist/RendaPerene-v$appVersion" -DestinationPath $archive
+$bundle = (Resolve-Path "dist/RendaPerene").Path
+Invoke-Python @("scripts/validate_bundle.py", $bundle, $appVersion)
+Invoke-Python @("scripts/smoke_bundle.py", "$bundle/RendaPerene.exe")
+$runtimeFiles = Get-ChildItem "$bundle/_internal" -Recurse -File | ForEach-Object {
+    $_.FullName.Substring($bundle.Length + 1)
+}
+[IO.File]::WriteAllLines((Join-Path $bundle "runtime-manifest.txt"), [string[]] $runtimeFiles, [Text.UTF8Encoding]::new($true))
+
+$compiler = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6/ISCC.exe"
+if (-not (Test-Path $compiler)) {
+    throw "Install Inno Setup 6 before building the Windows installer."
+}
+& $compiler "/DAppVersion=$appVersion" "/DBundleDir=$bundle" "/DOutputDir=$((Resolve-Path dist).Path)" "scripts/windows_installer.iss"
+if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed" }

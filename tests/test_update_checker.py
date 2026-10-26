@@ -9,9 +9,9 @@ def release_payload(version="1.2.0", assets=None):
     if assets is None:
         assets = [
             {
-                "name": f"RendaPerene-v{version}-windows-x64.zip",
+                "name": f"RendaPerene-v{version}-windows-x64-setup.exe",
                 "browser_download_url": "https://github.com/R-Mascarenhas/RendaPerene/releases/download/"
-                f"v{version}/RendaPerene-v{version}-windows-x64.zip",
+                f"v{version}/RendaPerene-v{version}-windows-x64-setup.exe",
             },
             {
                 "name": f"RendaPerene-v{version}-ubuntu-x64.tar.gz",
@@ -30,7 +30,23 @@ def test_check_returns_newer_windows_release_with_matching_asset():
     assert update is not None
     assert update.version == "1.2.0"
     assert update.release_notes == "Correções importantes."
-    assert update.download_url.endswith("RendaPerene-v1.2.0-windows-x64.zip")
+    assert update.download_url.endswith("RendaPerene-v1.2.0-windows-x64-setup.exe")
+
+
+def test_windows_check_does_not_offer_legacy_zip_as_installer():
+    payload = release_payload()
+    payload["assets"][0]["name"] = "RendaPerene-v1.2.0-windows-x64.zip"
+    checker = UpdateChecker(lambda timeout: payload)
+
+    assert checker.check("1.1.0", platform_name="win32", machine_name="AMD64") is None
+
+
+def test_windows_check_rejects_installer_outside_repository_downloads():
+    payload = release_payload()
+    payload["assets"][0]["browser_download_url"] = "https://example.test/installer.exe"
+    checker = UpdateChecker(lambda timeout: payload)
+
+    assert checker.check("1.1.0", platform_name="win32", machine_name="AMD64") is None
 
 
 @pytest.mark.parametrize("installed_version", ["1.2.0", "1.3.0"])

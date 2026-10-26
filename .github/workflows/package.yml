@@ -80,19 +80,25 @@ jobs:
       - name: Build and smoke-test Windows bundle
         shell: cmd
         run: build_windows_exe.bat
+      - name: Test Windows installer lifecycle
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist -Filter "RendaPerene-v*-windows-x64-setup.exe" | Select-Object -First 1
+          if ($null -eq $installer) { throw "Windows installer was not created" }
+          ./scripts/test_windows_installer.ps1 -Installer $installer.FullName
       - name: Create Windows checksum
         shell: pwsh
         run: |
-          $archive = Get-ChildItem dist -Filter "RendaPerene-v*-windows-x64.zip" | Select-Object -First 1
-          if ($null -eq $archive) { throw "Windows archive was not created" }
+          $archive = Get-ChildItem dist -Filter "RendaPerene-v*-windows-x64-setup.exe" | Select-Object -First 1
+          if ($null -eq $archive) { throw "Windows installer was not created" }
           $hash = (Get-FileHash -Algorithm SHA256 $archive.FullName).Hash.ToLowerInvariant()
           "$hash  $($archive.Name)" | Set-Content -NoNewline "$($archive.FullName).sha256"
       - uses: actions/upload-artifact@v4
         with:
           name: RendaPerene-windows-x64
           path: |
-            dist/RendaPerene-v*-windows-x64.zip
-            dist/RendaPerene-v*-windows-x64.zip.sha256
+            dist/RendaPerene-v*-windows-x64-setup.exe
+            dist/RendaPerene-v*-windows-x64-setup.exe.sha256
           if-no-files-found: error
 
   package-ubuntu:
@@ -159,11 +165,11 @@ jobs:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           version="${RELEASE_VERSION#v}"
-          windows_archive="release-assets/RendaPerene-v${version}-windows-x64.zip"
+          windows_archive="release-assets/RendaPerene-v${version}-windows-x64-setup.exe"
           ubuntu_archive="release-assets/RendaPerene-v${version}-ubuntu-x64.tar.gz"
           test -f "$windows_archive"
           test -f "$ubuntu_archive"
-          (cd release-assets && sha256sum -c "RendaPerene-v${version}-windows-x64.zip.sha256")
+          (cd release-assets && sha256sum -c "RendaPerene-v${version}-windows-x64-setup.exe.sha256")
           (cd release-assets && sha256sum -c "RendaPerene-v${version}-ubuntu-x64.tar.gz.sha256")
       - name: Create draft release
         env:
@@ -174,7 +180,7 @@ jobs:
             --draft \
             --title "RendaPerene ${GITHUB_REF_NAME}" \
             --notes-file .github/release-notes.md \
-            release-assets/RendaPerene-*.zip \
+            release-assets/RendaPerene-*-setup.exe \
             release-assets/RendaPerene-*.tar.gz \
             release-assets/*.sha256
       - name: Publish release

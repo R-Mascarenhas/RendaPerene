@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -262,6 +263,8 @@ class MarketDataPort(Protocol):
     def get_batch_quotes(self, tickers: list) -> dict: ...
 
     def get_last_price(self, ticker: str) -> float: ...
+
+    def get_price_on_date(self, ticker: str, day: date) -> float | None: ...
 
     def get_ticker_intraday_history(
         self, ticker: str, period: str = "1d", interval: str = "5m"

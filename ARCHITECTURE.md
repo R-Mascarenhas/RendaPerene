@@ -637,6 +637,26 @@ geram aviso; falhas de leitura geram erro sanitizado. A instrumentação de dese
 detalha `manual_entry` nas etapas
 `manual_catalog`, `manual_ticker_options` e `manual_controls`, sem registrar dados financeiros.
 O tempo de `manual_controls` inclui o processamento quando o formulário é enviado.
+
+O lançamento manual de compra e venda usa controles reativos em um fragmento Streamlit
+com verificação a cada dois segundos, preservando as demais áreas da página. O catálogo
+é carregado fora do fragmento. `MarketDataPort.get_price_on_date()` consulta somente a
+sessão escolhida no Yahoo, com `auto_adjust=False`, sem substituir dias sem cotação por
+pregões vizinhos. O Yahoo ainda pode revisar o histórico por desdobramentos; a cotação
+é uma referência editável, nunca comprovação do preço negociado. A consulta do dia atual
+é identificada como potencialmente provisória.
+
+`BackgroundMarketData` reutiliza os trabalhadores limitados do cache remoto com a chave
+`("date_price", ticker, data ISO)`: TTL de dez minutos para hoje e 24 horas para datas
+passadas. Ausência de cotação é cacheada; erros usam o recuo de tentativas existente.
+Datas futuras e seleções vazias não consultam a rede. O adaptador de apresentação consulta
+esse cache sem registrar a requisição no observador global: a chegada da resposta atualiza
+somente o fragmento do lançamento. O estado dos controles é isolado por carteira, geração
+do arquivo e contexto (operações ou detalhe do ativo); cada seleção de ativo/data/tipo
+reinicia a sugestão. Edições manuais impedem a aplicação de respostas posteriores, e
+respostas de seleções antigas não preenchem a seleção atual. O preço começa vazio,
+e o registro exige um valor válido, automático ou manual. A gravação continua usando
+`AssetService`, apenas mediante o botão de registro, sem alteração no esquema SQLite.
 O formulário prepara os nomes do catálogo em uma única passagem por
 `AssetService.get_asset_catalog_entries(catalog)`, preservando o primeiro nome de cada código
 duplicado. As opções não fazem consultas pandas por ticker e exibem cada código uma vez.

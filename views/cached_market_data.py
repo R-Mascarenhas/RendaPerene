@@ -82,6 +82,17 @@ class StreamlitCachedMarketData:
         return get_market_data_observer().market_data.get_last_price(ticker)
 
     @staticmethod
+    def get_price_on_date(ticker, day) -> float | None:
+        """Manual entry owns its polling, avoiding full-page observer reruns."""
+        return get_background_market_data().get_price_on_date(ticker, day)
+
+    @staticmethod
+    def get_price_on_date_status(ticker, day):
+        return get_background_market_data().status(
+            ("date_price", ticker.strip().upper(), day.isoformat())
+        )
+
+    @staticmethod
     def get_ticker_intraday_history(ticker: str, period="1d", interval="5m") -> pd.DataFrame:
         return get_market_data_observer().market_data.get_ticker_intraday_history(
             ticker, period, interval
@@ -137,6 +148,7 @@ class StreamlitCachedMarketData:
 for _method, _prefix in (
     ("get_batch_quotes", "quote"),
     ("get_last_price", "quote"),
+    ("get_price_on_date", "date_price"),
     ("get_ticker_market_snapshot", "snapshot"),
     ("get_ticker_history", "history"),
     ("get_ticker_intraday_history", "intraday"),

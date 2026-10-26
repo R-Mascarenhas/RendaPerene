@@ -712,7 +712,7 @@ def test_operations_view_offers_uncatalogued_owned_asset_for_sales(mock_db, monk
 
 
 def test_operations_view_accepts_a_new_ticker_for_manual_purchase(mock_db, monkeypatch):
-    from contextlib import nullcontext
+    # Execute the fragment directly in this isolated view test.
 
     from views.operations_view import OperationsView
 
@@ -726,10 +726,10 @@ def test_operations_view_accepts_a_new_ticker_for_manual_purchase(mock_db, monke
 
     monkeypatch.setattr(st, "subheader", lambda *args, **kwargs: None)
     monkeypatch.setattr(st, "selectbox", selectbox)
-    monkeypatch.setattr(st, "form", lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr(st, "fragment", lambda **kwargs: lambda function: function)
     monkeypatch.setattr(st, "date_input", lambda *args, **kwargs: datetime.date.today())
     monkeypatch.setattr(st, "number_input", lambda *args, **kwargs: kwargs["value"])
-    monkeypatch.setattr(st, "form_submit_button", lambda *args, **kwargs: False)
+    monkeypatch.setattr(st, "button", lambda *args, **kwargs: False)
 
     OperationsView()._render_unified_manual_form()
 
@@ -737,7 +737,7 @@ def test_operations_view_accepts_a_new_ticker_for_manual_purchase(mock_db, monke
 
 
 def test_operations_view_reports_invalid_free_form_ticker_without_saving(mock_db, monkeypatch):
-    from contextlib import nullcontext
+    # Supply a price so this test exercises ticker validation.
 
     from views.operations_view import OperationsView
 
@@ -750,10 +750,10 @@ def test_operations_view_reports_invalid_free_form_ticker_without_saving(mock_db
 
     monkeypatch.setattr(st, "subheader", lambda *args, **kwargs: None)
     monkeypatch.setattr(st, "selectbox", selectbox)
-    monkeypatch.setattr(st, "form", lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr(st, "fragment", lambda **kwargs: lambda function: function)
     monkeypatch.setattr(st, "date_input", lambda *args, **kwargs: datetime.date.today())
-    monkeypatch.setattr(st, "number_input", lambda *args, **kwargs: kwargs["value"])
-    monkeypatch.setattr(st, "form_submit_button", lambda *args, **kwargs: True)
+    monkeypatch.setattr(st, "number_input", lambda *args, **kwargs: kwargs["value"] if kwargs["value"] is not None else 20.0)
+    monkeypatch.setattr(st, "button", lambda *args, **kwargs: True)
     monkeypatch.setattr(st, "error", errors.append)
     monkeypatch.setattr(st.cache_data, "clear", lambda: None)
     monkeypatch.setattr(st, "rerun", lambda: None)
@@ -765,7 +765,7 @@ def test_operations_view_reports_invalid_free_form_ticker_without_saving(mock_db
 
 
 def test_operations_view_labels_uncatalogued_owned_ticker_neutrally(mock_db, monkeypatch):
-    from contextlib import nullcontext
+    # Execute the fragment directly in this isolated view test.
 
     from views.operations_view import OperationsView
 
@@ -780,10 +780,10 @@ def test_operations_view_labels_uncatalogued_owned_ticker_neutrally(mock_db, mon
     monkeypatch.setattr(AssetService, "get_owned_tickers", lambda: ["MOCK4"])
     monkeypatch.setattr(st, "subheader", lambda *args, **kwargs: None)
     monkeypatch.setattr(st, "selectbox", selectbox)
-    monkeypatch.setattr(st, "form", lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr(st, "fragment", lambda **kwargs: lambda function: function)
     monkeypatch.setattr(st, "date_input", lambda *args, **kwargs: datetime.date.today())
     monkeypatch.setattr(st, "number_input", lambda *args, **kwargs: kwargs["value"])
-    monkeypatch.setattr(st, "form_submit_button", lambda *args, **kwargs: False)
+    monkeypatch.setattr(st, "button", lambda *args, **kwargs: False)
 
     OperationsView()._render_unified_manual_form()
 

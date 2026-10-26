@@ -114,6 +114,41 @@ class MarketData:
             return pd.DataFrame()
 
     @staticmethod
+    def get_price_on_date(ticker: str, day: datetime.date) -> float | None:
+        """Return only the selected session's close, without dividend adjustment.
+
+        Yahoo may still restate historical prices after splits. This is a market
+        reference, never evidence of the user's execution price.
+        """
+        normalized = ticker.strip().upper()
+        if not normalized or day > datetime.date.today():
+            return None
+        try:
+            history = yf.Ticker(f"{normalized}.SA").history(
+                start=day.isoformat(),
+                end=(day + datetime.timedelta(days=1)).isoformat(),
+                interval="1d",
+                auto_adjust=False,
+                actions=False,
+                timeout=10,
+                raise_errors=True,
+            )
+            if history.empty or "Close" not in history.columns:
+                return None
+            # Compare exchange-local dates; never substitute an adjacent session.
+            index = pd.to_datetime(history.index, errors="coerce")
+            if index.tz is not None:
+                index = index.tz_convert("America/Sao_Paulo")
+            selected = history[index.date == day]
+            return get_latest_valid_close(selected)
+        except Exception as error:
+            logger.warning(
+                "market_data.request_failed provider=yahoo operation=date_price error_type=%s",
+                type(error).__name__,
+            )
+            raise RuntimeError("Historical price lookup failed") from None
+
+    @staticmethod
     def get_ticker_market_snapshot(ticker: str, reference_year: int) -> dict:
         """
         Fetch portfolio-independent B3 metrics, dividends, and annual closing prices.

@@ -23,6 +23,7 @@ def mock_db(monkeypatch, tmp_path):
     test_catalog.write_text(test_csv_content, encoding="utf-8-sig")
     catalog_repo = AssetsCatalogDAO(test_catalog)
     original_load_assets_catalog = MarketData.load_assets_catalog
+    original_get_price_on_date = MarketData.get_price_on_date
 
     def mock_load_catalog():
         return catalog_repo.load_catalog()
@@ -31,6 +32,7 @@ def mock_db(monkeypatch, tmp_path):
     monkeypatch.setattr(db, "get_personal_connection", test_db.get_personal_connection)
     monkeypatch.setattr(db, "get_personal_database_path", test_db.get_personal_database_path)
     monkeypatch.setattr(MarketData, "load_assets_catalog", mock_load_catalog)
+    monkeypatch.setattr(MarketData, "get_price_on_date", lambda *args: None)
 
     # Wire default test adapters at the test environment composition edge
     from services.assets_service import AssetService
@@ -100,6 +102,7 @@ def mock_db(monkeypatch, tmp_path):
         "catalog_path": test_catalog,
         "database_path": test_database,
         "original_load_assets_catalog": original_load_assets_catalog,
+        "original_get_price_on_date": original_get_price_on_date,
     }
     for background in background_instances:
         try:

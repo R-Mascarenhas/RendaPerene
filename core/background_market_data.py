@@ -2,6 +2,7 @@
 
 import math
 from collections.abc import Callable
+from datetime import date
 
 import pandas as pd
 
@@ -95,6 +96,18 @@ class BackgroundMarketData:
             )
             if normalized
             else pd.DataFrame()
+        )
+
+    def get_price_on_date(self, ticker: str, day: date) -> float | None:
+        normalized = ticker.strip().upper()
+        if not normalized or day > date.today():
+            return None
+        return self._read(
+            ("date_price", normalized, day.isoformat()),
+            lambda source=self._source: source.get_price_on_date(normalized, day),
+            600 if day == date.today() else 86400,
+            None,
+            lambda value: value is None or _positive(value),
         )
 
     def get_ticker_intraday_history(self, ticker: str, period="1d", interval="5m") -> pd.DataFrame:

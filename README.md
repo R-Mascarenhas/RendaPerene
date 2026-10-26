@@ -14,6 +14,12 @@ segundo plano, sem botão de busca manual; cadastrar pagamentos exige revisão e
 Ao confirmar ou ignorar um evento, a revisão segue pelos proventos já encontrados, sem repetir
 a consulta ao Yahoo Finance.
 
+Nos lançamentos manuais de compra e venda, escolher o ativo e a data busca o fechamento
+diário do Yahoo Finance em segundo plano, sem bloquear a página. O preço continua editável;
+uma resposta da consulta não substitui o valor digitado. Sem cotação, informe o preço
+manualmente. O valor de hoje pode ser provisório e o histórico pode refletir ajustes por
+desdobramentos feitos pelo Yahoo: confirme sempre o preço da sua negociação.
+
 ## Instalar o aplicativo
 
 Baixe a versão mais recente nas

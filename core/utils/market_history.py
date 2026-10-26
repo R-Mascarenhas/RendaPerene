@@ -43,6 +43,8 @@ def get_valid_closing_history(history: pd.DataFrame) -> pd.DataFrame:
 def get_latest_valid_close(history: pd.DataFrame) -> float | None:
     """Return the latest positive finite closing price, if one is available."""
     valid_history = get_valid_closing_history(history)
+    if valid_history.empty:
+        return None
     valid_history = valid_history[valid_history["Close"] > 0]
     if valid_history.empty:
         return None

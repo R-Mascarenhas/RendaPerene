@@ -1,5 +1,4 @@
 from services.portfolio_read_service import PortfolioReadService
-import contextlib
 import datetime
 import sqlite3
 
@@ -39,14 +38,14 @@ def test_bound_form_saves_only_selected_ticker_and_refreshes_projections(mock_db
     monkeypatch.setattr(st, "subheader", lambda *a, **kw: None)
     monkeypatch.setattr(st, "caption", lambda *a, **kw: None)
     monkeypatch.setattr(st, "success", lambda *a, **kw: None)
-    monkeypatch.setattr(st, "form", lambda *a, **kw: contextlib.nullcontext())
+    monkeypatch.setattr(st, "fragment", lambda **kw: lambda function: function)
     def selectbox(label, options, **kwargs):
         assert label == "Tipo de Lançamento", "The bound form must not offer a ticker selector"
         return entry_type
     monkeypatch.setattr(st, "selectbox", selectbox)
     monkeypatch.setattr(st, "date_input", lambda *a, **kw: today)
     monkeypatch.setattr(st, "number_input", lambda *a, **kw: 2)
-    monkeypatch.setattr(st, "form_submit_button", lambda *a, **kw: True)
+    monkeypatch.setattr(st, "button", lambda *a, **kw: True)
     reruns = []
     monkeypatch.setattr(st, "rerun", lambda: reruns.append(True))
     state = {
@@ -63,7 +62,9 @@ def test_bound_form_saves_only_selected_ticker_and_refreshes_projections(mock_db
     ManualEntryWidget().render("BBAS3")
     assert AssetService.get_local_projection_revision() > revision
     assert reruns == [True]
-    assert not state
+    assert not any(key.startswith((WIDGET_ACCUMULATION_PLAN_DRAFT_PREFIX,
+                                  WIDGET_ACCUMULATION_PLAN_EDITOR_PREFIX,
+                                  WIDGET_ASSET_ANNUAL_GOAL_PREFIX)) for key in state)
     if kind in {"DIVIDEND", "JCP", "YIELD"}:
         receipt = PortfolioReadService.read_asset("BBAS3").dividends.iloc[0]
         assert receipt["Total"] == 2
@@ -127,10 +128,10 @@ def test_manual_entry_persistence_error_does_not_rerun(mock_db, monkeypatch):
     monkeypatch.setattr(st, "subheader", lambda *a, **kw: None)
     monkeypatch.setattr(st, "caption", lambda *a, **kw: None)
     monkeypatch.setattr(st, "selectbox", lambda *a, **kw: "Compra (Aporte)")
-    monkeypatch.setattr(st, "form", lambda *a, **kw: contextlib.nullcontext())
+    monkeypatch.setattr(st, "fragment", lambda **kw: lambda function: function)
     monkeypatch.setattr(st, "date_input", lambda *a, **kw: datetime.date.today())
     monkeypatch.setattr(st, "number_input", lambda *a, **kw: 2)
-    monkeypatch.setattr(st, "form_submit_button", lambda *a, **kw: True)
+    monkeypatch.setattr(st, "button", lambda *a, **kw: True)
     errors = []
     monkeypatch.setattr(st, "error", errors.append)
     def fail(*args):

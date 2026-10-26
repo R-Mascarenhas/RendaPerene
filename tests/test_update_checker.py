@@ -14,9 +14,9 @@ def release_payload(version="1.2.0", assets=None):
                 f"v{version}/RendaPerene-v{version}-windows-x64-setup.exe",
             },
             {
-                "name": f"RendaPerene-v{version}-ubuntu-x64.tar.gz",
+                "name": f"RendaPerene-v{version}-ubuntu-x64.deb",
                 "browser_download_url": "https://github.com/R-Mascarenhas/RendaPerene/releases/download/"
-                f"v{version}/RendaPerene-v{version}-ubuntu-x64.tar.gz",
+                f"v{version}/RendaPerene-v{version}-ubuntu-x64.deb",
             },
         ]
     return {"tag_name": f"v{version}", "body": "Correções importantes.", "assets": assets}
@@ -62,7 +62,15 @@ def test_check_selects_linux_asset_by_its_expected_name():
     update = checker.check("1.1.0", platform_name="linux")
 
     assert update is not None
-    assert update.download_url.endswith("RendaPerene-v1.2.0-ubuntu-x64.tar.gz")
+    assert update.download_url.endswith("RendaPerene-v1.2.0-ubuntu-x64.deb")
+
+
+def test_linux_check_does_not_offer_legacy_tar_as_installer():
+    payload = release_payload()
+    payload["assets"][1]["name"] = "RendaPerene-v1.2.0-ubuntu-x64.tar.gz"
+    checker = UpdateChecker(lambda timeout: payload)
+
+    assert checker.check("1.1.0", platform_name="linux", machine_name="x86_64") is None
 
 
 @pytest.mark.parametrize(

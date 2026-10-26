@@ -11,7 +11,7 @@ ROOT = Path(SPECPATH)
 version = (ROOT / "version.txt").read_text(encoding="utf-8").strip()
 if not version:
     raise ValueError("version.txt must contain a non-empty release version")
-bundle_name = "RendaPerene" if sys.platform == "win32" else f"RendaPerene-v{version}"
+bundle_name = "RendaPerene"
 
 datas = [
     (str(ROOT / "app.py"), "."),

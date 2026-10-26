@@ -17,11 +17,13 @@
   `%LOCALAPPDATA%\Programs\RendaPerene`, permite escolher outra pasta e oferece atalhos.
   Feche o aplicativo antes de atualizar e execute o novo instalador; ele reutiliza a pasta
   anterior e mantém os mesmos atalhos.
-- Ubuntu: baixe e extraia o `.tar.gz` em uma pasta própria e execute o aplicativo dentro dela.
+- Ubuntu: baixe o `.deb` e instale pelo gerenciador de aplicativos ou com
+  `sudo apt install ./RendaPerene-vX.Y.Z-ubuntu-x64.deb`. Abra **RendaPerene** pelo menu ou
+  execute `rendaperene`, sem `sudo`. Para atualizar, feche o aplicativo e instale o novo pacote.
 
 Os arquivos `.sha256` permitem verificar a integridade do download.
-Usuários dos ZIPs antigos precisam baixar o primeiro instalador Windows manualmente neste
-GitHub Releases: o aviso das versões antigas procura somente ZIP. Passe a usar o atalho
+Usuários dos ZIPs e TAR.GZ antigos precisam baixar o primeiro instalador manualmente neste
+GitHub Releases: o aviso das versões antigas procura somente esses formatos. Passe a usar o atalho
 criado pelo instalador; cópias antigas do executável continuam abrindo a versão antiga.
 
 ## Dados persistentes

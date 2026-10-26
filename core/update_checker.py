@@ -112,7 +112,7 @@ def _asset_name(version: str, platform_name: str, machine_name: str) -> str | No
     if platform_name.startswith("win"):
         return f"RendaPerene-v{version}-windows-x64-setup.exe"
     if platform_name.startswith("linux"):
-        return f"RendaPerene-v{version}-ubuntu-x64.tar.gz"
+        return f"RendaPerene-v{version}-ubuntu-x64.deb"
     return None
 
 

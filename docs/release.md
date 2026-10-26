@@ -48,8 +48,19 @@ Use a execução manual do workflow para comprovar o instalador nativo antes de 
 
 As versões antigas procuram o ZIP pelo nome e não reconhecerão a release contendo somente EXE.
 Informe nas notas que a primeira migração exige baixar o instalador manualmente no GitHub;
-depois dela, o aviso existente passa a oferecer o instalador. A distribuição Ubuntu permanece
-TAR.GZ até a entrega da issue #110.
+depois dela, o aviso existente passa a oferecer o instalador.
+
+No Ubuntu, execute `bash scripts/build_linux.sh` com `dpkg-deb` disponível. O resultado é
+`dist/RendaPerene-vX.Y.Z-ubuntu-x64.deb`, sem TAR.GZ. O pacote é instalado pelo gerenciador
+ou com `sudo apt install ./RendaPerene-vX.Y.Z-ubuntu-x64.deb`, e o usuário abre `rendaperene`
+sem `sudo`. A instalação fica em `/opt/rendaperene`; o dpkg gerencia seus arquivos e preserva
+os dados externos à instalação. Feche o aplicativo antes de atualizar ou remover.
+
+`scripts/test_deb.sh` instala, atualiza e remove pacotes reais com `sudo`, somente em runner
+Ubuntu descartável. Ele verifica processo aberto, arquivos obsoletos, menu e dados sintéticos.
+O build mantém Ubuntu 22.04 como base para compatibilidade com versões posteriores.
+As versões TAR.GZ antigas também exigem primeira migração manual pelo GitHub, pois procuram
+o nome do arquivo antigo. Releases novas publicam somente EXE, DEB e respectivos checksums.
 
 O job de publicação usa somente o `GITHUB_TOKEN` com permissão `contents: write`. Os demais jobs
 mantêm permissão somente de leitura.

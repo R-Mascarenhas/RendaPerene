@@ -41,11 +41,7 @@ Name: "desktopicon"; Description: "Criar atalho na área de trabalho"; Flags: un
 
 [Files]
 Source: "{#BundleDir}\*"; DestDir: "{app}"; Excludes: "runtime-manifest.txt"; Flags: ignoreversion recursesubdirs createallsubdirs
-#ifdef InstallerTestFail
-Source: "{#BundleDir}\runtime-manifest.txt"; DestDir: "{app}"; Flags: ignoreversion; BeforeInstall: FailUpgrade
-#else
 Source: "{#BundleDir}\runtime-manifest.txt"; DestDir: "{app}"; Flags: ignoreversion
-#endif
 
 [Icons]
 Name: "{userprograms}\RendaPerene"; Filename: "{app}\RendaPerene.exe"; WorkingDir: "{app}"
@@ -54,13 +50,6 @@ Name: "{userdesktop}\RendaPerene"; Filename: "{app}\RendaPerene.exe"; WorkingDir
 [Code]
 var
   PreviousRuntime: TArrayOfString;
-
-#ifdef InstallerTestFail
-procedure FailUpgrade;
-begin
-  RaiseException('Falha sintética durante a extração, antes de substituir o manifesto.');
-end;
-#endif
 
 function ApplicationMutex(Param: String): String;
 begin

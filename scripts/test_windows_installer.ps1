@@ -54,11 +54,6 @@ try {
     [IO.File]::WriteAllBytes($manifest, $originalManifest)
 }
 $previousInstaller = Join-Path $temporary "RendaPerene-v0.0.0-windows-x64-setup.exe"
-$failureDirectory = Join-Path $temporary "failure"
-$version = (Get-Content version.txt -Raw).Trim()
-& $compiler "/DAppVersion=$version" "/DBundleDir=$((Resolve-Path dist/RendaPerene).Path)" "/DOutputDir=$failureDirectory" "/DInstallerTestFail=1" "scripts/windows_installer.iss"
-if ($LASTEXITCODE -ne 0) { throw "Failure installer fixture compilation failed" }
-$failureInstaller = Join-Path $failureDirectory "RendaPerene-v$version-windows-x64-setup.exe"
 
 try {
     foreach ($directory in @($defaultDirectory, $customDirectory)) {
@@ -75,7 +70,14 @@ try {
             throw "Previous installer fixture is missing obsolete resource"
         }
 
-        Invoke-Setup $failureInstaller -ExpectFailure
+        # Trigger a real extraction failure: Windows refuses replacement of this locked file.
+        # /SUPPRESSMSGBOXES chooses Abort on the installer's Abort/Retry error prompt.
+        $manifestLock = [IO.File]::Open((Join-Path $directory "runtime-manifest.txt"), [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        try {
+            Invoke-Setup $installer -ExpectFailure
+        } finally {
+            $manifestLock.Dispose()
+        }
         if (-not (Test-Path "$directory/_internal/obsolete-installer-test.txt")) {
             throw "Failed upgrade removed the previous runtime"
         }

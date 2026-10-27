@@ -1,4 +1,6 @@
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot/windows_compiler.ps1"
+$compiler = Get-InnoSetupCompiler
 $buildVenv = "venv_dist"
 if (-not (Test-Path "$buildVenv\Scripts\python.exe")) {
     & python -m venv $buildVenv
@@ -32,9 +34,5 @@ $runtimeFiles = Get-ChildItem "$bundle/_internal" -Recurse -File | ForEach-Objec
 }
 [IO.File]::WriteAllLines((Join-Path $bundle "runtime-manifest.txt"), [string[]] $runtimeFiles, [Text.UTF8Encoding]::new($true))
 
-$compiler = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6/ISCC.exe"
-if (-not (Test-Path $compiler)) {
-    throw "Install Inno Setup 6 before building the Windows installer."
-}
 & $compiler "/DAppVersion=$appVersion" "/DBundleDir=$bundle" "/DOutputDir=$((Resolve-Path dist).Path)" "scripts/windows_installer.iss"
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed" }

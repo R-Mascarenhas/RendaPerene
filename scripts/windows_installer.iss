@@ -17,6 +17,7 @@ AppPublisher=RendaPerene
 AppPublisherURL=https://github.com/R-Mascarenhas/RendaPerene
 DefaultDirName={localappdata}\Programs\RendaPerene
 DisableDirPage=no
+DisableProgramGroupPage=yes
 UsePreviousAppDir=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible

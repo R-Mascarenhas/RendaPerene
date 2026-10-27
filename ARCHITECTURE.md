@@ -588,6 +588,9 @@ EXE Windows e o TAR.GZ Linux versionados. No Windows, o Inno Setup 6 envolve o b
 `RendaPerene/RendaPerene.exe`, com identidade estável e instalação por usuário, sem exigir
 administrador. O destino padrão é `%LOCALAPPDATA%\Programs\RendaPerene`; o usuário pode escolher
 outra pasta, reutilizada nas atualizações. Os atalhos permanecem apontando ao mesmo executável.
+`scripts/windows_compiler.ps1` localiza o Inno Setup pelo caminho explícito
+`INNO_SETUP_COMPILER`, pelo `PATH`, pelo registro ou pelas pastas padrão de instalação por
+usuário e por máquina, antes de iniciar o build. Build e testes nativos usam a mesma busca.
 Um manifesto identifica os arquivos privados `_internal` instalados: somente arquivos obsoletos
 desse manifesto são removidos após a extração bem-sucedida, sem excluir recursos antigos
 antes da conclusão da instalação. Carteiras, configurações e backups permanecem fora da instalação.

@@ -28,7 +28,19 @@ tem nome fixo `RendaPerene.exe`. O destino padrão é `%LOCALAPPDATA%\Programs\R
 com pasta editável e reaproveitada nos upgrades. A instalação é por usuário e não exige
 administrador para gravar no destino padrão.
 
-O runner Windows deve fornecer Inno Setup 6 em `Program Files (x86)`. A pipeline executa
+O compilador é localizado por `INNO_SETUP_COMPILER`, pelo `PATH`, pelo registro de instalação
+do Inno Setup 6 ou pelas pastas padrão de programas do sistema e do usuário. Isso inclui
+`%LOCALAPPDATA%\Programs\Inno Setup 6` para instalação sem administrador.
+Para uma instalação personalizada não detectada, informe o caminho completo no PowerShell:
+
+```powershell
+$env:INNO_SETUP_COMPILER = "D:\Ferramentas\Inno Setup 6\ISCC.exe"
+.\build_windows_exe.bat
+```
+
+A localização é verificada antes do build. `scripts/test_windows_compiler.ps1` valida as opções
+de descoberta usando arquivos temporários, sem modificar o registro nem a instalação do compilador.
+A pipeline executa
 `scripts/test_windows_installer.ps1` em ambiente descartável para validar instalação padrão e
 personalizada, upgrade, atalhos, aplicativo aberto e preservação de arquivos sintéticos.
 Esse teste modifica a instalação do usuário do runner e não deve rodar em uma máquina pessoal.

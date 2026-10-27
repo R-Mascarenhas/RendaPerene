@@ -77,6 +77,9 @@ jobs:
               Path("google-oauth-client.json").write_text(configuration, encoding="utf-8")
           else:
               print("::warning::GOOGLE_OAUTH_CLIENT_JSON is absent; Google Drive login will be disabled.")
+      - name: Test Inno Setup compiler discovery
+        shell: pwsh
+        run: ./scripts/test_windows_compiler.ps1
       - name: Build and smoke-test Windows bundle
         shell: cmd
         run: build_windows_exe.bat

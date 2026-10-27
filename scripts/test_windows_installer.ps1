@@ -1,11 +1,12 @@
 param([Parameter(Mandatory = $true)][string] $Installer)
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot/windows_compiler.ps1"
 if ($env:CI -ne "true") {
     throw "Run installer lifecycle tests only on a disposable CI Windows runner."
 }
 $installer = (Resolve-Path $Installer).Path
-$compiler = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6/ISCC.exe"
+$compiler = Get-InnoSetupCompiler
 $temporary = Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $temporary | Out-Null
 $defaultDirectory = Join-Path $env:LOCALAPPDATA "Programs/RendaPerene"

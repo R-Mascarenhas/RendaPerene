@@ -584,7 +584,7 @@ usuário, planilhas, logs e outros arquivos pessoais ou gerados não são adicio
 
 Os scripts `build_windows.ps1` e `build_linux.sh` são comandos nativos de empacotamento e
 criam ambientes virtuais dedicados antes de instalar as dependências. Eles produzem o instalador
-EXE Windows e o TAR.GZ Linux versionados. No Windows, o Inno Setup 6 envolve o bundle fixo
+EXE Windows e o DEB Ubuntu versionados. No Windows, o Inno Setup 6 envolve o bundle fixo
 `RendaPerene/RendaPerene.exe`, com identidade estável e instalação por usuário, sem exigir
 administrador. O destino padrão é `%LOCALAPPDATA%\Programs\RendaPerene`; o usuário pode escolher
 outra pasta, reutilizada nas atualizações. Os atalhos permanecem apontando ao mesmo executável.
@@ -611,8 +611,20 @@ logs e overlays de catálogo não entram nos artefatos.
 `scripts/test_windows_installer.ps1` roda somente em CI descartável: instala uma versão anterior
 sintética, atualiza sem informar novamente pasta ou tarefas, verifica atalhos, remoção de runtime
 obsoleto, ausência de limpeza prematura em upgrade com falha, preservação de arquivos sintéticos e bloqueio com o aplicativo aberto, e inicia o
-executável instalado. O aviso de atualização seleciona o EXE Windows; executáveis antigos que
-procuram somente ZIP precisam da primeira migração manual pelo GitHub Releases.
+executável instalado.
+
+No Ubuntu, `scripts/build_deb.py` recebe o bundle validado e produz o pacote amd64
+`rendaperene`, com instalação em `/opt/rendaperene`, comando `/usr/bin/rendaperene` e entrada
+`/usr/share/applications/rendaperene.desktop`. O dpkg gerencia substituição e remoção dos arquivos
+do programa; não há repositório APT. O pacote declara as dependências nativas e recomenda um cofre
+Secret Service para o backup opcional. Hooks `preinst`/`prerm` recusam atualizar/remover enquanto
+`/proc/*/exe` identifica um processo dessa instalação, sem matá-lo. O aplicativo é aberto pelo
+usuário normal, nunca pelo instalador como root. `scripts/test_deb.sh` valida instalação de uma
+versão anterior sintética, bloqueio com processo aberto, upgrade, remoção de arquivos obsoletos,
+entrada de menu, execução e preservação de dados sintéticos, somente em CI descartável.
+
+O aviso de atualização seleciona o EXE Windows ou DEB Ubuntu. Executáveis antigos que procuram
+somente ZIP/TAR.GZ precisam da primeira migração manual pelo GitHub Releases.
 
 ## Apresentação
 

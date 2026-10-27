@@ -135,9 +135,15 @@ jobs:
               print("::warning::GOOGLE_OAUTH_CLIENT_JSON is absent; Google Drive login will be disabled.")
       - name: Build and smoke-test Ubuntu bundle
         run: bash scripts/build_linux.sh
+      - name: Test Ubuntu package lifecycle
+        run: |
+          sudo apt-get update
+          package="$(find dist -maxdepth 1 -name 'RendaPerene-v*-ubuntu-x64.deb' -print -quit)"
+          test -n "$package"
+          bash scripts/test_deb.sh "$package"
       - name: Create Ubuntu checksum
         run: |
-          archive="$(find dist -maxdepth 1 -name 'RendaPerene-v*-ubuntu-x64.tar.gz' -print -quit)"
+          archive="$(find dist -maxdepth 1 -name 'RendaPerene-v*-ubuntu-x64.deb' -print -quit)"
           test -n "$archive"
           archive_name="$(basename "$archive")"
           (cd "$(dirname "$archive")" && sha256sum "$archive_name" > "$archive_name.sha256")
@@ -145,8 +151,8 @@ jobs:
         with:
           name: RendaPerene-ubuntu-x64
           path: |
-            dist/RendaPerene-v*-ubuntu-x64.tar.gz
-            dist/RendaPerene-v*-ubuntu-x64.tar.gz.sha256
+            dist/RendaPerene-v*-ubuntu-x64.deb
+            dist/RendaPerene-v*-ubuntu-x64.deb.sha256
           if-no-files-found: error
 
   publish-release:
@@ -169,11 +175,11 @@ jobs:
         run: |
           version="${RELEASE_VERSION#v}"
           windows_archive="release-assets/RendaPerene-v${version}-windows-x64-setup.exe"
-          ubuntu_archive="release-assets/RendaPerene-v${version}-ubuntu-x64.tar.gz"
+          ubuntu_archive="release-assets/RendaPerene-v${version}-ubuntu-x64.deb"
           test -f "$windows_archive"
           test -f "$ubuntu_archive"
           (cd release-assets && sha256sum -c "RendaPerene-v${version}-windows-x64-setup.exe.sha256")
-          (cd release-assets && sha256sum -c "RendaPerene-v${version}-ubuntu-x64.tar.gz.sha256")
+          (cd release-assets && sha256sum -c "RendaPerene-v${version}-ubuntu-x64.deb.sha256")
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -184,7 +190,7 @@ jobs:
             --title "RendaPerene ${GITHUB_REF_NAME}" \
             --notes-file .github/release-notes.md \
             release-assets/RendaPerene-*-setup.exe \
-            release-assets/RendaPerene-*.tar.gz \
+            release-assets/RendaPerene-*.deb \
             release-assets/*.sha256
       - name: Publish release
         env:

@@ -17,8 +17,6 @@ build_python="$build_venv/bin/python"
 "$build_python" -m pip install ".[packaging]"
 "$build_python" -m PyInstaller --clean --noconfirm --distpath dist --workpath build RendaPerene.spec
 
-archive="dist/RendaPerene-v${app_version}-ubuntu-x64.tar.gz"
-rm -f "$archive"
-"$build_python" scripts/validate_bundle.py "dist/RendaPerene-v${app_version}" "$app_version"
-"$build_python" scripts/smoke_bundle.py "dist/RendaPerene-v${app_version}/RendaPerene-v${app_version}"
-tar -czf "$archive" -C dist "RendaPerene-v${app_version}"
+"$build_python" scripts/validate_bundle.py dist/RendaPerene "$app_version"
+"$build_python" scripts/smoke_bundle.py dist/RendaPerene/RendaPerene
+"$build_python" -m scripts.build_deb dist/RendaPerene "$app_version"

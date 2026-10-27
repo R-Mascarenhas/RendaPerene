@@ -26,7 +26,7 @@ Baixe a versão mais recente nas
 [releases](https://github.com/R-Mascarenhas/RendaPerene/releases/latest):
 
 - **Windows 10 ou posterior, 64 bits:** instalador `.exe`.
-- **Ubuntu 22.04 ou posterior, 64 bits:** pacote `.tar.gz`.
+- **Ubuntu 22.04 ou posterior, 64 bits:** pacote `.deb`.
 
 No Windows, execute o instalador. O destino sugerido é
 `%LOCALAPPDATA%\Programs\RendaPerene`, sem exigir administrador; você pode escolher outra pasta.
@@ -34,12 +34,20 @@ Use o atalho criado no menu Iniciar ou, opcionalmente, na área de trabalho. Par
 feche o aplicativo e execute o novo instalador: ele reutiliza a pasta escolhida e mantém os
 mesmos atalhos, preservando carteiras, configurações e backups.
 
-No Ubuntu, extraia o pacote em uma pasta própria e execute o aplicativo dentro dela.
+No Ubuntu, instale o `.deb` pelo gerenciador de aplicativos ou pelo terminal:
+
+```bash
+sudo apt install ./RendaPerene-vX.Y.Z-ubuntu-x64.deb
+```
+
+Abra **RendaPerene** no menu de aplicativos ou execute `rendaperene` no terminal, sem `sudo`.
+Para atualizar, feche o aplicativo e instale o novo `.deb` da mesma forma: a entrada no menu e
+os dados são preservados. A instalação usa `/opt/rendaperene`, gerenciada pelo sistema.
 As distribuições incluem o ambiente necessário, sem exigir instalação separada de Python.
 
-Se você usa um ZIP antigo, baixe o primeiro instalador manualmente nas releases: o aviso
-das versões antigas procura apenas ZIP. Depois, passe a usar o atalho do instalador;
-uma cópia antiga do executável na área de trabalho continuará abrindo a versão antiga.
+Se você usa um ZIP ou TAR.GZ antigo, baixe o primeiro instalador manualmente nas releases:
+o aviso das versões antigas procura apenas os formatos anteriores. Depois, passe a usar o
+atalho da instalação; uma cópia antiga do executável continuará abrindo a versão antiga.
 
 É necessário um navegador. Consultas de mercado, verificação de atualizações e backup
 no Drive precisam de internet; seus registros continuam locais.

@@ -1,10 +1,11 @@
-## Novidades em 0.13.1
+## Novidades em 0.13.2
 
-- Preenchimento do preço em compras e vendas manuais pelo fechamento diário do Yahoo Finance,
-  consultado em segundo plano. O preço continua editável e a consulta preserva o valor digitado.
-- Correção na preservação da fila de revisão de proventos e ajustes visuais nas ações.
-- Reorganização interna da edição dos parâmetros de Bazin e do ciclo de busca de proventos.
-- Correção de compatibilidade com pandas 3 no cálculo de aportes em períodos sem negociações.
+- Instalador Windows com pasta padrão, destino personalizável e atalhos permanentes.
+  As atualizações reutilizam a instalação existente e preservam os dados locais.
+- Pacote DEB para Ubuntu, com acesso pelo menu de aplicativos ou pelo comando `rendaperene`.
+  O gerenciador de pacotes atualiza os arquivos do programa, mantendo carteiras e configurações.
+- O aviso de atualização existente direciona ao instalador correspondente no GitHub.
+  A primeira migração dos antigos ZIPs e TAR.GZ precisa ser feita manualmente pelas releases.
 
 ## Sistemas suportados
 
@@ -13,12 +14,12 @@
 
 ## Instalação
 
-- Windows: baixe e execute `RendaPerene-vX.Y.Z-windows-x64-setup.exe`. O instalador sugere
+- Windows: baixe e execute `RendaPerene-v0.13.2-windows-x64-setup.exe`. O instalador sugere
   `%LOCALAPPDATA%\Programs\RendaPerene`, permite escolher outra pasta e oferece atalhos.
   Feche o aplicativo antes de atualizar e execute o novo instalador; ele reutiliza a pasta
   anterior e mantém os mesmos atalhos.
 - Ubuntu: baixe o `.deb` e instale pelo gerenciador de aplicativos ou com
-  `sudo apt install ./RendaPerene-vX.Y.Z-ubuntu-x64.deb`. Abra **RendaPerene** pelo menu ou
+  `sudo apt install ./RendaPerene-v0.13.2-ubuntu-x64.deb`. Abra **RendaPerene** pelo menu ou
   execute `rendaperene`, sem `sudo`. Para atualizar, feche o aplicativo e instale o novo pacote.
 
 Os arquivos `.sha256` permitem verificar a integridade do download.
@@ -30,7 +31,7 @@ criado pelo instalador; cópias antigas do executável continuam abrindo a vers�
 
 As carteiras ficam fora da pasta do aplicativo:
 
-- Windows: `%LOCALAPPDATA%\\RendaPerene`;
+- Windows: `%LOCALAPPDATA%\RendaPerene`;
 - Linux: `$XDG_DATA_HOME/RendaPerene` ou `~/.local/share/RendaPerene`.
 
 Antes de substituir uma versão instalada, preserve uma cópia da pasta de dados. A aplicação

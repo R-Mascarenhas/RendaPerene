@@ -582,9 +582,22 @@ Essas integrações permitem o uso local, mas precisam de acesso à rede quando 
 `version.txt` e os recursos/metadados dinâmicos de Streamlit e Plotly. Bancos SQLite, catálogos do
 usuário, planilhas, logs e outros arquivos pessoais ou gerados não são adicionados ao bundle.
 
-Os scripts `build_windows.ps1` e `build_linux.sh` são apenas comandos nativos de empacotamento e
-criam ambientes virtuais dedicados antes de instalar as dependências. Eles produzem os arquivos ZIP
-e TAR.GZ versionados. Cada build valida os recursos do diretório final e
+Os scripts `build_windows.ps1` e `build_linux.sh` são comandos nativos de empacotamento e
+criam ambientes virtuais dedicados antes de instalar as dependências. Eles produzem o instalador
+EXE Windows e o TAR.GZ Linux versionados. No Windows, o Inno Setup 6 envolve o bundle fixo
+`RendaPerene/RendaPerene.exe`, com identidade estável e instalação por usuário, sem exigir
+administrador. O destino padrão é `%LOCALAPPDATA%\Programs\RendaPerene`; o usuário pode escolher
+outra pasta, reutilizada nas atualizações. Os atalhos permanecem apontando ao mesmo executável.
+`scripts/windows_compiler.ps1` localiza o Inno Setup pelo caminho explícito
+`INNO_SETUP_COMPILER`, pelo `PATH`, pelo registro ou pelas pastas padrão de instalação por
+usuário e por máquina, antes de iniciar o build. Build e testes nativos usam a mesma busca.
+Um manifesto identifica os arquivos privados `_internal` instalados: somente arquivos obsoletos
+desse manifesto são removidos após a extração bem-sucedida, sem excluir recursos antigos
+antes da conclusão da instalação. Carteiras, configurações e backups permanecem fora da instalação.
+Um runtime hook mantém um mutex global com hash do diretório de perfil do usuário
+enquanto qualquer processo empacotado desse usuário está aberto: instalação e
+desinstalação pedem seu fechamento, sem encerrar o processo à força.
+Cada build valida os recursos do diretório final e
 inicia o executável em um diretório de dados temporário para verificar que o servidor Streamlit
 chega a responder. O workflow executa os builds em runners Windows e Ubuntu 22.04 separados; tags
 de release são rejeitadas quando não correspondem a `version.txt`.
@@ -594,6 +607,12 @@ um release. Em tags semânticas válidas, ele reutiliza o quality gate, aguarda 
 gera um checksum SHA-256 para cada arquivo e publica um GitHub Release com o `GITHUB_TOKEN` de escopo
 mínimo. O job de publicação é o único que recebe permissão `contents: write`; bancos, planilhas,
 logs e overlays de catálogo não entram nos artefatos.
+
+`scripts/test_windows_installer.ps1` roda somente em CI descartável: instala uma versão anterior
+sintética, atualiza sem informar novamente pasta ou tarefas, verifica atalhos, remoção de runtime
+obsoleto, ausência de limpeza prematura em upgrade com falha, preservação de arquivos sintéticos e bloqueio com o aplicativo aberto, e inicia o
+executável instalado. O aviso de atualização seleciona o EXE Windows; executáveis antigos que
+procuram somente ZIP precisam da primeira migração manual pelo GitHub Releases.
 
 ## Apresentação
 

@@ -13,9 +13,16 @@
 
 ## Instalação
 
-Baixe o arquivo correspondente ao seu sistema operacional e extraia-o em uma pasta própria.
-Execute o aplicativo dentro da pasta extraída. Os arquivos `.sha256` permitem verificar a
-integridade do download com uma ferramenta compatível com SHA-256.
+- Windows: baixe e execute `RendaPerene-vX.Y.Z-windows-x64-setup.exe`. O instalador sugere
+  `%LOCALAPPDATA%\Programs\RendaPerene`, permite escolher outra pasta e oferece atalhos.
+  Feche o aplicativo antes de atualizar e execute o novo instalador; ele reutiliza a pasta
+  anterior e mantém os mesmos atalhos.
+- Ubuntu: baixe e extraia o `.tar.gz` em uma pasta própria e execute o aplicativo dentro dela.
+
+Os arquivos `.sha256` permitem verificar a integridade do download.
+Usuários dos ZIPs antigos precisam baixar o primeiro instalador Windows manualmente neste
+GitHub Releases: o aviso das versões antigas procura somente ZIP. Passe a usar o atalho
+criado pelo instalador; cópias antigas do executável continuam abrindo a versão antiga.
 
 ## Dados persistentes
 

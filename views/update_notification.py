@@ -57,6 +57,10 @@ def render_update_notification(installed_version: str, update_checker: UpdateChe
 @st.dialog("Atualização disponível")
 def _render_update_dialog(update: AvailableUpdate) -> None:
     st.write(f"A versão {update.version} do Renda Perene está disponível.")
+    st.write(
+        "Baixe a atualização e aguarde o download terminar. Depois, feche todas as abas do "
+        "RendaPerene, aguarde alguns segundos e instale o arquivo baixado."
+    )
     if update.release_notes:
         st.text(update.release_notes)
     if st.button("Baixar atualização", width="stretch"):

@@ -20,6 +20,7 @@ class AppServer:
     def __init__(self, sandbox, artifacts):
         self.sandbox = sandbox
         self.artifacts = artifacts
+        self.data_root = sandbox / "data"
         self.process = None
         self.log = None
         self.starts = 0

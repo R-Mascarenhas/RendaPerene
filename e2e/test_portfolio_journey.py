@@ -19,6 +19,12 @@ def wait_idle(page):
     expect(page.get_by_test_id("stApp")).to_have_attribute("data-test-script-state", "notRunning")
 
 
+def navigation_control(page, label):
+    return page.get_by_role("button", name=label, exact=True).or_(
+        page.get_by_role("radio", name=label, exact=True)
+    )
+
+
 def run_action(page, action, *, full_run=False):
     def finished(payload):
         message = ForwardMsg()
@@ -40,7 +46,9 @@ def run_action(page, action, *, full_run=False):
 
 def navigate(page, label):
     wait_idle(page)
-    button = page.get_by_role("button", name=label, exact=True)
+    button = navigation_control(page, label)
+    if button.get_attribute("aria-checked") == "true":
+        return
     # Clear an existing selection before selecting the route explicitly. A
     # fragment's full rerun can reset server navigation while the old button
     # still looks selected in the browser.
@@ -132,10 +140,15 @@ def test_buy_sell_and_restart_preserve_portfolio(local_page, app_server, new_con
         page.get_by_role("button", name="Criar Nova Carteira", exact=True).click,
         full_run=True,
     )
-    expect(combobox(page, "Selecione a Carteira Ativa")).to_have_attribute(
-        "aria-label", re.compile("jornadae2e", re.IGNORECASE)
-    )
-    database = app_server.sandbox / "data" / "database" / "portfolio_jornadae2e.db"
+    active_portfolio = combobox(page, "Selecione a Carteira Ativa")
+    selected_name = re.compile("jornadae2e", re.IGNORECASE)
+    # React Aria exposes the selection as the input value; older Streamlit
+    # versions expose it in the accessible name instead.
+    if active_portfolio.input_value():
+        expect(active_portfolio).to_have_value(selected_name)
+    else:
+        expect(active_portfolio).to_have_attribute("aria-label", selected_name)
+    database = app_server.data_root / "database" / "portfolio_jornadae2e.db"
     open_operations(page)
     enter_trade(page, 10, 20, 5)
     assert_position(page, database, 10)

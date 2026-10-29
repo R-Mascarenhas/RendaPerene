@@ -23,6 +23,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+e2e = [
+    "pytest-playwright>=0.7,<1",
+]
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.16.3",

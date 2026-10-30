@@ -17,6 +17,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  e2e:
+    name: E2E (Chromium, Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install E2E dependencies
+        run: python -m pip install -e ".[dev,e2e]"
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Run browser journey
+        run: pytest e2e --browser chromium --tracing retain-on-failure --screenshot only-on-failure
+      - name: Upload E2E diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-diagnostics
+          path: test-results/
+          retention-days: 7
+
   validate:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}

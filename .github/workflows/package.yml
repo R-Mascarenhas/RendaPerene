@@ -80,15 +80,28 @@ jobs:
       - name: Test Inno Setup compiler discovery
         shell: pwsh
         run: ./scripts/test_windows_compiler.ps1
+      - name: Test Windows runtime metadata cleanup
+        shell: pwsh
+        run: ./scripts/test_windows_runtime_cleanup.ps1
       - name: Build and smoke-test Windows bundle
         shell: cmd
         run: build_windows_exe.bat
+      - name: Install native browser test dependencies
+        shell: pwsh
+        run: ./venv_dist/Scripts/python.exe -m pip install -e ".[dev,e2e]"
       - name: Test Windows installer lifecycle
         shell: pwsh
         run: |
           $installer = Get-ChildItem dist -Filter "RendaPerene-v*-windows-x64-setup.exe" | Select-Object -First 1
           if ($null -eq $installer) { throw "Windows installer was not created" }
           ./scripts/test_windows_installer.ps1 -Installer $installer.FullName
+      - name: Upload native browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-native-browser-diagnostics
+          path: test-results/windows-native*/
+          retention-days: 7
       - name: Create Windows checksum
         shell: pwsh
         run: |

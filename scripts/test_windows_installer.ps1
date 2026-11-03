@@ -43,15 +43,20 @@ function Assert-Shortcut {
 
 # Build a genuinely older installer with an obsolete private runtime resource.
 $obsoleteSource = Join-Path (Resolve-Path "dist/RendaPerene/_internal").Path "obsolete-installer-test.txt"
+$obsoleteMetadata = Join-Path (Resolve-Path "dist/RendaPerene/_internal").Path "obsolete_dependency-0.0.0.dist-info"
 $manifest = (Resolve-Path "dist/RendaPerene/runtime-manifest.txt").Path
 $originalManifest = [IO.File]::ReadAllBytes($manifest)
 try {
     Set-Content $obsoleteSource "obsolete runtime dependency"
+    New-Item -ItemType Directory $obsoleteMetadata | Out-Null
+    [IO.File]::WriteAllText("$obsoleteMetadata/METADATA", "Metadata-Version: 2.1`nName: obsolete-dependency`nVersion: 0.0.0`n")
     [IO.File]::AppendAllText($manifest, "_internal\obsolete-installer-test.txt`r`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::AppendAllText($manifest, "_internal\obsolete_dependency-0.0.0.dist-info\METADATA`r`n", [Text.UTF8Encoding]::new($false))
     & $compiler "/DAppVersion=0.0.0" "/DBundleDir=$((Resolve-Path dist/RendaPerene).Path)" "/DOutputDir=$temporary" "scripts/windows_installer.iss"
     if ($LASTEXITCODE -ne 0) { throw "Previous installer fixture compilation failed" }
 } finally {
     Remove-Item $obsoleteSource -ErrorAction SilentlyContinue
+    Remove-Item $obsoleteMetadata -Recurse -Force -ErrorAction SilentlyContinue
     [IO.File]::WriteAllBytes($manifest, $originalManifest)
 }
 $previousInstaller = Join-Path $temporary "RendaPerene-v0.0.0-windows-x64-setup.exe"
@@ -70,6 +75,9 @@ try {
         if (-not (Test-Path "$directory/_internal/obsolete-installer-test.txt")) {
             throw "Previous installer fixture is missing obsolete resource"
         }
+        $installedMetadata = Join-Path $directory "_internal/obsolete_dependency-0.0.0.dist-info"
+        $orphanMetadata = Join-Path $directory "_internal/streamlit-0.0.0.dist-info"
+        New-Item -ItemType Directory $orphanMetadata | Out-Null
 
         # Trigger a real extraction failure: Windows refuses replacement of this locked file.
         # /SUPPRESSMSGBOXES chooses Abort on the installer's Abort/Retry error prompt.
@@ -82,6 +90,9 @@ try {
         if (-not (Test-Path "$directory/_internal/obsolete-installer-test.txt")) {
             throw "Failed upgrade removed the previous runtime"
         }
+        if (-not (Test-Path "$installedMetadata/METADATA") -or -not (Test-Path $orphanMetadata)) {
+            throw "Failed upgrade removed previous runtime metadata directories"
+        }
         & "venv_dist/Scripts/python.exe" scripts/smoke_bundle.py $executable
         if ($LASTEXITCODE -ne 0) { throw "Application failed to start after interrupted extraction" }
 
@@ -89,6 +100,9 @@ try {
         Invoke-Setup $installer
         if (Test-Path "$directory/_internal/obsolete-installer-test.txt") {
             throw "Upgrade left an obsolete runtime resource"
+        }
+        if ((Test-Path $installedMetadata) -or (Test-Path $orphanMetadata)) {
+            throw "Upgrade left empty distribution metadata directories"
         }
         Assert-Shortcut $desktopShortcut $executable
         Assert-Shortcut $menuShortcut $executable
@@ -100,6 +114,9 @@ try {
         }
         & "venv_dist/Scripts/python.exe" scripts/smoke_bundle.py $executable
         if ($LASTEXITCODE -ne 0) { throw "Installed application smoke test failed" }
+        $browserOutput = if ($directory -eq $defaultDirectory) { "test-results/windows-native-default" } else { "test-results/windows-native-custom" }
+        & "venv_dist/Scripts/python.exe" -m pytest e2e/test_navigation.py --e2e-executable $executable --browser chromium --browser-channel msedge --tracing retain-on-failure --screenshot only-on-failure --output $browserOutput
+        if ($LASTEXITCODE -ne 0) { throw "Upgraded application retained content from another screen" }
 
         $env:RENDAPERENE_HEADLESS = "true"
         $application = Start-Process $executable -PassThru

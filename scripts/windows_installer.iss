@@ -49,6 +49,10 @@ Name: "{userprograms}\RendaPerene"; Filename: "{app}\RendaPerene.exe"; WorkingDi
 Name: "{userdesktop}\RendaPerene"; Filename: "{app}\RendaPerene.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Code]
+const
+  DirectoryAttribute = $10;
+  ReparsePointAttribute = $400;
+
 var
   PreviousRuntime: TArrayOfString;
 
@@ -62,6 +66,30 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
   LoadStringsFromFile(ExpandConstant('{app}\runtime-manifest.txt'), PreviousRuntime);
+end;
+
+procedure RemoveEmptyRuntimeDirectories(Directory: String);
+var
+  Entry: TFindRec;
+  ChildDirectory: String;
+begin
+  if not FindFirst(AddBackslash(Directory) + '*', Entry) then
+    Exit;
+  try
+    repeat
+      if (Entry.Name <> '.') and (Entry.Name <> '..') and
+         ((Entry.Attributes and DirectoryAttribute) <> 0) and
+         ((Entry.Attributes and ReparsePointAttribute) = 0) then begin
+        ChildDirectory := AddBackslash(Directory) + Entry.Name;
+        RemoveEmptyRuntimeDirectories(ChildDirectory);
+        // RemoveDir only succeeds for empty directories; never follow junctions.
+        if RemoveDir(ChildDirectory) then
+          Log('Removed empty runtime directory: ' + ChildDirectory);
+      end;
+    until not FindNext(Entry);
+  finally
+    FindClose(Entry);
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -84,6 +112,8 @@ begin
          (CurrentRuntime.IndexOf(RelativePath) < 0) then
         DeleteFile(ExpandConstant('{app}\') + RelativePath);
     end;
+    // Also repair empty metadata directories left by older installer versions.
+    RemoveEmptyRuntimeDirectories(ExpandConstant('{app}\_internal'));
   finally
     CurrentRuntime.Free;
   end;

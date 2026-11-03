@@ -594,6 +594,12 @@ usuário e por máquina, antes de iniciar o build. Build e testes nativos usam a
 Um manifesto identifica os arquivos privados `_internal` instalados: somente arquivos obsoletos
 desse manifesto são removidos após a extração bem-sucedida, sem excluir recursos antigos
 antes da conclusão da instalação. Carteiras, configurações e backups permanecem fora da instalação.
+Após a extração e a remoção dos arquivos obsoletos, o instalador remove recursivamente apenas
+diretórios vazios de `_internal`, sem seguir junctions ou outros reparse points. Essa limpeza
+também corrige diretórios `.dist-info` vazios deixados por atualizações anteriores: eles podem
+ocultar os metadados válidos da biblioteca, fazendo o Streamlit falhar ao iniciar uma nova
+renderização e deixando gráficos da tela anterior no navegador. Diretórios não vazios e
+recursos atuais são preservados; uma instalação interrompida não executa essa limpeza.
 Um runtime hook mantém um mutex global com hash do diretório de perfil do usuário
 enquanto qualquer processo empacotado desse usuário está aberto: instalação e
 desinstalação pedem seu fechamento, sem encerrar o processo à força.
@@ -612,6 +618,12 @@ logs e overlays de catálogo não entram nos artefatos.
 sintética, atualiza sem informar novamente pasta ou tarefas, verifica atalhos, remoção de runtime
 obsoleto, ausência de limpeza prematura em upgrade com falha, preservação de arquivos sintéticos e bloqueio com o aplicativo aberto, e inicia o
 executável instalado.
+Após cada atualização sintética, os testes de navegador executam o `.exe` instalado no
+Edge headless com carteiras temporárias e verificam que o Dashboard não permanece nas
+outras telas. Falhas preservam diagnósticos no workflow de distribuição.
+O teste isolado `scripts/test_windows_runtime_cleanup.ps1` compila o código de limpeza real
+em um instalador sintético sem registro de desinstalação ou atalhos. Ele verifica metadados
+obsoletos e órfãos, diretórios não vazios e junctions, sem usar a instalação pessoal.
 
 No Ubuntu, `scripts/build_deb.py` recebe o bundle validado e produz o pacote amd64
 `rendaperene`, com instalação em `/opt/rendaperene`, comando `/usr/bin/rendaperene` e entrada

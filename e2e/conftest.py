@@ -16,11 +16,22 @@ from playwright.sync_api import expect
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--e2e-executable",
+        default=None,
+        help="Installed Windows executable for native navigation tests",
+    )
+
+
 class AppServer:
-    def __init__(self, sandbox, artifacts):
+    def __init__(self, sandbox, artifacts, executable=None):
         self.sandbox = sandbox
         self.artifacts = artifacts
+        self.executable = executable
         self.data_root = sandbox / "data"
+        if executable is not None:
+            self.data_root /= "RendaPerene"
         self.process = None
         self.log = None
         self.starts = 0
@@ -40,8 +51,18 @@ class AppServer:
             APP_ENV="prod",
             LOG_TO_FILE="false",
         )
-        self.process = subprocess.Popen(
-            [
+        if self.executable is not None:
+            environment.update(
+                WIN_PD_OVERRIDE_LOCAL_APPDATA=str(self.sandbox / "data"),
+                WIN_PD_OVERRIDE_APPDATA=str(self.sandbox / "roaming"),
+                RENDAPERENE_HEADLESS="true",
+                RENDAPERENE_PORT=str(self.port),
+                STREAMLIT_BROWSER_GATHER_USAGE_STATS="false",
+            )
+            command = [str(self.executable)]
+            working_directory = self.executable.parent
+        else:
+            command = [
                 sys.executable,
                 "-m",
                 "streamlit",
@@ -52,8 +73,11 @@ class AppServer:
                 "--server.headless=true",
                 "--browser.gatherUsageStats=false",
                 "--server.fileWatcherType=none",
-            ],
-            cwd=ROOT,
+            ]
+            working_directory = ROOT
+        self.process = subprocess.Popen(
+            command,
+            cwd=working_directory,
             env=environment,
             stdout=self.log,
             stderr=subprocess.STDOUT,
@@ -73,6 +97,8 @@ class AppServer:
 
     def stop(self):
         try:
+            if self.process is not None and self.process.poll() is not None:
+                self.log.write(f"\nServer exited before teardown: {self.process.returncode}\n")
             if self.process is not None and self.process.poll() is None:
                 self.process.terminate()
                 try:
@@ -90,14 +116,23 @@ class AppServer:
 
 
 @pytest.fixture
-def app_server(tmp_path, output_path):
+def app_server(tmp_path, output_path, pytestconfig):
+    executable_name = pytestconfig.getoption("--e2e-executable")
+    executable = Path(executable_name).resolve() if executable_name else None
+    if executable is not None:
+        if sys.platform != "win32" or not executable.is_file():
+            raise pytest.UsageError("Native navigation requires a Windows executable on Windows")
+        if (
+            executable.parent / "database"
+        ).exists() or executable.parent.name.casefold().startswith("rendaperene-v"):
+            raise pytest.UsageError("Use a bundle without legacy portfolio discovery candidates")
     resources = tmp_path / "resources"
     resources.mkdir()
     shutil.copyfile(ROOT / "assets.csv", resources / "assets.csv")
     shutil.copyfile(ROOT / "version.txt", resources / "version.txt")
     artifacts = Path(output_path)
     artifacts.mkdir(parents=True, exist_ok=True)
-    server = AppServer(tmp_path, artifacts)
+    server = AppServer(tmp_path, artifacts, executable)
     try:
         server.start()
         yield server

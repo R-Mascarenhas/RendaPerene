@@ -108,6 +108,20 @@ externas, e chamadas externas via `socket.create_connection` são rejeitadas no 
 O cenário não usa credenciais OAuth ou carteiras pessoais. O servidor é encerrado também
 em caso de falha; os diretórios ficam sob o armazenamento temporário gerenciado pelo pytest.
 
+O teste `e2e/test_navigation.py` verifica a remoção do conteúdo e dos gráficos do Dashboard
+ao mudar para Ativos, Operações e Planejamento, inclusive com carteira vazia.
+Para validar um pacote Windows com o Edge instalado, execute no PowerShell:
+
+```powershell
+.\venv\Scripts\python.exe -m pytest e2e/test_navigation.py --e2e-executable "C:\caminho\RendaPerene\RendaPerene.exe" --browser chromium --browser-channel msedge --tracing retain-on-failure --screenshot only-on-failure
+```
+
+Esse modo exige um pacote com suporte aos overrides `WIN_PD_OVERRIDE_*` do `platformdirs`;
+o pacote 0.13.2 foi validado com esse suporte. Ele usa armazenamento temporário separado,
+outra porta e configuração OAuth ausente. A origem do pacote deve estar sem diretório
+legado `database` e fora de um diretório com nome `RendaPerene-v...`, evitando descoberta
+de carteiras antigas. As fontes de mercado do executável continuam sendo as do pacote.
+
 `venv/bin/pytest` continua executando apenas `tests/`, sem exigir navegador. Execute
 `venv/bin/pytest e2e` explicitamente para a suíte de navegador. Não coloque esses testes
 dentro de `tests/`: a fixture global dessa pasta configura adaptadores no processo do
@@ -144,6 +158,21 @@ Os jobs Windows têm limite de 30 minutos, para acomodar a variação de tempo d
 os demais mantêm o limite de 15 minutos.
 
 ## Distribuição nativa
+
+Para validar isoladamente a limpeza de runtime do instalador no Windows, com Inno Setup
+instalado, execute:
+
+```powershell
+.\scripts\test_windows_runtime_cleanup.ps1
+```
+
+O teste cria somente uma instalação sintética em `out/`, sem atalhos nem registro de
+desinstalação. Ele confirma que atualizações removem diretórios vazios `.dist-info` antigos,
+preservam os metadados atuais e diretórios não vazios e não seguem junctions. Os artefatos
+ficam em `out/runtime-cleanup-tests/` para diagnóstico. O teste completo de ciclo de vida
+`scripts/test_windows_installer.ps1` continua restrito a CI Windows descartável.
+No CI, ele também executa `e2e/test_navigation.py` no `.exe` instalado após cada atualização,
+usando Edge headless e dependências opcionais `dev,e2e` em `venv_dist`.
 
 Os pacotes são compilados pelo PyInstaller em seu próprio sistema operacional, sempre no modo
 `onedir`. A definição comum está em `RendaPerene.spec`; ela inclui o código da aplicação, o

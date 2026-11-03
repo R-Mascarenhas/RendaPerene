@@ -105,7 +105,9 @@ def test_corrupted_authenticated_payload_does_not_publish_a_partial_snapshot(tmp
     destination = tmp_path / "opened"
     packages = EncryptedBackupPackageService()
     packages.create(source, package_file, "senha correta")
-    package_file.write_bytes(package_file.read_bytes()[:-1] + b"\x00")
+    package = bytearray(package_file.read_bytes())
+    package[-1] ^= 0x01
+    package_file.write_bytes(package)
 
     with pytest.raises(BackupPackageCorruptedError):
         packages.extract_with_password(package_file, destination, "senha correta")

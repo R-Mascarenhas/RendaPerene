@@ -856,6 +856,19 @@ A política distingue a ausência de telemetria do aplicativo dos registros de h
 
 O Pytest usa o `pytest.ini` para disponibilizar a raiz do repositório durante as importações. A fixture compartilhada de testes redireciona a persistência para um banco isolado e configura os adaptadores de teste.
 
+A descoberta padrão roda `tests/`. A suíte separada `e2e/`, executada explicitamente com
+`pytest e2e`, usa Playwright/Chromium e inicia o Streamlit em subprocesso. O iniciador de
+testes executa o `app.py` completo, redirecionando `ApplicationPaths.discover()` para
+recursos copiados e armazenamento temporário, incluindo a origem de migração legada.
+Serviços, DAOs, SQLite e caches permanecem reais; fontes de mercado, proventos e
+atualizações usam respostas determinísticas. Requisições externas do navegador são
+bloqueadas, e conexões externas via `socket.create_connection` no servidor são rejeitadas.
+A jornada cria uma carteira, compra com taxas, vende parcialmente e verifica o preço médio
+exibido e o ledger persistido após reiniciar o servidor e abrir uma nova sessão.
+Não há mudança no schema ou no comportamento de produção. O CI executa essa suíte em um
+job Chromium/Ubuntu e preserva logs, capturas e traces nas falhas; os comandos estão no
+[guia de desenvolvimento](docs/development.md#testes-ponta-a-ponta-e2e).
+
 ```bash
 venv/bin/pytest
 venv/bin/ruff check .

@@ -80,6 +80,47 @@ Esses testes usam o `AppTest` do Streamlit e verificam a edição do plano, o is
 da Simulação Rápida e o patrimônio inicial automático/manual. Não exigem iniciar o
 servidor nem abrir o navegador; a aparência visual dos gráficos requer conferência manual.
 
+### Testes ponta a ponta (E2E)
+
+Instale a dependência opcional e o Chromium do Playwright:
+
+```bash
+venv/bin/python -m pip install -e ".[dev,e2e]"
+venv/bin/python -m playwright install chromium
+venv/bin/pytest e2e --browser chromium --tracing retain-on-failure --screenshot only-on-failure
+```
+
+Em Linux, caso faltem bibliotecas do sistema, use
+`venv/bin/python -m playwright install --with-deps chromium`.
+Acrescente `--headed` ao comando de teste para acompanhar o navegador visualmente.
+
+A jornada cria uma carteira pela interface, compra 10 cotas de BBAS3 a R$ 20,00 com
+R$ 5,00 de taxas, confere o preço médio de R$ 20,50, vende 4 cotas e verifica as
+6 restantes após reiniciar o servidor e abrir uma sessão nova. Os lançamentos são feitos
+somente pela interface; consultas SQLite somente de leitura complementam as verificações
+dos valores exibidos. Com uma cotação controlada de R$ 21,00, o Dashboard deve mostrar
+R$ 210,00 após a compra e R$ 126,00 após a venda e a reinicialização.
+
+O servidor executa o `app.py` completo em subprocesso com recursos copiados e diretórios
+temporários para bancos, backups, caches e descoberta de carteiras antigas. As fontes
+externas recebem respostas controladas no processo servidor; o navegador bloqueia URLs
+externas, e chamadas externas via `socket.create_connection` são rejeitadas no servidor.
+O cenário não usa credenciais OAuth ou carteiras pessoais. O servidor é encerrado também
+em caso de falha; os diretórios ficam sob o armazenamento temporário gerenciado pelo pytest.
+
+`venv/bin/pytest` continua executando apenas `tests/`, sem exigir navegador. Execute
+`venv/bin/pytest e2e` explicitamente para a suíte de navegador. Não coloque esses testes
+dentro de `tests/`: a fixture global dessa pasta configura adaptadores no processo do
+pytest, enquanto o servidor E2E precisa de seu próprio isolamento.
+
+O job separado E2E do CI executa Chromium no Ubuntu. Em falhas, o artefato
+`e2e-diagnostics` guarda os logs do servidor e as capturas/traces disponíveis em
+`test-results/`, por sete dias. Para examinar um trace localmente:
+
+```bash
+venv/bin/python -m playwright show-trace test-results/<teste>/trace.zip
+```
+
 ### Medição de navegação
 
 Para medir sem registrar dados pessoais, execute `APP_ENV=dev RENDA_PERENE_NAVIGATION_METRICS=true venv/bin/streamlit run app.py`. Com uma carteira de teste, visite Dashboard, Ativos e Monitoramento uma vez para a medição fria e repita a mesma navegação sem mutações para a medição quente. Os logs seguem o formato `identificador.técnico duration: <ms> ms` e não incluem carteira, ticker, valores, caminhos ou identificadores. Os nomes são técnicos e hierárquicos, como `ativos.carteira.price_history.total` e `planejamento.projection_chart`: `total` mede um render completo e as demais fases isolam seus módulos. A instrumentação fica desabilitada fora desse modo explícito de desenvolvimento.

@@ -3,6 +3,7 @@
 import json
 import logging
 import platform
+import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -76,7 +77,7 @@ class UpdateChecker:
         release_notes = release.get("body")
         return AvailableUpdate(
             version=version,
-            release_notes=release_notes if isinstance(release_notes, str) else "",
+            release_notes=_release_highlights(release_notes),
             download_url=asset_url,
         )
 
@@ -88,6 +89,19 @@ class UpdateChecker:
         if not isinstance(payload, dict):
             raise ValueError("Latest release response must be an object.")
         return payload
+
+
+def _release_highlights(notes: object) -> str:
+    """Keep the highlights section, with plain notes supported for older releases."""
+    if not isinstance(notes, str):
+        return ""
+    heading = re.search(r"(?im)^##[ \t]+Novidades\b[^\r\n]*", notes)
+    if heading is None:
+        return notes.strip()
+    following = notes[heading.end() :]
+    next_heading = re.search(r"(?m)^#{1,2}[ \t]+", following)
+    end = heading.end() + next_heading.start() if next_heading else len(notes)
+    return notes[heading.start() : end].strip()
 
 
 def _parse_version(value: object) -> tuple[int, int, int] | None:

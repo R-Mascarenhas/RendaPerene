@@ -50,7 +50,7 @@ def test_download_failure_keeps_update_dialog_available(monkeypatch):
     button_values = iter([True, False])
     monkeypatch.setattr(update_notification.st, "session_state", session_state)
     monkeypatch.setattr(update_notification.st, "write", lambda _message: None)
-    monkeypatch.setattr(update_notification.st, "text", lambda _message: None)
+    monkeypatch.setattr(update_notification.st, "markdown", lambda _message: None)
     monkeypatch.setattr(
         update_notification.st, "button", lambda *_args, **_kwargs: next(button_values)
     )
@@ -64,3 +64,18 @@ def test_download_failure_keeps_update_dialog_available(monkeypatch):
     assert SESSION_UPDATE_CHECK_DISMISSED not in session_state
     assert reruns == []
     assert errors == ["Não foi possível abrir o navegador. Tente novamente."]
+
+
+def test_update_dialog_renders_release_notes_as_markdown(monkeypatch):
+    rendered_notes = []
+    monkeypatch.setattr(update_notification.st, "write", lambda _message: None)
+    monkeypatch.setattr(update_notification.st, "markdown", rendered_notes.append)
+    monkeypatch.setattr(update_notification.st, "button", lambda *_args, **_kwargs: False)
+    update = AvailableUpdate(
+        "0.13.3", "## Novidades em 0.13.3\n\n- **Correções** e melhorias.",
+        "https://example.test/update.exe",
+    )
+
+    update_notification._render_update_dialog.__wrapped__(update)
+
+    assert rendered_notes == [update.release_notes]

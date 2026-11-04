@@ -191,7 +191,7 @@ class AssetDeepDiveView:
                 figure.update_layout(
                     title="Histórico anual de proventos",
                     xaxis_title="Ano",
-                    yaxis_title="Proventos por ação",
+                    yaxis_title="Proventos por ação (R$)",
                 )
                 figure.update_yaxes(tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT)
                 st.plotly_chart(ChartThemeAdapter.apply_theme(figure), width="stretch")
@@ -494,7 +494,7 @@ class AssetDeepDiveView:
                 hovertemplate="Fechamento: R$ %{y:,.2f}<extra></extra>",
             )
         )
-        figure.update_layout(title="Evolução da cotação", yaxis_title="Cotação")
+        figure.update_layout(title="Evolução da cotação", yaxis_title="Cotação (R$)")
         figure.update_xaxes(type="category", tickangle=-45, nticks=8)
         figure.update_yaxes(tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT)
         st.plotly_chart(ChartThemeAdapter.apply_theme(figure), width="stretch")

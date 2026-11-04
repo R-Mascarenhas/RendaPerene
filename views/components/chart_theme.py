@@ -30,7 +30,7 @@ class ChartThemeAdapter:
     BLUE_FILL = "rgba(31, 119, 180, 0.25)"
     BLUE_LINE = "rgba(31, 119, 180, 0.8)"
     YELLOW_FILL = "rgba(242, 196, 26, 0.6)"
-    CURRENCY_TICK_FORMAT = "R$ ,.2f"
+    CURRENCY_TICK_FORMAT = ",.2f"
     YIELD_COLOR_SCALE = "Viridis"
     LEGEND = {"orientation": "h", "yanchor": "top", "y": -0.22, "xanchor": "left", "x": 0.0}
 
@@ -73,6 +73,7 @@ class ChartThemeAdapter:
     @staticmethod
     def activity_row_colors(event: str) -> tuple[str, str]:
         """Return the activity background and text colors for the active client theme."""
+        event = event.removesuffix(" - a receber")
         if ChartThemeAdapter.is_dark_theme():
             return (
                 ChartThemeAdapter.DARK_ACTIVITY_COLORS.get(

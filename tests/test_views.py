@@ -25,6 +25,43 @@ class _FakeAssetTab:
         return False
 
 
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_dashboard_evolution_currency_axes_preserve_fractional_dividend_data(monkeypatch, theme):
+    from core.constants import (
+        MONTH_STR, CUMULATIVE_INVESTED, CUMULATIVE_DIVIDENDS,
+        MONTHLY_DIVIDEND, PLANNED_INVESTED, PLANNED_DIVIDENDS,
+    )
+    from views.components.chart_theme import ChartThemeAdapter
+
+    dividend = 1147.8941451701814
+    history = pd.DataFrame({
+        MONTH_STR: ["2026-01"],
+        CUMULATIVE_INVESTED: [10000.0],
+        CUMULATIVE_DIVIDENDS: [dividend],
+        MONTHLY_DIVIDEND: [dividend],
+        PLANNED_INVESTED: [10000.0],
+        PLANNED_DIVIDENDS: [1000.0],
+    })
+    figures = []
+    monkeypatch.setattr(SimulationService, "get_configuration", lambda: {})
+    monkeypatch.setattr(PortfolioReadService, "read_history", lambda *_: SimpleNamespace(evolution=history))
+    monkeypatch.setattr(SimulationService, "prepare_historical_evolution", lambda frame: frame)
+    monkeypatch.setattr(ChartThemeAdapter, "current_theme_type", lambda: theme)
+    monkeypatch.setattr(st, "markdown", lambda *_: None)
+    monkeypatch.setattr(st, "subheader", lambda *_: None)
+    monkeypatch.setattr(st, "plotly_chart", lambda figure, **_: figures.append(figure))
+
+    DashboardCharts()._render_evolution_chart()
+
+    figure = figures[0]
+    for axis in (figure.layout.yaxis, figure.layout.yaxis2):
+        assert axis.tickformat == ",.2f"
+        assert axis.tickprefix in (None, "")
+        assert axis.title.text.endswith("(R$)")
+    assert figure.data[-1].y[0] == dividend
+    assert figure.data[-1].text[0] == "R$ 1.148"
+
+
 def _fake_tabs(labels, **_kwargs):
     return [_FakeAssetTab(index == 0) for index, _ in enumerate(labels)]
 
@@ -1100,6 +1137,11 @@ def test_sector_chart_hover_customdata(monkeypatch):
         {"sector": "Seguridade", "current_value": 3000, "Detalhes": "CXSE3: R$ 3.000,00 (100.00% / 50.00%)"},
     ])
     charts._render_top_charts(SimpleNamespace(positions=df_mock, sectors=sectors))
+
+    efficiency_chart = captured_charts[2]
+    assert efficiency_chart.data[0].orientation == "h"
+    assert efficiency_chart.layout.hovermode == "y unified"
+    assert captured_charts[1].layout.hovermode == "x unified"
 
     assert len(captured_charts) >= 1
     fig_sectors = captured_charts[0]

@@ -33,6 +33,40 @@ def test_check_returns_newer_windows_release_with_matching_asset():
     assert update.download_url.endswith("RendaPerene-v1.2.0-windows-x64-setup.exe")
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+@pytest.mark.parametrize("next_heading", ["#", "##"])
+def test_check_includes_only_release_highlights(newline, next_heading):
+    highlights = (
+        "## Novidades em 1.2.0\n\n- Correções importantes.\n  Dados preservados."
+        "\n\n### Melhorias\n\n- Gráficos mais legíveis."
+    )
+    payload = release_payload()
+    payload["body"] = (
+        "Introdução.\n\n" + highlights + f"\n\n{next_heading} Instalação\n\nInstruções longas."
+        "\n\n## Dados persistentes\n\nMais detalhes."
+    ).replace("\n", newline)
+    update = UpdateChecker(lambda timeout: payload).check("1.1.0", platform_name="win32")
+
+    assert update.release_notes == highlights.replace("\n", newline)
+
+
+def test_check_preserves_highlights_at_end_of_release():
+    payload = release_payload()
+    payload["body"] = "## Novidades em 1.2.0\n\n- Correções importantes.\n"
+    update = UpdateChecker(lambda timeout: payload).check("1.1.0", platform_name="win32")
+
+    assert update.release_notes == payload["body"].strip()
+
+
+@pytest.mark.parametrize("body", [None, "", "## Novidades em 1.2.0\n\n## Instalação\nDetalhes."])
+def test_check_handles_missing_or_empty_highlights(body):
+    payload = release_payload()
+    payload["body"] = body
+    update = UpdateChecker(lambda timeout: payload).check("1.1.0", platform_name="win32")
+
+    assert update.release_notes == ("## Novidades em 1.2.0" if body else "")
+
+
 def test_windows_check_does_not_offer_legacy_zip_as_installer():
     payload = release_payload()
     payload["assets"][0]["name"] = "RendaPerene-v1.2.0-windows-x64.zip"

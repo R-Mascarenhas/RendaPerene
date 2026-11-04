@@ -1,11 +1,9 @@
-## Novidades em 0.13.2
+## Novidades em 0.13.3
 
-- Instalador Windows com pasta padrão, destino personalizável e atalhos permanentes.
-  As atualizações reutilizam a instalação existente e preservam os dados locais.
-- Pacote DEB para Ubuntu, com acesso pelo menu de aplicativos ou pelo comando `rendaperene`.
-  O gerenciador de pacotes atualiza os arquivos do programa, mantendo carteiras e configurações.
-- O aviso de atualização existente direciona ao instalador correspondente no GitHub.
-  A primeira migração dos antigos ZIPs e TAR.GZ precisa ser feita manualmente pelas releases.
+- Gráficos do Dashboard com valores, datas e dicas mais legíveis.
+- Cores corrigidas para proventos a receber no histórico de atividades.
+- Correção na atualização do Windows para remover arquivos antigos que podiam impedir a abertura.
+- Aviso de atualização mais curto, com novidades formatadas e instruções para instalar.
 
 ## Sistemas suportados
 
@@ -14,12 +12,12 @@
 
 ## Instalação
 
-- Windows: baixe e execute `RendaPerene-v0.13.2-windows-x64-setup.exe`. O instalador sugere
+- Windows: baixe e execute `RendaPerene-v0.13.3-windows-x64-setup.exe`. O instalador sugere
   `%LOCALAPPDATA%\Programs\RendaPerene`, permite escolher outra pasta e oferece atalhos.
   Feche o aplicativo antes de atualizar e execute o novo instalador; ele reutiliza a pasta
   anterior e mantém os mesmos atalhos.
 - Ubuntu: baixe o `.deb` e instale pelo gerenciador de aplicativos ou com
-  `sudo apt install ./RendaPerene-v0.13.2-ubuntu-x64.deb`. Abra **RendaPerene** pelo menu ou
+  `sudo apt install ./RendaPerene-v0.13.3-ubuntu-x64.deb`. Abra **RendaPerene** pelo menu ou
   execute `rendaperene`, sem `sudo`. Para atualizar, feche o aplicativo e instale o novo pacote.
 
 Os arquivos `.sha256` permitem verificar a integridade do download.

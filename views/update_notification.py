@@ -62,7 +62,7 @@ def _render_update_dialog(update: AvailableUpdate) -> None:
         "RendaPerene, aguarde alguns segundos e instale o arquivo baixado."
     )
     if update.release_notes:
-        st.text(update.release_notes)
+        st.markdown(update.release_notes)
     if st.button("Baixar atualização", width="stretch"):
         if webbrowser.open(update.download_url):
             st.session_state[SESSION_UPDATE_CHECK_DISMISSED] = True

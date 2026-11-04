@@ -1,7 +1,28 @@
 import pandas as pd
+import pytest
 import streamlit as st
 
 from services.assets_service import AssetService
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+@pytest.mark.parametrize("kind", ["DIVIDEND", "JCP", "YIELD"])
+def test_receivable_activity_keeps_received_event_color(monkeypatch, theme, kind):
+    import datetime
+
+    from core.dividends import payment_event_label
+    from views.components.chart_theme import ChartThemeAdapter
+    from views.components.portfolio_activity import style_activity_row
+
+    monkeypatch.setattr(ChartThemeAdapter, "current_theme_type", lambda: theme)
+    today = datetime.date(2026, 1, 10)
+    received = payment_event_label(kind, "2026-01-01", today)
+    receivable = payment_event_label(kind, "2026-01-20", today)
+    received_row = pd.Series({"Evento": received, "Ticker": "ABCD3"})
+    receivable_row = pd.Series({"Evento": receivable, "Ticker": "ABCD3"})
+
+    assert receivable.endswith(" - a receber")
+    assert style_activity_row(receivable_row) == style_activity_row(received_row)
 
 
 def test_activity_table_formats_values_and_empty_state(monkeypatch):

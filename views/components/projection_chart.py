@@ -156,6 +156,7 @@ class ProjectionChartWidget:
                 title="Crescimento e Composição Patrimonial até a Aposentadoria",
                 xaxis=dict(hoverformat=".1f anos"),
                 yaxis_tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT,
+                yaxis_title="Patrimônio (R$)",
             )
             st.plotly_chart(ChartThemeAdapter.apply_theme(fig), width="stretch")
 
@@ -221,6 +222,7 @@ class ProjectionChartWidget:
                 title="Fluxo Mensal: Aporte do Bolso vs. Geração de Renda Passiva",
                 xaxis=dict(hoverformat=".1f anos"),
                 yaxis_tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT,
+                yaxis_title="Valor mensal (R$)",
             )
             st.plotly_chart(ChartThemeAdapter.apply_theme(fig2), width="stretch")
 
@@ -304,6 +306,7 @@ class ProjectionChartWidget:
                 title="Histórico de Proventos: Real vs. Planejado",
                 xaxis=dict(type="category", tickangle=-45),
                 yaxis_tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT,
+                yaxis_title="Proventos (R$)",
             )
             st.plotly_chart(ChartThemeAdapter.apply_theme(fig3), width="stretch")
 
@@ -366,5 +369,6 @@ class ProjectionChartWidget:
                 title="Histórico de Capital Investido: Real vs. Planejado",
                 xaxis=dict(type="category", tickangle=-45),
                 yaxis_tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT,
+                yaxis_title="Capital investido (R$)",
             )
             st.plotly_chart(ChartThemeAdapter.apply_theme(fig4), width="stretch")

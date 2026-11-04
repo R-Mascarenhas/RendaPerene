@@ -74,7 +74,7 @@ class DashboardCharts:
                 y=["Investido", "Atual"],
                 barmode="group",
                 title="Evolução por ativo",
-                labels={"value": "Valores (R$)", TICKER: "Ticker", "variable": "Legenda"},
+                labels={"value": "Valores (R$)", TICKER: "", "variable": "Legenda"},
                 color_discrete_sequence=[ChartThemeAdapter.BLUE, ChartThemeAdapter.GREEN],
             )
             fig_evol.update_traces(
@@ -94,7 +94,7 @@ class DashboardCharts:
                     y=TICKER,
                     orientation="h",
                     title="Eficiência por Ativo (Yield on Cost Total)",
-                    labels={"total_yoc": "Yield on Cost (%)", TICKER: "Ticker"},
+                    labels={"total_yoc": "Yield on Cost (%)", TICKER: ""},
                     color="total_yoc",
                     color_continuous_scale=ChartThemeAdapter.YIELD_COLOR_SCALE,
                 )
@@ -102,7 +102,9 @@ class DashboardCharts:
                     hovertemplate="<b>%{y}</b><br>Yield on Cost: %{x:.2f}%<extra></extra>"
                 )
                 fig_proventos.update_xaxes(tickformat=".2f")
-                st.plotly_chart(ChartThemeAdapter.apply_theme(fig_proventos), width="stretch")
+                fig_proventos = ChartThemeAdapter.apply_theme(fig_proventos)
+                fig_proventos.update_layout(hovermode="y unified")
+                st.plotly_chart(fig_proventos, width="stretch")
 
     def _render_evolution_chart(self):
         st.markdown("---")
@@ -209,11 +211,20 @@ class DashboardCharts:
                 tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT,
                 secondary_y=True,
             )
+            month_labels = df_evolution[MONTH_DISPLAY].tolist()
+            max_month_labels = 48
+            if len(month_labels) > max_month_labels:
+                last_index = len(month_labels) - 1
+                month_labels = [
+                    month_labels[round(index * last_index / (max_month_labels - 1))]
+                    for index in range(max_month_labels)
+                ]
+
             fig_multi.update_xaxes(
-                title_text="Linha do Tempo (Mês/Ano)",
                 type="category",
                 tickangle=-45,
-                tickmode="linear",
+                tickmode="array",
+                tickvals=month_labels,
             )
 
             st.plotly_chart(ChartThemeAdapter.apply_theme(fig_multi), width="stretch")

@@ -8,6 +8,10 @@ A interface é em português e abre no navegador do próprio computador. As cart
 ficam em bancos SQLite locais, sem conta obrigatória ou telemetria. O backup no
 Google Drive é opcional.
 
+O preço ajustado e o YoC consideram os proventos atribuídos às cotas ainda em carteira.
+Uma venda parcial reduz essa base na mesma proporção da quantidade vendida, preservando
+os indicadores por cota. Os extratos e totais de proventos recebidos mantêm os valores históricos.
+
 Os parâmetros de avaliação de Bazin podem ser editados preservando as configurações do
 planejamento. A busca de proventos começa automaticamente ao abrir o aplicativo e ocorre em
 segundo plano, sem botão de busca manual; cadastrar pagamentos exige revisão e confirmação explícita.

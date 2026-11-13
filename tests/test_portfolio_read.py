@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from core.daos.portfolio_dao import PortfolioDAO
-from core.strings import DISPLAY_AVG_PRICE
+from core.strings import DISPLAY_ADJ_PRICE, DISPLAY_AVG_PRICE, DISPLAY_YOC, DISPLAY_YOC_12
 from core.utils.market_data import MarketData
 from services.assets_service import AssetService
 from services.portfolio_read_service import PortfolioReadService
@@ -95,6 +95,66 @@ def test_asset_receipts_and_planning_share_historical_ledger_rules():
     history = reads.read_history("2024-01-01")
     assert history.evolution.iloc[-1]["cumulative_dividends"] == 55
     assert history.evolution.iloc[-1]["cumulative_invested"] == 210
+
+
+def test_partial_sale_preserves_adjusted_price_and_yoc_of_remaining_shares():
+    AssetService.add_transaction("BBAS3", "2024-01-01", "BUY", 100, 20)
+    AssetService.add_dividend("BBAS3", "2024-02-01", "DIVIDEND", 400)
+    reads = reader()
+    date = datetime.date(2024, 6, 1)
+    before = reads.read_asset("BBAS3", today_date=date).position
+    AssetService.add_transaction("BBAS3", "2024-03-01", "SELL", 90, 30)
+    after = reads.read_asset("BBAS3", today_date=date).position
+    assert before["adjusted_price"] == 16
+    assert after["adjusted_price"] == pytest.approx(before["adjusted_price"])
+    assert after["monthly_l12m_yoc"] == pytest.approx(before["monthly_l12m_yoc"])
+    portfolio = reads.read_portfolio(today_date=date)
+    assert portfolio.positions.iloc[0]["total_yoc"] == pytest.approx(20)
+    assert portfolio.positions.iloc[0]["l12m_yoc"] == pytest.approx(20)
+    assert portfolio.summary["overall_yoc"] == pytest.approx(20)
+    assert portfolio.summary["overall_l12m_yoc"] == pytest.approx(20)
+    assert portfolio.holdings.iloc[0][DISPLAY_ADJ_PRICE] == "R$ 16,00"
+    assert portfolio.holdings.iloc[0][DISPLAY_YOC] == "20.00%"
+    assert portfolio.holdings.iloc[0][DISPLAY_YOC_12] == "20.00%"
+    assert portfolio.summary["total_dividends"] == 400
+    assert after["total_dividends"] == 400
+
+
+@pytest.mark.parametrize("sold, expected_adjusted, expected_yoc", [(50, 17, 15), (100, 19, 5)])
+def test_sale_then_repurchase_only_carries_dividends_of_retained_shares(
+    sold, expected_adjusted, expected_yoc
+):
+    AssetService.add_transaction("BBAS3", "2023-01-01", "BUY", 100, 20)
+    AssetService.add_dividend("BBAS3", "2023-02-01", "DIVIDEND", 400)
+    AssetService.add_transaction("BBAS3", "2024-01-01", "SELL", sold, 30, 5)
+    AssetService.add_transaction("BBAS3", "2024-02-01", "BUY", sold, 20)
+    AssetService.add_dividend("BBAS3", "2024-03-01", "DIVIDEND", 100)
+    portfolio = reader().read_portfolio(today_date=datetime.date(2024, 6, 1))
+    position = portfolio.positions.iloc[0]
+    assert position["adjusted_price"] == pytest.approx(expected_adjusted)
+    assert position["total_yoc"] == pytest.approx(expected_yoc)
+    assert position["l12m_yoc"] == pytest.approx(5)
+    assert position["total_dividends"] == 500
+    assert portfolio.summary["total_dividends"] == 500
+
+
+def test_partial_sales_and_corporate_actions_preserve_dividend_allocation():
+    AssetService.add_transaction("BBAS3", "2024-01-01", "BUY", 100, 20)
+    AssetService.add_dividend("BBAS3", "2024-02-01", "DIVIDEND", 400)
+    AssetService.add_transaction("BBAS3", "2024-03-01", "SELL", 50, 30)
+    AssetService.add_transaction("BBAS3", "2024-04-01", "BUY", 50, 0)
+    AssetService.add_transaction("BBAS3", "2024-05-01", "GROUP", 50, 0)
+    AssetService.add_dividend("BBAS3", "2024-06-01", "DIVIDEND", 100)
+    AssetService.add_transaction("BBAS3", "2024-07-01", "SELL", 25, 30)
+    AssetService.add_dividend("BBAS3", "2025-01-01", "DIVIDEND", 999)
+    portfolio = reader().read_portfolio(today_date=datetime.date(2024, 12, 1))
+    position = portfolio.positions.iloc[0]
+    assert position["quantity"] == 25
+    assert position["invested_amount"] == 500
+    assert position["adjusted_price"] == pytest.approx(14)
+    assert position["total_yoc"] == pytest.approx(30)
+    assert position["l12m_yoc"] == pytest.approx(30)
+    assert position["total_dividends"] == 500
 
 
 @pytest.mark.parametrize("empty_table", ["transactions", "dividends"])

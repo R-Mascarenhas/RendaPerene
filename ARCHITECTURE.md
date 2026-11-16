@@ -102,6 +102,28 @@ Execute a aplicação com:
 venv/bin/streamlit run app.py
 ```
 
+### Encerramento da execução instalada
+
+Somente a execução empacotada inicia o monitor de conexões de
+`core/utils/session.py`. Depois de observar uma conexão ativa, duas verificações consecutivas
+sem conexões, espaçadas por cinco segundos, encerram o processo. Uma conexão remanescente em
+outra aba impede o encerramento. A perda de conexão é uma aproximação do fechamento da aba;
+não há detecção inequívoca do fechamento pelo navegador.
+
+Um intervalo superior a 15 segundos entre verificações, medido pelo relógio monotônico ou pelo
+relógio de parede, é tratado como possível suspensão, hibernação ou atraso do monitor. Nesse
+caso, a contagem anterior é descartada e inicia uma tolerância de 120 segundos para reconexão,
+medida exclusivamente pelo relógio monotônico. Retrocessos no relógio de parede também concedem
+essa proteção; ajustes no relógio não antecipam o vencimento da tolerância. Uma nova pausa
+reinicia o prazo. Uma conexão ainda presente na primeira verificação após a pausa pode estar
+obsoleta: a tolerância só é cancelada quando se observa uma ausência de conexões seguida de
+uma conexão ativa. A partir daí, o fechamento volta às duas verificações normais.
+
+Sem reconexão, o processo encerra ao vencer a tolerância, desde que existam duas verificações
+consecutivas sem conexões. Fechar a aba durante a recuperação pode aguardar o restante do prazo.
+A solução é uma proteção por tempo entre verificações, sem notificações nativas de energia;
+a hibernação real e o comportamento do navegador ainda exigem validação no Windows.
+
 ### Logging
 
 O módulo `core/logging_config.py` concentra a configuração de logging atrás da interface
@@ -109,15 +131,25 @@ O módulo `core/logging_config.py` concentra a configuração de logging atrás 
 reaplica no início de cada execução do script. A configuração substitui somente os handlers que ela
 própria instalou, evitando duplicação nos reruns sem remover handlers internos do Streamlit.
 
-`APP_ENV=dev` seleciona `DEBUG`; qualquer outro valor seleciona `INFO`. `LOG_TO_FILE=true`, sem
-distinção entre maiúsculas e minúsculas, mantém `stdout` e adiciona um `RotatingFileHandler` em
-`logs/rendaperene.log`, sob a raiz de dados local, com 5 MiB por arquivo e três backups. Outros
-valores não criam o diretório nem o arquivo de log. Falhas de criação preservam a saída padrão e não
-impedem a inicialização. Os padrões são `prod` e `false`, inclusive no workflow de distribuição.
+`APP_ENV=dev` seleciona `DEBUG`; qualquer outro valor seleciona `INFO` para `stdout`.
+Um `RotatingFileHandler` sempre registra eventos da aplicação de nível `WARNING`, `ERROR` e
+`CRITICAL` em `logs/rendaperene.log`, sob a raiz de dados local, com 5 MiB por arquivo e três
+backups. `LOG_TO_FILE=true`, sem distinção entre maiúsculas e minúsculas, inclui também `INFO`
+e, com `APP_ENV=dev`, `DEBUG` nesse arquivo. Valores ausentes, `false` ou desconhecidos mantêm
+a gravação de avisos e erros. Falhas de criação preservam a saída padrão e não impedem a
+inicialização. Os padrões são `prod` e `false`, inclusive no workflow de distribuição.
+O namespace `core.utils.session.lifecycle` também grava eventos `INFO` de início da tolerância,
+reconexão e encerramento, independentemente de `LOG_TO_FILE`, para que decisões do monitor
+permaneçam disponíveis no arquivo antes da saída do processo.
 Os módulos consumidores obtêm seus loggers com `logging.getLogger(__name__)`; os diagnósticos de
 sessão não possuem um gravador paralelo nem registram dados financeiros. Um filtro nos handlers da
 aplicação aceita apenas os namespaces `app`, `run_app`, `core`, `services`, `views` e `__main__`.
-Assim, internals de dependências como `yfinance` e `peewee` não são copiados para `stdout` nem para o
+No arquivo, avisos e erros dos namespaces `streamlit` e `tornado` também são aceitos, sempre
+com mensagens e tracebacks substituídos por um diagnóstico contendo linha de origem e tipo
+da exceção. Nível, horário e nome do logger são preservados. O handler de arquivo também é
+conectado aos loggers desses namespaces já existentes que desativam propagação, como faz o
+Streamlit; a configuração é reaplicada no início de cada execução de `app.py`.
+Internals de outras dependências como `yfinance` e `peewee` não são copiados para `stdout` nem para o
 arquivo, inclusive em `DEBUG`; falhas relevantes dessas integrações são convertidas pelos adapters
 em eventos sanitizados da aplicação. Nomes de carteiras, tickers, quantidades, valores financeiros,
 identificadores de sessão e conteúdo tabular não são registrados em nenhum nível. Caminhos absolutos

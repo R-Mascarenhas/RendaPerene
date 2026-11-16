@@ -1,5 +1,6 @@
 import datetime
 import logging
+import time
 
 import streamlit as st
 
@@ -75,6 +76,10 @@ from views.cached_market_data import StreamlitCachedMarketData as MarketData
 from views.cached_market_data import reset_market_data_observer
 
 logger = logging.getLogger(__name__)
+_lifecycle_logger = logging.getLogger(f"{__name__}.lifecycle")
+_SESSION_POLL_SECONDS = 5
+_SESSION_PAUSE_THRESHOLD_SECONDS = 15
+_SESSION_RECONNECTION_GRACE_SECONDS = 120
 
 
 class SessionManager:
@@ -297,10 +302,9 @@ class SessionManager:
 
 
 def monitor_active_sessions():
-    """Monitors active browser tab connections and cleanly stops the server runtime when all close."""
+    """Stop packaged apps without connected tabs, allowing recovery after a long pause."""
     import os
     import sys
-    import time
 
     from streamlit.runtime import get_instance
 
@@ -311,10 +315,32 @@ def monitor_active_sessions():
 
     has_had_session = False
     zero_session_count = 0
+    previous_check = time.monotonic()
+    previous_wall_check = time.time()
+    reconnect_until = 0.0
     while True:
-        time.sleep(5)
+        time.sleep(_SESSION_POLL_SECONDS)
+        now = time.monotonic()
+        wall_now = time.time()
+        elapsed = now - previous_check
+        wall_elapsed = wall_now - previous_wall_check
+        previous_check = now
+        previous_wall_check = wall_now
+
+        # Some platforms exclude suspended time from their monotonic clock.
+        # Wall-clock jumps also grant grace rather than risk a premature exit;
+        # only monotonic time controls expiration of the recovery deadline.
+        if max(elapsed, wall_elapsed) > _SESSION_PAUSE_THRESHOLD_SECONDS or wall_elapsed < 0:
+            zero_session_count = 0
+            reconnect_until = now + _SESSION_RECONNECTION_GRACE_SECONDS
+            _lifecycle_logger.info(
+                "session.reconnection_grace_started grace_seconds=%s",
+                _SESSION_RECONNECTION_GRACE_SECONDS,
+            )
+
         runtime = get_instance()
         if runtime is None:
+            zero_session_count = 0
             continue
 
         session_count = 0
@@ -328,6 +354,7 @@ def monitor_active_sessions():
                 sessions = runtime._session_mgr.list_sessions()
                 session_count = len(sessions)
             except Exception as fallback_error:
+                zero_session_count = 0
                 logger.warning(
                     "session.monitor_failed primary_error_type=%s fallback_error_type=%s",
                     type(error).__name__,
@@ -336,14 +363,19 @@ def monitor_active_sessions():
                 continue
 
         if session_count > 0:
+            # An old socket may still appear active on the first resumed check.
+            # Cancel grace only after observing a disconnect and reconnection.
+            if reconnect_until and zero_session_count:
+                reconnect_until = 0.0
+                _lifecycle_logger.info("session.connection_restored")
             has_had_session = True
             zero_session_count = 0
         elif has_had_session:
             zero_session_count += 1
 
-        # Terminate cleanly after 2 consecutive checks with 0 active sessions (10s)
-        if has_had_session and zero_session_count >= 2:
-            logger.info("application.no_active_sessions")
+        # Keep the normal two-check shutdown delay outside the recovery window.
+        if has_had_session and zero_session_count >= 2 and now >= reconnect_until:
+            _lifecycle_logger.info("application.no_active_sessions")
             if "pytest" in sys.modules:
                 runtime.stop()
                 break

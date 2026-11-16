@@ -14,6 +14,14 @@ def restore_root_logging():
     original_level = root_logger.level
     original_handlers = root_logger.handlers[:]
     yield
+    for logger in list(logging.Logger.manager.loggerDict.values()):
+        if isinstance(logger, logging.Logger) and logging_config._is_server_logger(logger.name):
+            for handler in logger.handlers[:]:
+                if (
+                    getattr(handler, logging_config._HANDLER_MARKER, False)
+                    and handler not in original_handlers
+                ):
+                    logger.removeHandler(handler)
     for handler in root_logger.handlers[:]:
         if handler not in original_handlers:
             root_logger.removeHandler(handler)
@@ -22,19 +30,30 @@ def restore_root_logging():
     root_logger.setLevel(original_level)
 
 
-def test_defaults_to_production_logging_on_stdout_only(monkeypatch, tmp_path, capsys):
+@pytest.mark.parametrize("file_setting", [None, "false", "yes"])
+def test_defaults_to_warning_file_logging(monkeypatch, tmp_path, capsys, file_setting):
     monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.delenv("LOG_TO_FILE", raising=False)
+    if file_setting is not None:
+        monkeypatch.setenv("LOG_TO_FILE", file_setting)
 
     configure_logging(tmp_path / "logs")
     logger = logging.getLogger("core.example")
     logger.debug("debug hidden")
     logger.info("startup complete")
+    logger.warning("connection interrupted")
+    logger.error("server failed")
+    logger.critical("fatal failure")
 
     captured = capsys.readouterr()
     assert "startup complete" in captured.out
     assert "debug hidden" not in captured.out
-    assert not (tmp_path / "logs").exists()
+    log_contents = (tmp_path / "logs" / "rendaperene.log").read_text(encoding="utf-8")
+    assert "startup complete" not in log_contents
+    assert "debug hidden" not in log_contents
+    assert "connection interrupted" in log_contents
+    assert "server failed" in log_contents
+    assert "fatal failure" in log_contents
 
 
 def test_unknown_environment_values_use_safe_defaults(monkeypatch, tmp_path, capsys):
@@ -49,7 +68,30 @@ def test_unknown_environment_values_use_safe_defaults(monkeypatch, tmp_path, cap
     captured = capsys.readouterr()
     assert "safe defaults active" in captured.out
     assert "debug hidden" not in captured.out
-    assert not (tmp_path / "logs").exists()
+    assert (tmp_path / "logs" / "rendaperene.log").exists()
+
+
+@pytest.mark.parametrize("environment", ["prod", "dev"])
+def test_session_lifecycle_is_persisted_without_verbose_file_logging(
+    monkeypatch, tmp_path, environment
+):
+    monkeypatch.setenv("APP_ENV", environment)
+    monkeypatch.setenv("LOG_TO_FILE", "false")
+    configure_logging(tmp_path)
+
+    logging.getLogger("core.utils.session").info("ordinary session information")
+    lifecycle_logger = logging.getLogger("core.utils.session.lifecycle")
+    lifecycle_logger.debug("verbose lifecycle details")
+    lifecycle_logger.info("session.reconnection_grace_started grace_seconds=%s", 120)
+    lifecycle_logger.info("session.connection_restored")
+    lifecycle_logger.info("application.no_active_sessions")
+
+    log_contents = (tmp_path / "rendaperene.log").read_text(encoding="utf-8")
+    assert "session.reconnection_grace_started grace_seconds=120" in log_contents
+    assert "session.connection_restored" in log_contents
+    assert "application.no_active_sessions" in log_contents
+    assert "ordinary session information" not in log_contents
+    assert "verbose lifecycle details" not in log_contents
 
 
 def test_file_logging_creates_directory_and_keeps_stdout(monkeypatch, tmp_path, capsys):
@@ -66,8 +108,9 @@ def test_file_logging_creates_directory_and_keeps_stdout(monkeypatch, tmp_path, 
     assert "portfolio service ready" in log_file.read_text(encoding="utf-8")
 
 
-def test_file_logging_failure_falls_back_to_stdout(monkeypatch, tmp_path, capsys):
-    monkeypatch.setenv("LOG_TO_FILE", "true")
+@pytest.mark.parametrize("file_setting", ["true", "false"])
+def test_file_logging_failure_falls_back_to_stdout(monkeypatch, tmp_path, capsys, file_setting):
+    monkeypatch.setenv("LOG_TO_FILE", file_setting)
 
     def fail_file_handler(*_args, **_kwargs):
         raise OSError("permission denied")
@@ -96,7 +139,9 @@ def test_reconfiguration_does_not_duplicate_messages(monkeypatch, tmp_path, caps
     assert log_contents.count("render once") == 1
 
 
-def test_reconfiguration_disables_previous_file_handler(monkeypatch, tmp_path):
+def test_reconfiguration_keeps_warnings_when_verbose_file_logging_is_disabled(
+    monkeypatch, tmp_path
+):
     logs_dir = tmp_path / "logs"
     monkeypatch.setenv("LOG_TO_FILE", "true")
     configure_logging(logs_dir)
@@ -106,10 +151,12 @@ def test_reconfiguration_disables_previous_file_handler(monkeypatch, tmp_path):
     monkeypatch.setenv("LOG_TO_FILE", "false")
     configure_logging(logs_dir)
     logger.info("stdout only")
+    logger.warning("still recorded")
 
     log_contents = (logs_dir / "rendaperene.log").read_text(encoding="utf-8")
     assert "written to file" in log_contents
     assert "stdout only" not in log_contents
+    assert log_contents.count("still recorded") == 1
 
 
 def test_file_logging_rotates_and_limits_backups(monkeypatch, tmp_path):
@@ -144,8 +191,7 @@ def test_file_logging_restricts_existing_and_rotated_files_to_owner(monkeypatch,
 
     assert stat.S_IMODE(logs_dir.stat().st_mode) == 0o700
     assert all(
-        stat.S_IMODE(path.stat().st_mode) == 0o600
-        for path in logs_dir.glob("rendaperene.log*")
+        stat.S_IMODE(path.stat().st_mode) == 0o600 for path in logs_dir.glob("rendaperene.log*")
     )
 
 
@@ -170,3 +216,53 @@ def test_debug_logging_excludes_dependency_internals(monkeypatch, tmp_path, caps
     assert "sensitive SQL internals" not in log_contents
     assert "third-party warning" not in captured
     assert "third-party warning" not in log_contents
+
+
+@pytest.mark.parametrize("logger_name", ["streamlit.test_server", "tornado.test_server"])
+@pytest.mark.parametrize("propagate", [True, False])
+@pytest.mark.parametrize("file_setting", ["true", "false"])
+def test_server_warnings_are_recorded_once_and_sanitized(
+    monkeypatch, tmp_path, logger_name, propagate, file_setting
+):
+    monkeypatch.setenv("LOG_TO_FILE", file_setting)
+    monkeypatch.setenv("APP_ENV", "dev")
+    logger = logging.getLogger(logger_name)
+    monkeypatch.setattr(logger, "propagate", propagate)
+    monkeypatch.setattr(logger, "level", logging.DEBUG)
+    logs_dir = tmp_path / "logs"
+    configure_logging(logs_dir)
+    configure_logging(logs_dir)
+
+    logger.debug("private debug payload")
+    logger.info("private info payload")
+    logger.warning("private warning payload %s", "token-secret")
+    try:
+        raise ConnectionError("private exception payload")
+    except ConnectionError:
+        logger.exception("private error payload", stack_info=True)
+
+    log_contents = (logs_dir / "rendaperene.log").read_text(encoding="utf-8")
+    assert log_contents.count("server.diagnostic") == 2
+    assert "WARNING" in log_contents
+    assert "ERROR" in log_contents
+    assert logger_name in log_contents
+    assert "exception_type=ConnectionError" in log_contents
+    assert "private" not in log_contents
+    assert "token-secret" not in log_contents
+    assert "Traceback" not in log_contents
+    assert "Stack" not in log_contents
+
+
+def test_streamlit_formatter_update_preserves_file_logging(monkeypatch, tmp_path):
+    from streamlit.logger import get_logger, setup_formatter
+
+    monkeypatch.setenv("LOG_TO_FILE", "false")
+    logger = get_logger("streamlit.test_formatter_update")
+    logs_dir = tmp_path / "logs"
+    configure_logging(logs_dir)
+    setup_formatter(logger)
+    logger.error("private server message")
+
+    log_contents = (logs_dir / "rendaperene.log").read_text(encoding="utf-8")
+    assert log_contents.count("server.diagnostic") == 1
+    assert "private server message" not in log_contents

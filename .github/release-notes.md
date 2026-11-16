@@ -1,9 +1,12 @@
-## Novidades em 0.13.3
+## Novidades em 0.13.4
 
-- Gráficos do Dashboard com valores, datas e dicas mais legíveis.
-- Cores corrigidas para proventos a receber no histórico de atividades.
-- Correção na atualização do Windows para remover arquivos antigos que podiam impedir a abertura.
-- Aviso de atualização mais curto, com novidades formatadas e instruções para instalar.
+- Correção do preço ajustado e do YoC em vendas parciais: os proventos atribuídos à posição
+  são reduzidos proporcionalmente às cotas vendidas, preservando os indicadores por cota e
+  os valores históricos nos extratos de proventos recebidos.
+- Prazo de reconexão de até dois minutos após suspensão ou pausa prolongada, evitando o
+  encerramento prematuro do aplicativo enquanto o navegador restabelece a conexão.
+- Logs persistentes de avisos, erros e eventos de conexão para ajudar no diagnóstico,
+  com mensagens do servidor filtradas para preservar a privacidade dos dados.
 
 ## Sistemas suportados
 
@@ -12,12 +15,12 @@
 
 ## Instalação
 
-- Windows: baixe e execute `RendaPerene-v0.13.3-windows-x64-setup.exe`. O instalador sugere
+- Windows: baixe e execute `RendaPerene-v0.13.4-windows-x64-setup.exe`. O instalador sugere
   `%LOCALAPPDATA%\Programs\RendaPerene`, permite escolher outra pasta e oferece atalhos.
   Feche o aplicativo antes de atualizar e execute o novo instalador; ele reutiliza a pasta
   anterior e mantém os mesmos atalhos.
 - Ubuntu: baixe o `.deb` e instale pelo gerenciador de aplicativos ou com
-  `sudo apt install ./RendaPerene-v0.13.3-ubuntu-x64.deb`. Abra **RendaPerene** pelo menu ou
+  `sudo apt install ./RendaPerene-v0.13.4-ubuntu-x64.deb`. Abra **RendaPerene** pelo menu ou
   execute `rendaperene`, sem `sudo`. Para atualizar, feche o aplicativo e instale o novo pacote.
 
 Os arquivos `.sha256` permitem verificar a integridade do download.

@@ -153,9 +153,9 @@ class PortfolioReadService:
         if position:
             quantity = position["quantity"]
             invested = position["invested_amount"]
-            position["adjusted_price"] = (invested - position["total_dividends"]) / quantity
+            position["adjusted_price"] = (invested - position["position_dividends"]) / quantity
             position["monthly_l12m_yoc"] = (
-                position["l12m_dividends"] / invested * 100 / 12 if invested > 0 else 0.0
+                position["position_l12m_dividends"] / invested * 100 / 12 if invested > 0 else 0.0
             )
         market = (
             dict(self._analysis.get_ticker_market_analysis(ticker, target_yield_pct=target_yield))

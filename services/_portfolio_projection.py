@@ -21,6 +21,38 @@ class PortfolioProjection:
         selected &= records["date"].le(end_date or datetime.date.today().isoformat())
         return float(records.loc[selected, "total_value"].sum())
 
+    def _remaining_position_dividends(self, transactions, today_date, start_date):
+        """Release accrued dividends in the same proportion as the cost sold."""
+        receipts = self._ledger.dividends
+        receipts = receipts[receipts["date"].le(today_date.isoformat())]
+        if start_date is not None:
+            receipts = receipts[receipts["date"].ge(start_date)]
+        events = [(row["date"], 0, row) for row in transactions.to_dict("records")]
+        events.extend((row["date"], 1, row) for row in receipts.to_dict("records"))
+        events.sort(key=lambda event: event[:2])
+        l12m_limit = (today_date - datetime.timedelta(days=365)).isoformat()
+        state = {}
+        for date, receipt, row in events:
+            balance = state.setdefault(row["ticker"], {"quantity": 0, "total": 0.0, "l12m": 0.0})
+            if receipt:
+                if balance["quantity"] > 0:
+                    balance["total"] += row["total_value"]
+                    if date >= l12m_limit:
+                        balance["l12m"] += row["total_value"]
+            elif row["transaction_type"] == "BUY":
+                balance["quantity"] += row["quantity"]
+            elif row["transaction_type"] == "SELL":
+                old_quantity = balance["quantity"]
+                balance["quantity"] = max(0, old_quantity - row["quantity"])
+                fraction = balance["quantity"] / old_quantity if old_quantity > 0 else 0.0
+                balance["total"] *= fraction
+                balance["l12m"] *= fraction
+            elif row["transaction_type"] == "GROUP":
+                balance["quantity"] = row["quantity"]
+                if balance["quantity"] <= 0:
+                    balance["total"] = balance["l12m"] = 0.0
+        return state
+
     def quantity_on_date(self, ticker, date):
         transactions = self._ledger.transactions
         selected = transactions[transactions["ticker"].eq(ticker) & transactions["date"].le(date)]
@@ -233,6 +265,9 @@ class PortfolioProjection:
                 pending and portfolio_state[ticker][QUANTITY] > 0
             )
 
+        remaining_dividends = self._remaining_position_dividends(
+            df_transactions, today_date, start_date
+        )
         active_assets = []
         for ticker, info in portfolio_state.items():
             if info[QUANTITY] > 0:
@@ -274,6 +309,8 @@ class PortfolioProjection:
                         TOTAL_DIVIDENDS: total_dividends,
                         L12M_DIVIDENDS: l12m_dividends,
                         YTD_DIVIDENDS: ytd_dividends,
+                        "position_dividends": remaining_dividends[ticker]["total"],
+                        "position_l12m_dividends": remaining_dividends[ticker]["l12m"],
                     }
                 )
 
@@ -451,10 +488,10 @@ class PortfolioProjection:
             df_positions[PROFIT_LOSS] / df_positions[INVESTED_AMOUNT]
         ) * 100
         df_positions["total_yoc"] = (
-            df_positions[TOTAL_DIVIDENDS] / df_positions[INVESTED_AMOUNT]
+            df_positions["position_dividends"] / df_positions[INVESTED_AMOUNT]
         ) * 100
         df_positions["l12m_yoc"] = (
-            df_positions[L12M_DIVIDENDS] / df_positions[INVESTED_AMOUNT]
+            df_positions["position_l12m_dividends"] / df_positions[INVESTED_AMOUNT]
         ) * 100
 
         cost_pending = bool(
@@ -474,10 +511,14 @@ class PortfolioProjection:
             (total_profit / total_invested_init * 100) if ratios_available else float("nan")
         )
         overall_yoc = (
-            (total_dividends / total_invested_init * 100) if ratios_available else float("nan")
+            (df_positions["position_dividends"].sum() / total_invested_init * 100)
+            if ratios_available
+            else float("nan")
         )
         overall_l12m_yoc = (
-            (l12m_dividends / total_invested_init * 100) if ratios_available else float("nan")
+            (df_positions["position_l12m_dividends"].sum() / total_invested_init * 100)
+            if ratios_available
+            else float("nan")
         )
         if cost_pending:
             overall_return = overall_yoc = overall_l12m_yoc = float("nan")
@@ -512,7 +553,6 @@ class PortfolioProjection:
             CURRENT_PRICE,
             CURRENT_VALUE,
             INVESTED_AMOUNT,
-            L12M_DIVIDENDS,
             NAME,
             PROFIT_LOSS,
             QUANTITY,
@@ -550,12 +590,12 @@ class PortfolioProjection:
         total_equity = df_positions[CURRENT_VALUE].sum(skipna=False)
 
         df_positions[ADJUSTED_PRICE] = (
-            df_positions[INVESTED_AMOUNT] - df_positions[TOTAL_DIVIDENDS]
+            df_positions[INVESTED_AMOUNT] - df_positions["position_dividends"]
         ) / df_positions[QUANTITY]
         invested_base = df_positions[INVESTED_AMOUNT].where(df_positions[INVESTED_AMOUNT] > 0)
         df_positions[RETURN_PCT_CUSTOM] = df_positions[PROFIT_LOSS] / invested_base * 100
-        df_positions[YOC_CUSTOM] = df_positions[TOTAL_DIVIDENDS] / invested_base * 100
-        df_positions[YOC_12_CUSTOM] = df_positions[L12M_DIVIDENDS] / invested_base * 100
+        df_positions[YOC_CUSTOM] = df_positions["position_dividends"] / invested_base * 100
+        df_positions[YOC_12_CUSTOM] = df_positions["position_l12m_dividends"] / invested_base * 100
         df_positions[WEIGHT_PCT] = (
             (df_positions[CURRENT_VALUE] / total_equity * 100)
             if total_equity > 0

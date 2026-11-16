@@ -115,11 +115,14 @@ HELP_TOTAL_PAID_PER_SHARE = (
     "Soma de todos os proventos unitários recebidos por cota neste ano selecionado"
 )
 HELP_ADJ_PRICE = (
-    "Preço Médio descontado dos dividendos recebidos. Mostra o seu real custo de aquisição (Basis)."
+    "Preço médio descontado dos proventos atribuídos às cotas ainda em carteira. "
+    "Vendas reduzem esses proventos na mesma proporção das cotas vendidas."
 )
 HELP_AVG_PRICE = "Preço Médio ponderado de todas as compras (não impactado por proventos)."
-HELP_YOC = "Yield on Cost: Retorno em dividendos totais sobre o capital inicialmente investido."
-HELP_YOC_12 = "Yield on Cost de 12 meses: Retorno em dividendos nos últimos 12 meses sobre o capital investido."
+HELP_YOC = (
+    "Yield on Cost: Proventos atribuídos às cotas ainda em carteira sobre o custo dessa posição."
+)
+HELP_YOC_12 = "Yield on Cost de 12 meses: Proventos dos últimos 12 meses atribuídos às cotas ainda em carteira sobre o custo dessa posição."
 HELP_RETURN_PCT = "Retorno Percentual: Lucro/Prejuízo em relação ao valor investido."
 HELP_RESULT = "Lucro/Prejuízo financeiro total da posição."
 HELP_EARNINGS = "Soma de todos os proventos recebidos por este ativo."

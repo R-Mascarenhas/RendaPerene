@@ -70,6 +70,7 @@ def test_dashboard_shows_activity_without_current_positions(monkeypatch):
     from views.components.portfolio_activity import PortfolioActivityWidget
     from views.components.annual_planning import AnnualPlanningWidget
     from views.components.accumulation_goals import AccumulationGoalProgressWidget
+    from views.components.charts import DashboardCharts
     from services.portfolio_read_service import PortfolioReadService
     from core.portfolio_read import PortfolioOverview
 
@@ -77,9 +78,10 @@ def test_dashboard_shows_activity_without_current_positions(monkeypatch):
     monkeypatch.setattr(PortfolioReadService, "read_portfolio", lambda **kw: PortfolioOverview(pd.DataFrame(), {}, pd.DataFrame(), {}, pd.DataFrame(), ()))
     monkeypatch.setattr(AnnualPlanningWidget, "render", lambda *args: None)
     monkeypatch.setattr(AccumulationGoalProgressWidget, "render", lambda *args: None)
+    monkeypatch.setattr(DashboardCharts, "render_annual_dividends_chart", lambda *args: rendered.append("annual_dividends"))
     monkeypatch.setattr(PortfolioActivityWidget, "render", lambda *args, **kwargs: rendered.append(True))
     DashboardView().render()
-    assert rendered == [True]
+    assert rendered == ["annual_dividends", True]
 
 
 def test_recent_history_button_opens_operations_and_all_events():

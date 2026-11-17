@@ -115,6 +115,26 @@ class PortfolioReadService:
         )
 
     @hybridmethod
+    def read_annual_dividends(self, *, today_date=None) -> pd.DataFrame:
+        """Read calendar-year receipts independently of positions and cost availability."""
+        today = today_date or datetime.date.today()
+        ledger = self._repository.load_ledger()
+        dates = []
+        for records in (ledger.transactions, ledger.dividends):
+            if not records.empty:
+                dates.extend(records.loc[records["date"] <= today.isoformat(), "date"])
+        if not dates:
+            return pd.DataFrame(columns=["year", "received_dividends"])
+
+        years = pd.Index(range(int(min(dates)[:4]), today.year + 1), name="year")
+        payments = ledger.dividends
+        totals = pd.Series(dtype=float)
+        if not payments.empty:
+            received = payments.loc[payments["date"] <= today.isoformat()]
+            totals = received.groupby(received["date"].str[:4].astype(int))["total_value"].sum()
+        return totals.reindex(years, fill_value=0.0).rename("received_dividends").reset_index()
+
+    @hybridmethod
     def read_planning(
         self, *, start_date=None, year=None, quantity_date=None, today_date=None
     ) -> PortfolioPlanning:

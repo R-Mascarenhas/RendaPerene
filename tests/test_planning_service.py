@@ -9,6 +9,78 @@ from services.assets_service import AssetService
 from services.planning_service import SimulationService
 
 
+def test_annual_dividend_comparison_extracts_each_year_without_changing_receipts(monkeypatch):
+    service = SimulationService()
+    monkeypatch.setattr(service, "get_configuration", lambda: {"planning_start_date": "2023-11-01"})
+    projection = pd.DataFrame({
+        "month_str": ["2023-11", "2023-12", "2024-01", "2024-06", "2024-12"],
+        "planned_dividends": [0, 100, 120, 160, 250],
+    })
+    monkeypatch.setattr(service, "get_projection_chart_dataset", lambda: projection)
+    receipts = pd.DataFrame({"year": [2022, 2023, 2024], "received_dividends": [90, 100, 200]})
+    original = receipts.copy(deep=True)
+
+    result = service.prepare_annual_dividend_comparison(receipts)
+
+    assert pd.isna(result.iloc[0]["planned_dividends"])
+    assert result["planned_dividends"].iloc[1:].tolist() == [100, 150]
+    assert result["attainment_pct"].iloc[1:].tolist() == pytest.approx([100, 133.3333333333])
+    pd.testing.assert_frame_equal(receipts, original)
+
+
+@pytest.mark.parametrize("available", [False, True])
+def test_annual_dividend_comparison_keeps_receipts_without_planning(monkeypatch, available):
+    service = SimulationService()
+    monkeypatch.setattr(service, "get_configuration", lambda: {"configured": True} if available else None)
+    monkeypatch.setattr(service, "get_projection_chart_dataset", lambda: pd.DataFrame())
+    receipts = pd.DataFrame({"year": [2024], "received_dividends": [80]})
+
+    result = service.prepare_annual_dividend_comparison(receipts)
+
+    assert result["received_dividends"].tolist() == [80]
+    assert result["planned_dividends"].isna().all()
+    assert result["attainment_pct"].isna().all()
+
+
+def test_annual_comparison_uses_full_current_year_plan(monkeypatch):
+    class FrozenDate(datetime.date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 2, 10)
+
+    monkeypatch.setattr(datetime, "date", FrozenDate)
+    AssetService.add_transaction("BBAS3", "2025-11-01", "BUY", 10, 20)
+    AssetService.add_dividend("BBAS3", "2026-01-01", "DIVIDEND", 80)
+    SimulationService.save_configuration(
+        birth_date="1990-01-01", retirement_age=65, desired_income_mw=5,
+        annual_interest_rate=6, mw_value=1518, initial_equity_input=1000,
+        planning_start_date="2025-11-01",
+    )
+    receipts = PortfolioReadService.read_annual_dividends()
+    result = SimulationService.prepare_annual_dividend_comparison(receipts)
+    projection = SimulationService.get_projection_chart_dataset()
+    december = projection.loc[projection["month_str"] == "2026-12", "planned_dividends"].iloc[0]
+    prior_december = projection.loc[projection["month_str"] == "2025-12", "planned_dividends"].iloc[0]
+
+    assert result.loc[result["year"] == 2026, "planned_dividends"].iloc[0] == pytest.approx(december - prior_december)
+    assert result["received_dividends"].tolist() == [0, 80]
+
+
+def test_annual_dividend_comparison_keeps_zero_target_without_infinite_percentage(monkeypatch):
+    service = SimulationService()
+    monkeypatch.setattr(service, "get_configuration", lambda: {"configured": True})
+    monkeypatch.setattr(service, "get_projection_chart_dataset", lambda: pd.DataFrame({
+        "month_str": ["2024-01", "2024-12"], "planned_dividends": [0, 0],
+    }))
+
+    result = service.prepare_annual_dividend_comparison(
+        pd.DataFrame({"year": [2024], "received_dividends": [80]})
+    )
+
+    assert result["planned_dividends"].tolist() == [0]
+    assert result["attainment_pct"].isna().all()
+
+
 @pytest.mark.parametrize("auto,manual", [(False, True), (True, False), (False, False)])
 def test_bazin_edits_preserve_persisted_planning(auto, manual):
     service = SimulationService(PlanningDAO())

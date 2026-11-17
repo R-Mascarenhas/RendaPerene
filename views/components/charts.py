@@ -1,3 +1,4 @@
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
@@ -33,12 +34,83 @@ class DashboardCharts:
 
     def render(self, portfolio):
         df_positions = portfolio.positions
-        if df_positions[CURRENT_VALUE].notna().all():
-            self._render_top_charts(portfolio)
-        else:
-            st.caption("Os gráficos de composição do patrimônio aguardam cotações completas.")
-        self._render_evolution_chart()
-        self._render_monthly_contributions_chart()
+        if not df_positions.empty:
+            if df_positions[CURRENT_VALUE].notna().all():
+                self._render_top_charts(portfolio)
+            else:
+                st.caption("Os gráficos de composição do patrimônio aguardam cotações completas.")
+            self._render_evolution_chart()
+        self.render_annual_dividends_chart()
+        if not df_positions.empty:
+            self._render_monthly_contributions_chart()
+
+    def render_annual_dividends_chart(self):
+        st.markdown("---")
+        st.subheader("Proventos por ano — recebido x planejado")
+        receipts = PortfolioReadService.read_annual_dividends()
+        annual = SimulationService.prepare_annual_dividend_comparison(receipts)
+        if annual.empty:
+            st.info("Nenhum histórico disponível para exibir os proventos por ano.")
+            return
+
+        st.caption(
+            "Valores de cada ano, sem acumular anos anteriores. O recebido considera os pagamentos "
+            "registrados até hoje; o planejado segue o planejamento atual e inclui a meta do ano inteiro."
+        )
+        if annual[PLANNED_DIVIDENDS].isna().any():
+            st.caption(
+                "Planejado indisponível nos anos sem projeção válida do planejamento atual. "
+                "Os recebimentos históricos continuam visíveis."
+            )
+        details = [
+            [
+                Formatter.format_currency(row["received_dividends"]),
+                Formatter.format_currency(row[PLANNED_DIVIDENDS])
+                if pd.notna(row[PLANNED_DIVIDENDS])
+                else "Não disponível",
+                f"{row['attainment_pct']:.2f}%".replace(".", ",")
+                if pd.notna(row["attainment_pct"])
+                else "Não disponível",
+            ]
+            for row in annual.to_dict("records")
+        ]
+        hover = (
+            "<b>%{x}</b><br>Recebido: %{customdata[0]}"
+            "<br>Planejado: %{customdata[1]}<br>Meta atingida: %{customdata[2]}<extra></extra>"
+        )
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                x=annual["year"],
+                y=annual[PLANNED_DIVIDENDS],
+                name="Proventos planejados",
+                width=0.72,
+                marker_color=ChartThemeAdapter.LIGHT_GREEN,
+                customdata=details,
+                hovertemplate=hover,
+            )
+        )
+        fig.add_trace(
+            go.Bar(
+                x=annual["year"],
+                y=annual["received_dividends"],
+                name="Proventos recebidos",
+                width=0.4,
+                marker_color=ChartThemeAdapter.GREEN,
+                customdata=details,
+                hovertemplate=hover,
+            )
+        )
+        fig.update_layout(barmode="overlay")
+        fig.update_xaxes(title_text="Ano", type="category")
+        fig.update_yaxes(
+            title_text="Proventos (R$)",
+            tickformat=ChartThemeAdapter.CURRENCY_TICK_FORMAT,
+            rangemode="tozero",
+        )
+        fig = ChartThemeAdapter.apply_theme(fig)
+        fig.update_layout(hovermode="closest")
+        st.plotly_chart(fig, width="stretch")
 
     def _render_top_charts(self, portfolio):
         df_positions = portfolio.positions

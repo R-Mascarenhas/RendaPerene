@@ -390,6 +390,32 @@ class SimulationService:
         projection = self.get_projection_chart_dataset()
         return self.calculate_planned_dividends_for_year(projection, selected_year)
 
+    @hybridmethod
+    def prepare_annual_dividend_comparison(self, annual_receipts: pd.DataFrame) -> pd.DataFrame:
+        """Combine historical receipts with full calendar-year targets of the current plan."""
+        from core.constants import MONTH_STR, PLANNED_DIVIDENDS
+
+        comparison = annual_receipts.copy(deep=True)
+        comparison[PLANNED_DIVIDENDS] = np.nan
+        comparison["attainment_pct"] = np.nan
+        if comparison.empty or not self.get_configuration():
+            return comparison
+
+        projection = self.get_projection_chart_dataset()
+        if projection.empty:
+            return comparison
+
+        covered_years = set(projection[MONTH_STR].str[:4].astype(int))
+        comparison[PLANNED_DIVIDENDS] = [
+            self.calculate_planned_dividends_for_year(projection, int(year))
+            if year in covered_years
+            else np.nan
+            for year in comparison["year"]
+        ]
+        positive_targets = comparison[PLANNED_DIVIDENDS].where(comparison[PLANNED_DIVIDENDS] > 0)
+        comparison["attainment_pct"] = comparison["received_dividends"] / positive_targets * 100
+        return comparison
+
     @staticmethod
     def build_projection_dataframe(
         current_age,

@@ -27,6 +27,50 @@ def reader():
     return PortfolioReadService(PortfolioDAO(), FakeQuotes(), FakeAnalysis(), MarketData)
 
 
+def test_annual_dividends_preserve_sold_assets_gaps_and_payment_cutoff():
+    AssetService.add_transaction("BBAS3", "2022-04-01", "BUY", 10, 20)
+    AssetService.add_dividend("BBAS3", "2022-05-01", "DIVIDEND", 80.25)
+    AssetService.add_dividend("BBAS3", "2022-06-01", "JCP", 19.75)
+    AssetService.add_transaction("BBAS3", "2023-01-01", "SELL", 10, 25)
+    AssetService.add_dividend("CXSE3", "2024-06-10", "YIELD", 150.5)
+    AssetService.add_dividend("CXSE3", "2024-06-11", "DIVIDEND", 999)
+    AssetService.add_dividend("CXSE3", "2025-01-01", "DIVIDEND", 999)
+
+    result = reader().read_annual_dividends(today_date=datetime.date(2024, 6, 10))
+
+    assert result.to_dict("list") == {
+        "year": [2022, 2023, 2024],
+        "received_dividends": [100, 0, 150.5],
+    }
+
+
+@pytest.mark.parametrize("records", ["empty", "future", "dividends", "pending", "transactions"])
+def test_annual_dividends_do_not_require_positions_or_known_costs(records):
+    if records == "future":
+        AssetService.add_transaction("BBAS3", "2025-01-01", "BUY", 10, 20)
+        AssetService.add_dividend("BBAS3", "2025-02-01", "DIVIDEND", 80)
+    elif records == "dividends":
+        AssetService.add_dividend("BBAS3", "2024-01-01", "DIVIDEND", 80)
+    elif records == "transactions":
+        AssetService.add_transaction("BBAS3", "2024-01-01", "BUY", 10, 20)
+    elif records == "pending":
+        AssetService.process_b3_import(pd.DataFrame([{
+            "Movimentação": "Aquisição", "Data": "02/01/2024", "Produto": "BBAS3",
+            "Quantidade": 100, "Preço unitário": None, "Valor da Operação": None,
+            "Entrada/Saída": "Crédito",
+        }]))
+        AssetService.add_dividend("BBAS3", "2024-02-01", "DIVIDEND", 80)
+
+    result = reader().read_annual_dividends(today_date=datetime.date(2024, 6, 10))
+
+    if records in ("empty", "future"):
+        assert result.empty
+    else:
+        assert result.to_dict("list") == {
+            "year": [2024], "received_dividends": [0 if records == "transactions" else 80],
+        }
+
+
 def test_portfolio_replays_fees_sales_split_and_group_into_one_read():
     AssetService.add_transaction("BBAS3", "2024-01-01", "BUY", 10, 20, 10)
     AssetService.add_transaction("BBAS3", "2024-02-01", "SELL", 2, 25, 1)

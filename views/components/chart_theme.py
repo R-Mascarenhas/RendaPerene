@@ -9,6 +9,7 @@ class ChartThemeAdapter:
 
     BLUE = "#1f77b4"
     GREEN = "#2ca02c"
+    LIGHT_GREEN = "#a8df9f"
     DARK_GREEN = "#1a5c1a"
     RED = "#b41f1f"
     DARK_RED = "#a02c2c"

@@ -54,10 +54,11 @@ class DashboardView:
             with measure_navigation("dashboard", "patrimony_summary"):
                 PatrimonySummaryWidget().render(portfolio)
 
-            # 4. Render all interactive Plotly figures
-            with measure_navigation("dashboard", "charts"):
-                DashboardCharts().render(portfolio)
+        # 4. Keep annual dividend history visible even without current positions.
+        with measure_navigation("dashboard", "charts"):
+            DashboardCharts().render(portfolio)
 
+        if not df_positions.empty:
             # 5. Render detailed holdings dataframe grid (At the bottom)
             with measure_navigation("dashboard", "detailed_holdings"):
                 DetailedHoldingsWidget().render(portfolio)

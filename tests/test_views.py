@@ -26,6 +26,61 @@ class _FakeAssetTab:
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
+def test_annual_dividend_chart_overlays_full_plan_behind_narrower_receipts(monkeypatch, theme):
+    from views.components.chart_theme import ChartThemeAdapter
+
+    annual = pd.DataFrame({
+        "year": [2022, 2023, 2024],
+        "received_dividends": [80.25, 100, 150],
+        "planned_dividends": [100, 100, 100],
+        "attainment_pct": [80.25, 100, 150],
+    })
+    monkeypatch.setattr(PortfolioReadService, "read_annual_dividends", lambda: annual)
+    monkeypatch.setattr(SimulationService, "prepare_annual_dividend_comparison", lambda frame: frame)
+    monkeypatch.setattr(ChartThemeAdapter, "current_theme_type", lambda: theme)
+    figures = []
+    monkeypatch.setattr(st, "plotly_chart", lambda figure, **_: figures.append(figure))
+
+    DashboardCharts().render_annual_dividends_chart()
+
+    figure = figures[0]
+    planned, received = figure.data
+    assert figure.layout.barmode == "overlay"
+    assert planned.width > received.width
+    assert list(planned.x) == list(received.x)
+    assert list(planned.y) == [100, 100, 100]
+    assert list(received.y) == [80.25, 100, 150]
+    assert planned.marker.color == ChartThemeAdapter.LIGHT_GREEN
+    assert received.marker.color == ChartThemeAdapter.GREEN
+    assert list(received.customdata[0]) == ["R$ 80,25", "R$ 100,00", "80,25%"]
+    assert figure.layout.yaxis.title.text == "Proventos (R$)"
+
+
+def test_annual_dividend_chart_explains_missing_plan_and_empty_history(monkeypatch):
+    annual = pd.DataFrame({
+        "year": [2024], "received_dividends": [80],
+        "planned_dividends": [float("nan")], "attainment_pct": [float("nan")],
+    })
+    monkeypatch.setattr(PortfolioReadService, "read_annual_dividends", lambda: annual)
+    monkeypatch.setattr(SimulationService, "prepare_annual_dividend_comparison", lambda frame: frame)
+    figures, captions, messages = [], [], []
+    monkeypatch.setattr(st, "plotly_chart", lambda figure, **_: figures.append(figure))
+    monkeypatch.setattr(st, "caption", captions.append)
+    monkeypatch.setattr(st, "info", messages.append)
+
+    charts = DashboardCharts()
+    charts.render_annual_dividends_chart()
+    assert list(figures[0].data[1].y) == [80]
+    assert "indisponível" in " ".join(captions)
+    assert list(figures[0].data[1].customdata[0]) == ["R$ 80,00", "Não disponível", "Não disponível"]
+
+    monkeypatch.setattr(PortfolioReadService, "read_annual_dividends", lambda: annual.iloc[:0])
+    charts.render_annual_dividends_chart()
+    assert len(figures) == 1
+    assert messages == ["Nenhum histórico disponível para exibir os proventos por ano."]
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
 def test_dashboard_evolution_currency_axes_preserve_fractional_dividend_data(monkeypatch, theme):
     from core.constants import (
         MONTH_STR, CUMULATIVE_INVESTED, CUMULATIVE_DIVIDENDS,

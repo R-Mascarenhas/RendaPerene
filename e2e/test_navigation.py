@@ -17,6 +17,7 @@ def assert_dashboard_removed(page):
     for heading in (
         "Resumo Patrimonial",
         "📈 Evolução Patrimonial Histórica & Planejamento",
+        "Proventos por ano — recebido x planejado",
         "📊 Histórico de Aportes Líquidos por Ano e Mês",
         "Ativos em Custódia (Detalhado)",
     ):
@@ -46,13 +47,16 @@ def test_dashboard_charts_are_removed_when_switching_screens(local_page):
     enter_trade(page, 10, 20, 5)
     navigate(page, "Dashboard")
     expect(page.get_by_role("heading", name="Resumo Patrimonial", exact=True)).to_be_visible()
-    expect(page.get_by_test_id("stPlotlyChart")).to_have_count(4)
+    expect(
+        page.get_by_role("heading", name="Proventos por ano — recebido x planejado", exact=True)
+    ).to_be_visible()
+    expect(page.get_by_test_id("stPlotlyChart")).to_have_count(5)
 
     run_action(page, navigation_control(page, "Ativos").click, full_run=True)
     expect(page.get_by_role("tab", name="BBAS3", exact=True)).to_be_visible()
     assert_dashboard_removed(page)
     # Native packages may still be loading price history, so the asset chart
-    # can be absent; none of the four dashboard charts may remain.
+    # can be absent; none of the dashboard charts may remain.
     assert page.get_by_test_id("stPlotlyChart").count() <= 1
 
     run_action(page, navigation_control(page, "Operações").click, full_run=True)

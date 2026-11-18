@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from core.daos.portfolio_dao import PortfolioDAO
+from core.utils.b3_parser import B3ExcelParserAdapter
 from services.assets_service import AssetService
 
 
@@ -140,3 +141,110 @@ def test_changed_payment_is_revalidated_before_the_confirmed_link_is_saved(chang
 
     assert AssetService.get_dividend_payments("BBAS3") == before
     assert AssetService.get_local_projection_revision() == revision
+
+
+@pytest.mark.parametrize("different_institutions", [False, True])
+@pytest.mark.parametrize("exact_first", [False, True])
+def test_equal_batch_credits_review_the_contested_legacy_payment_before_any_write(
+    different_institutions, exact_first,
+):
+    AssetService.add_dividend("BBAS3", "2026-11-10", "DIVIDEND", 100)
+    AssetService.add_dividend("BBAS3", "2026-11-09", "DIVIDEND", 99)
+    before = AssetService.get_dividend_payments("BBAS3")
+    revision = AssetService.get_local_projection_revision()
+    first = b3_receipt()
+    second = b3_receipt()
+    if different_institutions:
+        second["Instituição"] = "Outra Corretora Teste"
+    statement = pd.concat([first, second], ignore_index=True)
+
+    candidates = AssetService.find_b3_dividend_candidates(statement)
+    assert len(candidates) == 2
+    assert all({row["id"] for row in candidate["payments"]} == {
+        row["id"] for row in before
+    } for candidate in candidates)
+    assert AssetService.get_local_projection_revision() == revision
+    with pytest.raises(ValueError, match="Confirme"):
+        AssetService.process_b3_import(statement)
+    assert AssetService.get_dividend_payments("BBAS3") == before
+    assert AssetService.get_local_projection_revision() == revision
+
+    links = {
+        candidate["source_key"]: payment["id"]
+        for candidate, payment in zip(
+            candidates, sorted(before, key=lambda row: row["total_value"], reverse=exact_first),
+            strict=True,
+        )
+    }
+    assert AssetService.process_b3_import(statement, dividend_links=links) == (0, 2)
+    payments = AssetService.get_dividend_payments("BBAS3")
+    assert len(payments) == 2
+    assert {row["id"] for row in payments} == {row["id"] for row in before}
+    assert all(row["date"] == "2026-11-10" and row["total_value"] == 100 for row in payments)
+    assert AssetService.find_b3_dividend_candidates(statement) == []
+    assert AssetService.process_b3_import(statement) == (0, 0)
+
+
+@pytest.mark.parametrize("exact_first", [False, True])
+@pytest.mark.parametrize("nearby_payment", [False, True])
+@pytest.mark.parametrize("known_metadata", [False, True])
+def test_batch_exact_match_is_reserved_before_reviewing_nearby_credits(
+    exact_first, nearby_payment, known_metadata,
+):
+    AssetService.add_dividend(
+        "BBAS3", "2026-11-10", "DIVIDEND", 100,
+        quantity=100 if known_metadata else None, unit_price=1 if known_metadata else None,
+    )
+    exact_id = AssetService.get_dividend_payments("BBAS3")[0]["id"]
+    if nearby_payment:
+        AssetService.add_dividend("BBAS3", "2026-11-08", "DIVIDEND", 98)
+    frames = [b3_receipt(date="09/11/2026", total=99), b3_receipt()]
+    if exact_first:
+        frames.reverse()
+    statement = pd.concat(frames, ignore_index=True)
+    candidates = AssetService.find_b3_dividend_candidates(statement)
+    assert len(candidates) == (1 if nearby_payment else 0)
+    links = {}
+    if nearby_payment:
+        assert len(candidates[0]["payments"]) == 1
+        approximate = candidates[0]["payments"][0]
+        assert approximate["total_value"] == 98
+        links[candidates[0]["source_key"]] = approximate["id"]
+    assert AssetService.process_b3_import(statement, dividend_links=links) == (
+        0, 1 if known_metadata else 2,
+    )
+    payments = AssetService.get_dividend_payments("BBAS3")
+    assert len(payments) == 2
+    exact = next(row for row in payments if row["id"] == exact_id)
+    assert exact["date"] == "2026-11-10" and exact["total_value"] == 100
+    assert exact["quantity"] == 100
+    assert {row["total_value"] for row in payments} == {99, 100}
+    assert AssetService.find_b3_dividend_candidates(statement) == []
+    assert AssetService.process_b3_import(statement) == (0, 0)
+
+
+def test_preview_rejects_a_portfolio_change_between_matching_reads():
+    AssetService.add_dividend("BBAS3", "2026-11-10", "DIVIDEND", 100)
+    receipt_id = AssetService.get_dividend_payments("BBAS3")[0]["id"]
+
+    class ConcurrentPortfolioDAO(PortfolioDAO):
+        changed = False
+
+        def find_b3_dividend_candidates(self, record, *, allow_automatic_match=True):
+            result = super().find_b3_dividend_candidates(
+                record, allow_automatic_match=allow_automatic_match,
+            )
+            if not self.changed:
+                self.changed = True
+                self.reschedule_dividend(receipt_id, "2026-11-09", self.get_local_projection_revision())
+            return result
+
+    service = AssetService(
+        portfolio_repo=ConcurrentPortfolioDAO(), excel_parser=B3ExcelParserAdapter(),
+    )
+    with pytest.raises(ValueError, match="carteira mudou"):
+        service.find_b3_dividend_candidates(b3_receipt())
+    payments = AssetService.get_dividend_payments("BBAS3")
+    assert len(payments) == 1
+    assert payments[0]["date"] == "2026-11-09"
+    assert payments[0]["total_value"] == 100

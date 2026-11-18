@@ -19,8 +19,9 @@ Ao confirmar ou ignorar um evento, a revisão segue pelos proventos já encontra
 a consulta ao Yahoo Finance.
 
 Na importação B3, pagamentos legados com o mesmo ativo, data, tipo e total são reconhecidos
-sem nova confirmação quando não há ambiguidade nem conflito nos dados conhecidos. Possíveis
-erros de cadastro exigem confirmação: as sugestões ficam limitadas a até 7 dias corridos antes
+sem nova confirmação quando não há ambiguidade nem conflito nos dados conhecidos. Se várias linhas
+do extrato disputam o mesmo pagamento legado, a importação pede uma escolha explícita antes de gravar.
+Possíveis erros de cadastro exigem confirmação: as sugestões ficam limitadas a até 7 dias corridos antes
 ou depois da data B3 e diferença de até 5% do total informado pela B3, com tolerância mínima
 de R$ 0,02. A regra de conciliação de compras e vendas permanece independente desses limites.
 

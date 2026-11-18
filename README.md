@@ -18,6 +18,12 @@ segundo plano, sem botão de busca manual; cadastrar pagamentos exige revisão e
 Ao confirmar ou ignorar um evento, a revisão segue pelos proventos já encontrados, sem repetir
 a consulta ao Yahoo Finance.
 
+Na importação B3, pagamentos legados com o mesmo ativo, data, tipo e total são reconhecidos
+sem nova confirmação quando não há ambiguidade nem conflito nos dados conhecidos. Possíveis
+erros de cadastro exigem confirmação: as sugestões ficam limitadas a até 7 dias corridos antes
+ou depois da data B3 e diferença de até 5% do total informado pela B3, com tolerância mínima
+de R$ 0,02. A regra de conciliação de compras e vendas permanece independente desses limites.
+
 Nos lançamentos manuais de compra e venda, escolher o ativo e a data busca o fechamento
 diário do Yahoo Finance em segundo plano, sem bloquear a página. O preço continua editável;
 uma resposta da consulta não substitui o valor digitado. Sem cotação, informe o preço

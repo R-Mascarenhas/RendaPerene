@@ -1,10 +1,10 @@
 """Atomic dividend decisions using the existing source registry and receipt schema."""
 
-import datetime
 import hashlib
 import json
 import sqlite3
 from contextlib import closing
+from decimal import Decimal
 
 
 class DividendSyncRepository:
@@ -139,14 +139,33 @@ class DividendSyncRepository:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT id, date, ticker, dividend_type, total_value, quantity, unit_price "
-            "FROM dividends WHERE ticker=? ORDER BY date,id",
-            (record["ticker"],),
+            "FROM dividends WHERE ticker=? "
+            "AND date BETWEEN date(?, '-7 days') AND date(?, '+7 days') ORDER BY date,id",
+            (record["ticker"], record["date"], record["date"]),
         ).fetchall()
         batch_ids.difference_update(previous_ids)
+        total = Decimal(str(record["total_value"]))
+        value_tolerance = max(Decimal("0.02"), abs(total) * Decimal("0.05"))
+        exact_payments = [
+            row
+            for row in rows
+            if row["date"] == record["date"]
+            and row["dividend_type"] == record["dividend_type"]
+            and row["total_value"] == record["total_value"]
+        ]
+        if len(exact_payments) == 1:
+            exact = exact_payments[0]
+            if (
+                exact["id"] not in yahoo_ids | b3_ids | batch_ids
+                and not DividendSyncRepository._dividend_metadata_differs(exact, record)
+            ):
+                # Let the receipt upsert adopt the unique legacy payment and its missing metadata.
+                return []
         return [
             dict(row)
             for row in rows
             if row["id"] not in batch_ids
+            and abs(Decimal(str(row["total_value"])) - total) <= value_tolerance
             and (
                 row["dividend_type"] == record["dividend_type"]
                 or (row["id"] in yahoo_ids and row["id"] not in b3_ids)
@@ -156,9 +175,9 @@ class DividendSyncRepository:
                     row["id"] not in b3_ids
                     and (
                         row["id"] in yahoo_ids
-                        or row["date"] > datetime.date.today().isoformat()
                         or row["date"] != record["date"]
                         or row["total_value"] != record["total_value"]
+                        or len(exact_payments) > 1
                         or DividendSyncRepository._dividend_metadata_differs(row, record)
                     )
                 )

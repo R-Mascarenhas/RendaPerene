@@ -3,6 +3,7 @@ import json
 import logging
 import math
 from bisect import bisect_left, bisect_right
+from collections import Counter
 from decimal import Decimal
 from itertools import groupby, islice
 
@@ -327,26 +328,67 @@ class AssetService:
         return self._dividend_candidates_for_frame(dividends)
 
     def _dividend_candidates_for_frame(self, dividends):
+        candidates, _ = self._b3_dividend_review_plan(dividends)
+        return candidates
+
+    def _b3_dividend_review_plan(self, dividends):
+        revision = self._portfolio_repo.get_local_projection_revision()
         candidates = []
-        for row in dividends.to_dict("records"):
-            record = self._b3_dividend_record(row)
-            payments = self._portfolio_repo.find_b3_dividend_candidates(record)
+        automatic_choices = {}
+        records = [self._b3_dividend_record(row) for row in dividends.to_dict("records")]
+        match_fields = ("ticker", "date", "dividend_type", "total_value")
+        identities = [tuple(record[field] for field in match_fields) for record in records]
+        counts = Counter(identities)
+        for record, identity in zip(records, identities, strict=True):
+            payments = self._portfolio_repo.find_b3_dividend_candidates(
+                record, allow_automatic_match=counts[identity] == 1
+            )
+            key = self._portfolio_repo.dividend_b3_key(record)
+            if not payments and counts[identity] == 1:
+                payments = self._portfolio_repo.find_b3_dividend_candidates(
+                    record, allow_automatic_match=False
+                )
+                exact = [
+                    payment
+                    for payment in payments
+                    if tuple(payment[field] for field in match_fields) == identity
+                ]
+                if len(exact) == 1:
+                    automatic_choices[key] = {
+                        "id": exact[0]["id"],
+                        "expected": exact[0],
+                        "automatic": True,
+                    }
+                    continue
             if payments:
                 candidates.append(
                     {
-                        "source_key": self._portfolio_repo.dividend_b3_key(record),
+                        "source_key": key,
                         "b3": record,
                         "payments": payments,
                     }
                 )
-        return candidates
+        reserved_ids = {choice["id"] for choice in automatic_choices.values()}
+        review = []
+        for candidate in candidates:
+            candidate["payments"] = [
+                payment for payment in candidate["payments"] if payment["id"] not in reserved_ids
+            ]
+            if candidate["payments"]:
+                review.append(candidate)
+            else:
+                automatic_choices[candidate["source_key"]] = {"id": None, "expected": None}
+        if self._portfolio_repo.get_local_projection_revision() != revision:
+            raise ValueError("A carteira mudou. Revise a importação B3 novamente.")
+        return review, automatic_choices
 
     def _prepare_b3_dividend_choices(self, dividends, links):
+        candidates, result = self._b3_dividend_review_plan(dividends)
         selected_ids = [value for value in links.values() if value is not None]
+        selected_ids.extend(choice["id"] for choice in result.values() if choice["id"] is not None)
         if len(selected_ids) != len(set(selected_ids)):
             raise ValueError("Cada pagamento pode corresponder a apenas uma linha B3.")
-        result = {}
-        for candidate in self._dividend_candidates_for_frame(dividends):
+        for candidate in candidates:
             key = candidate["source_key"]
             if key not in links:
                 raise ValueError("Confirme se o pagamento B3 já foi cadastrado antes de importar.")

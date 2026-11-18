@@ -86,11 +86,12 @@ def test_b3_requires_review_then_replaces_only_the_chosen_installment():
     ], AssetService.get_local_projection_revision())
     statement = pd.DataFrame([{
         "Movimentação": "Juros Sobre Capital Próprio", "Data": "28/06/2027",
-        "Produto": "CMIG4", "Quantidade": 100, "Preço unitário": 0.03,
-        "Valor da Operação": 3.0, "Entrada/Saída": "Crédito",
+        "Produto": "CMIG4", "Quantidade": 100, "Preço unitário": 0.034,
+        "Valor da Operação": 3.4, "Entrada/Saída": "Crédito",
     }])
     candidates = AssetService.find_b3_dividend_candidates(statement)
     assert len(candidates) == 1
+    assert len(candidates[0]["payments"]) == 1
     first_id = candidates[0]["payments"][0]["id"]
     with pytest.raises(ValueError, match="Confirme"):
         AssetService.process_b3_import(statement)
@@ -100,7 +101,7 @@ def test_b3_requires_review_then_replaces_only_the_chosen_installment():
     details = PortfolioReadService.read_asset("CMIG4").dividends
     assert len(details) == 2
     assert sorted(details["Data"]) == ["2027-06-28", "2027-12-30"]
-    assert sorted(details["Total"]) == [3.0, 3.5]
+    assert sorted(details["Total"]) == [3.4, 3.5]
     assert AssetService.process_b3_import(statement) == (0, 0)
 
 
@@ -238,12 +239,12 @@ def test_manual_payment_remains_reconcilable_after_its_scheduled_date(monkeypatc
         def today(cls):
             return cls(2026, 1, 10)
 
-    monkeypatch.setattr("core.daos.dividend_sync.datetime.date", ReferenceDate)
+    monkeypatch.setattr(datetime, "date", ReferenceDate)
     AssetService.add_dividend("CMIG4", "2026-01-01", "JCP", 3.5, 100, 0.035)
     statement = pd.DataFrame([{
         "Movimentação": "Juros Sobre Capital Próprio", "Data": "02/01/2026",
-        "Produto": "CMIG4", "Quantidade": 100, "Preço unitário": 0.03,
-        "Valor da Operação": 3.0, "Entrada/Saída": "Crédito",
+        "Produto": "CMIG4", "Quantidade": 100, "Preço unitário": 0.034,
+        "Valor da Operação": 3.4, "Entrada/Saída": "Crédito",
     }])
     candidates = AssetService.find_b3_dividend_candidates(statement)
     assert len(candidates) == 1
@@ -256,7 +257,7 @@ def test_manual_payment_remains_reconcilable_after_its_scheduled_date(monkeypatc
     payments = AssetService.get_dividend_payments("CMIG4")
     assert len(payments) == 1
     assert payments[0]["date"] == "2026-01-02"
-    assert payments[0]["total_value"] == 3.0
+    assert payments[0]["total_value"] == 3.4
 
 
 def test_equal_b3_credits_from_different_institutions_reconcile_distinct_installments():
@@ -267,8 +268,8 @@ def test_equal_b3_credits_from_different_institutions_reconcile_distinct_install
     ], AssetService.get_local_projection_revision())
     statement = pd.DataFrame([{
         "Movimentação": "Juros Sobre Capital Próprio", "Data": "28/06/2027",
-        "Produto": "CMIG4", "Quantidade": 100, "Preço unitário": 0.03,
-        "Valor da Operação": 3.0, "Entrada/Saída": "Crédito",
+        "Produto": "CMIG4", "Quantidade": 100, "Preço unitário": 0.034,
+        "Valor da Operação": 3.4, "Entrada/Saída": "Crédito",
         "Instituição": institution,
     } for institution in ("Banco de teste A", "Banco de teste B")])
     candidates = AssetService.find_b3_dividend_candidates(statement)
@@ -280,7 +281,7 @@ def test_equal_b3_credits_from_different_institutions_reconcile_distinct_install
     assert AssetService.process_b3_import(statement, dividend_links=links) == (0, 2)
     updated = AssetService.get_dividend_payments("CMIG4")
     assert len(updated) == 2
-    assert [row["total_value"] for row in updated] == [3.0, 3.0]
+    assert [row["total_value"] for row in updated] == [3.4, 3.4]
     assert {row["date"] for row in updated} == {"2027-06-28"}
     assert AssetService.process_b3_import(statement) == (0, 0)
 

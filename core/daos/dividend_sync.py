@@ -1,10 +1,10 @@
 """Atomic dividend decisions using the existing source registry and receipt schema."""
 
-import datetime
 import hashlib
 import json
 import sqlite3
 from contextlib import closing
+from decimal import Decimal
 
 
 class DividendSyncRepository:
@@ -118,7 +118,7 @@ class DividendSyncRepository:
         )
 
     @staticmethod
-    def _dividend_candidates(conn, record, batch_sources=()):
+    def _dividend_candidates(conn, record, batch_sources=(), *, allow_automatic_match=True):
         origins = conn.execute(
             "SELECT source_record, status, source_key FROM b3_import_records "
             "WHERE event_kind='DIVIDEND'"
@@ -139,14 +139,33 @@ class DividendSyncRepository:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT id, date, ticker, dividend_type, total_value, quantity, unit_price "
-            "FROM dividends WHERE ticker=? ORDER BY date,id",
-            (record["ticker"],),
+            "FROM dividends WHERE ticker=? "
+            "AND date BETWEEN date(?, '-7 days') AND date(?, '+7 days') ORDER BY date,id",
+            (record["ticker"], record["date"], record["date"]),
         ).fetchall()
         batch_ids.difference_update(previous_ids)
+        total = Decimal(str(record["total_value"]))
+        value_tolerance = max(Decimal("0.02"), abs(total) * Decimal("0.05"))
+        exact_payments = [
+            row
+            for row in rows
+            if row["date"] == record["date"]
+            and row["dividend_type"] == record["dividend_type"]
+            and row["total_value"] == record["total_value"]
+        ]
+        if allow_automatic_match and len(exact_payments) == 1:
+            exact = exact_payments[0]
+            if (
+                exact["id"] not in yahoo_ids | b3_ids | batch_ids
+                and not DividendSyncRepository._dividend_metadata_differs(exact, record)
+            ):
+                # Let the receipt upsert adopt the unique legacy payment and its missing metadata.
+                return []
         return [
             dict(row)
             for row in rows
             if row["id"] not in batch_ids
+            and abs(Decimal(str(row["total_value"])) - total) <= value_tolerance
             and (
                 row["dividend_type"] == record["dividend_type"]
                 or (row["id"] in yahoo_ids and row["id"] not in b3_ids)
@@ -156,9 +175,10 @@ class DividendSyncRepository:
                     row["id"] not in b3_ids
                     and (
                         row["id"] in yahoo_ids
-                        or row["date"] > datetime.date.today().isoformat()
+                        or not allow_automatic_match
                         or row["date"] != record["date"]
                         or row["total_value"] != record["total_value"]
+                        or len(exact_payments) > 1
                         or DividendSyncRepository._dividend_metadata_differs(row, record)
                     )
                 )
@@ -187,14 +207,16 @@ class DividendSyncRepository:
             for field in ("quantity", "unit_price")
         )
 
-    def find_b3_dividend_candidates(self, record):
+    def find_b3_dividend_candidates(self, record, *, allow_automatic_match=True):
         with closing(self.get_personal_connection()) as conn:
             if conn.execute(
                 "SELECT 1 FROM b3_import_records WHERE source_key=?",
                 (self.dividend_b3_key(record),),
             ).fetchone():
                 return []
-            return self._dividend_candidates(conn, record)
+            return self._dividend_candidates(
+                conn, record, allow_automatic_match=allow_automatic_match
+            )
 
     @staticmethod
     def _has_distinct_b3_credit(conn, record):
@@ -230,7 +252,9 @@ class DividendSyncRepository:
                 "SELECT 1 FROM b3_import_records WHERE source_key=?", (key,)
             ).fetchone():
                 return False
-            candidates = self._dividend_candidates(conn, record, batch_sources)
+            candidates = self._dividend_candidates(
+                conn, record, batch_sources, allow_automatic_match=key not in choices
+            )
             if candidates and key not in choices:
                 raise ValueError("Confirme se o pagamento B3 já foi cadastrado antes de importar.")
             choice = choices.get(key)
@@ -239,23 +263,37 @@ class DividendSyncRepository:
                 actual = next((row for row in candidates if row["id"] == receipt_id), None)
                 if actual is None or actual != choice["expected"]:
                     raise ValueError("O provento escolhido mudou. Revise a importação B3.")
-                conn.execute(
-                    "UPDATE dividends SET date=?, dividend_type=?, total_value=?, "
-                    "quantity=COALESCE(?,quantity), unit_price=COALESCE(?,unit_price) WHERE id=?",
-                    (
+                if choice.get("automatic"):
+                    changed, matched_id = self._upsert_dividend_receipt(
+                        conn,
                         record["date"],
+                        record["ticker"],
                         record["dividend_type"],
                         record["total_value"],
                         record["quantity"],
                         record["unit_price"],
-                        receipt_id,
-                    ),
-                )
+                    )
+                    if matched_id != receipt_id:
+                        raise ValueError("O provento escolhido mudou. Revise a importação B3.")
+                else:
+                    conn.execute(
+                        "UPDATE dividends SET date=?, dividend_type=?, total_value=?, "
+                        "quantity=COALESCE(?,quantity), unit_price=COALESCE(?,unit_price) WHERE id=?",
+                        (
+                            record["date"],
+                            record["dividend_type"],
+                            record["total_value"],
+                            record["quantity"],
+                            record["unit_price"],
+                            receipt_id,
+                        ),
+                    )
+                    changed = True
                 self._record_dividend_source(
                     conn, key, {"receipt_ids": [receipt_id], "b3": record}, "DIVIDEND_B3"
                 )
                 conn.commit()
-                return True
+                return changed
             conn.row_factory = None
             if (candidates and key in choices) or self._has_distinct_b3_credit(conn, record):
                 # "Separate payment" is an explicit user decision, including equal-looking parcels.

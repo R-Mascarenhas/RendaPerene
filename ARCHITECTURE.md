@@ -810,12 +810,30 @@ uma nova consulta não duplica nem sobrescreve pagamentos, mesmo se o Yahoo muda
 
 `core/daos/dividend_sync.py` contém a implementação interna das escritas de proventos do DAO.
 As decisões e pagamentos são gravados sob `BEGIN IMMEDIATE`; a revisão local também avança
-quando apenas a decisão muda. A importação B3 sugere parcelas Yahoo ainda não conciliadas
-do mesmo ticker, inclusive quando o tipo confirmado difere do informado pela B3, e pagamentos
-manuais ou legados do mesmo ticker/tipo com data ou total divergente, mesmo após a
-data prevista; divergências de total em pagamentos B3 da mesma
-data também exigem revisão. Divergências de quantidade ou unitário conhecidos exigem
-revisão mesmo quando data e total coincidem. O usuário escolhe associar ou importar separadamente. A associação
+quando apenas a decisão muda. A busca de correspondências B3 usa a mesma regra na prévia e
+na confirmação sob bloqueio: até 7 dias corridos antes ou depois da data B3 e diferença no total
+de até o maior entre R$ 0,02 e 5% do valor absoluto informado pela B3. A comparação de valores
+usa `Decimal`, incluindo os limites sem erro de representação binária. Um pagamento manual ou
+legado único com o mesmo ticker, data, tipo e total, sem conflito nos metadados conhecidos,
+tem prioridade sobre candidatos aproximados e é reconhecido sem confirmação; metadados ausentes
+podem ser completados. Pagamentos exatos ambíguos exigem revisão, inclusive quando várias linhas
+do extrato têm o mesmo ticker, data, tipo e total e disputam o mesmo pagamento legado.
+`AssetService` identifica essa disputa antes de importar qualquer linha e desabilita a associação
+automática pela opção explícita `allow_automatic_match` de `PortfolioPort.find_b3_dividend_candidates()`.
+O DAO inclui pagamentos exatos nessas sugestões e revalida escolhas explícitas sem aplicar o atalho
+automático, preservando a coerência entre prévia e gravação e os vínculos exclusivos por pagamento.
+O planejamento do lote também reserva os pagamentos exatos não disputados, retirando seus IDs das
+sugestões aproximadas de outras linhas. As decisões automáticas conservam o snapshot esperado para
+revalidação pelo DAO sob bloqueio; completar dados ausentes reutiliza o upsert existente, preservando
+valores conhecidos e a contagem de mudanças financeiras. A mesma preparação é usada na prévia e
+antes de importar operações; uma mudança na revisão local durante as leituras invalida o planejamento.
+Esse planejamento é transitório, sem migração nem novo cache.
+Dentro desses limites, a importação sugere parcelas Yahoo ainda não conciliadas do mesmo ticker,
+inclusive quando o tipo confirmado difere do informado pela B3, e pagamentos manuais ou legados
+do mesmo ticker/tipo com divergências, mesmo após a data prevista. Divergências em pagamentos
+B3 da mesma data continuam sujeitas à compatibilidade da instituição. Divergências de quantidade
+ou unitário conhecidos exigem revisão mesmo quando data e total coincidem.
+O usuário escolhe associar ou importar separadamente. A associação
 atualiza tipo, data e total pela B3, preservando metadados existentes quando a B3 não os informa.
 Pagamentos já conciliados pela B3 continuam sujeitos ao filtro por tipo.
 As escolhas são validadas antes de importar operações e os registros escolhidos são revalidados
